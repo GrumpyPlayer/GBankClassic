@@ -3,21 +3,18 @@ GBankClassic_Guild = {}
 GBankClassic_Guild.Info = nil
 
 ---START CHANGES
----If the realm isn't present, assume the same realm as the current player and return the full
----denormalized realm name.  This matches the behavior of Ace and most WoW API calls that 
----return the normalize realm name
-function DenormalizePlayerNameAndGetFullNameWithRealm(name)
+function GetPlayerWithNormalizedRealm(name)
     if(string.match(name, "(.*)%-(.*)")) then
 		return name
 	end
-	return name.."-"..GetRealmName("player")
+	return name.."-"..GetNormalizedRealmName("player")
 end
 ---END CHANGES
 
 function GBankClassic_Guild:GetPlayer()
     ---START CHANGES
     --return UnitName("player")
-    return UnitName("player").."-"..GetRealmName("player")
+    return UnitName("player").."-"..GetNormalizedRealmName("player")
     ---END CHANGES
 end
 
@@ -231,7 +228,7 @@ function GBankClassic_Guild:Hello(type)
         else
             hello = hello.." I know about 0 guild bank alts on the roster, and have guild bank data from 0 alts."
         end
-		GBankClassic_Core:Print(hello)
+        GBankClassic_Core:Print(hello)
         local data = GBankClassic_Core:Serialize(hello)
         if type ~= "reply" then
             GBankClassic_Core:SendCommMessage("gbank-h", data, "Guild", nil, "BULK")
@@ -244,7 +241,7 @@ end
 function GBankClassic_Guild:Wipe(type)
     local guild = GBankClassic_Guild:GetGuild()
     if not guild and not CanViewOfficerNote() then return end
-    local wipe = "I wiped all my addon data from "..guild.."."
+    local wipe = "I wiped all addon data from "..guild.."."
     GBankClassic_Guild:Reset(guild)
 
     local data = GBankClassic_Core:Serialize(wipe)

@@ -52,7 +52,7 @@ function GBankClassic_Chat:OnCommReceived(prefix, message, _, sender)
     if IsInRaid() then return end
     local player = GBankClassic_Guild:GetPlayer()
     ---START CHANGES
-    sender = DenormalizePlayerNameAndGetFullNameWithRealm(sender)
+    sender = GetPlayerWithNormalizedRealm(sender)
     ---END CHANGES
     if player == sender then
         ---START CHANGES
@@ -216,6 +216,7 @@ function GBankClassic_Chat:ShowHelp()
 end
 
 function GBankClassic_Chat:ProcessQueue()
+    if IsInRaid() then return end
     if #self.sync_queue == 0 then
         self.is_syncing = false
         return
