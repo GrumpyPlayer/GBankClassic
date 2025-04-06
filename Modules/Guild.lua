@@ -14,7 +14,26 @@ end
 function GBankClassic_Guild:GetPlayer()
     ---START CHANGES
     --return UnitName("player")
-    return UnitName("player").."-"..GetNormalizedRealmName("player")
+    if GBankClassic_Bank.player then return GBankClassic_Bank.player end
+
+    -- The below code should never be called, but is here for safety
+    local function try()
+      local name, realm = UnitName("player"), GetNormalizedRealmName()
+      if name and realm then
+        GBankClassic_Bank.player = name .. "-" .. realm
+        return true
+      end
+    end
+    if try() then return GBankClassic_Bank.player end
+    local count, max, delay, timer = 0, 10, 15
+    timer = C_Timer.NewTicker(delay, function()
+      count = count + 1
+      if try() or count >= max then
+        if timer then timer:Cancel() end
+      end
+    end)
+  
+    return nil
     ---END CHANGES
 end
 

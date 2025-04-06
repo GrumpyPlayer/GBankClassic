@@ -18,6 +18,7 @@ function GBankClassic_Events:UnregisterEvent(...) GBankClassic_Core:UnregisterEv
 function GBankClassic_Events:RegisterEvents()
     if GBankClassic_Bank.eventsRegistered then return end
 
+    self:RegisterEvent("PLAYER_LOGIN")
     self:RegisterEvent("GUILD_RANKS_UPDATE")
     self:RegisterEvent("BANKFRAME_OPENED")
     self:RegisterEvent("BANKFRAME_CLOSED")
@@ -44,6 +45,7 @@ function GBankClassic_Events:UnregisterEvents()
     if not GBankClassic_Bank.eventsRegistered then return end
     GBankClassic_Bank.eventsRegistered = false
 
+    self:UnregisterEvent("PLAYER_LOGIN")
     self:UnregisterEvent("GUILD_RANKS_UPDATE")
     self:UnregisterEvent("BANKFRAME_OPENED")
     self:UnregisterEvent("BANKFRAME_CLOSED")
@@ -92,6 +94,10 @@ function GBankClassic_Events:Sync()
 
     local data = GBankClassic_Core:Serialize(version)
     GBankClassic_Core:SendCommMessage("gbank-v", data, "Guild", nil, "BULK")
+end
+
+function GBankClassic_Events:PLAYER_LOGIN(_)
+    GBankClassic_Guild:GetPlayer()
 end
 
 function GBankClassic_Events:GUILD_RANKS_UPDATE(_)
