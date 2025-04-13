@@ -39,4 +39,4 @@ jobs:
       - name: Package and release
         uses: BigWigsMods/packager@v2
         with:
-          args: -n "{package-name} Revived {project-version}:Revived {project-version}"
+          args: -g classic -n "{package-name} Revived {project-version}:Revived {project-version}"
