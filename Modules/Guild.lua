@@ -181,7 +181,10 @@ function GBankClassic_Guild:ReceiveRosterData(roster)
       if self.requestCount == nil then self.requestCount = 0 else self.requestCount = self.requestCount - 1 end
         if self.requestCount == 0 then
             self.hasRequested = false
-            GBankClassic_Core:Print("Sync completed.")
+            shutup = GBankClassic_Options:GetBankVerbosity()
+            if shutup == false then
+                GBankClassic_Core:Print("Sync completed.")
+            end
         end
     end
 
@@ -197,8 +200,11 @@ end
 
 ---START CHANGES
 function OnChunkSent(arg, sent, total)
-    if sent <= 255 then GBankClassic_Core:Print("Sharing guild bank data...") end
-    if sent == total then GBankClassic_Core:Print("Sharing guild bank data has completed.") end
+    shutup = GBankClassic_Options:GetBankVerbosity()
+    if shutup == false then
+        if sent <= 255 then GBankClassic_Core:Print("Sharing guild bank data...") end
+        if sent == total then GBankClassic_Core:Print("Sharing guild bank data has completed.") end
+    end
 end
 ---END CHANGES
 
@@ -209,7 +215,10 @@ function GBankClassic_Guild:ReceiveAltData(name, alt)
       if self.requestCount == nil then self.requestCount = 0 else self.requestCount = self.requestCount - 1 end
         if self.requestCount == 0 then
             self.hasRequested = false
-            GBankClassic_Core:Print("Sync completed.")
+            shutup = GBankClassic_Options:GetBankVerbosity()
+            if shutup == false then
+                GBankClassic_Core:Print("Sync completed.")
+            end
         end
     end
 

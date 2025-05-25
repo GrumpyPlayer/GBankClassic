@@ -15,7 +15,7 @@ function GBankClassic_Options:Init()
         self.db.char.bank['donations'] = true
     end
     if self.db.global.bank == nil then
-        self.db.global.bank = {report = true}
+        self.db.global.bank = {report = true, shutup = false}
     end
 
     local options = {
@@ -45,6 +45,14 @@ function GBankClassic_Options:Init()
                     self.db.char.combat["hide"] = v
                 end,
                 get = function() return self.db.char.combat["hide"] end,
+            },
+            ["shutup"] = {
+                order = 2,
+                type = "toggle",
+                name = "Mute addon messages",
+                desc = "Stops the addon from sending messages to the chat window",
+                set = function(_, v) self.db.global.bank['shutup'] = v end,
+                get = function() return self.db.global.bank['shutup'] end
             },
             ["reset"] = {
                 order = -1,
@@ -135,6 +143,13 @@ end
 
 function GBankClassic_Options:GetBankReporting()
     return self.db.global.bank['report']
+end
+
+function GBankClassic_Options:GetBankVerbosity()
+    if self.db.global.bank['shutup'] == nil then
+        return false
+    end
+    return self.db.global.bank['shutup']
 end
 
 function GBankClassic_Options:GetMinimapEnabled()
