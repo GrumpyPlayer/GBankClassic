@@ -107,12 +107,15 @@ function GBankClassic_Bank:Scan()
     if not info then return end
 
     local player = GBankClassic_Guild:GetPlayer()
+    -- normalize player name to ensure consistent keying in saved DB
+    if player then player = (GBankClassic_Guild and GBankClassic_Guild.NormalizePlayerName) and GBankClassic_Guild.NormalizePlayerName(player) or player end
 
     local isBank = false
     local banks = GBankClassic_Guild:GetBanks()
     if banks == nil then return end
     for _, v in pairs(banks) do
-        if v == player then
+        local normV = (GBankClassic_Guild and GBankClassic_Guild.NormalizePlayerName) and GBankClassic_Guild.NormalizePlayerName(v) or v
+        if normV == player then
             isBank = true
             break
         end

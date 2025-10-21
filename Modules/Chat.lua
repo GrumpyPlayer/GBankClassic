@@ -6,6 +6,7 @@ function GBankClassic_Chat:Init()
     end)
 
     self.addon_outdated = false
+    self.debug = false
     self.last_roster_sync = nil
     self.last_alt_sync = {}
     self.sync_queue = {}
@@ -49,20 +50,29 @@ function GBankClassic_Chat:Init()
 end
 
 function GBankClassic_Chat:OnCommReceived(prefix, message, _, sender)
-    if IsInRaid() then return end
+    if IsInRaid() then
+        if self.debug then GBankClassic_Core:Print('OnCommReceived: ignoring prefix', prefix, 'from', sender, '(in raid)') end
+        return
+    end
     local player = GBankClassic_Guild:GetPlayer()
     ---START CHANGES
-    sender = GetPlayerWithNormalizedRealm(sender)
+    -- Normalize the sender using the shared helper so spacing/hyphen formats match
+    if GBankClassic_Guild and GBankClassic_Guild.NormalizePlayerName then
+        sender = GBankClassic_Guild.NormalizePlayerName(sender)
+    elseif GetPlayerWithNormalizedRealm then
+        sender = GetPlayerWithNormalizedRealm(sender)
+    end
     ---END CHANGES
     if player == sender then
-        ---START CHANGES
+        if self.debug then GBankClassic_Core:Print('OnCommReceived: ignoring own message from', sender) end
         return
-        ---END CHANGES
     end
 
     if prefix == "gbank-v" then
         local success, data = GBankClassic_Core:Deserialize(message)
-        if success then
+        if not success then
+            if self.debug then GBankClassic_Core:Print('OnCommReceived: failed to deserialize gbank-v from', sender) end
+        else
             local current_data = GBankClassic_Guild:GetVersion()
             if current_data then
                 if data.name then
@@ -87,8 +97,9 @@ function GBankClassic_Chat:OnCommReceived(prefix, message, _, sender)
                 end
                 if data.alts then
                     for k, v in pairs(data.alts) do
-                        if not current_data.alts[k] or v > current_data.alts[k] then
-                            GBankClassic_Guild:RequestAltSync(sender, k, v)
+                        local kNorm = (GBankClassic_Guild and GBankClassic_Guild.NormalizePlayerName) and GBankClassic_Guild.NormalizePlayerName(k) or k
+                        if not current_data.alts[kNorm] or v > current_data.alts[kNorm] then
+                            GBankClassic_Guild:RequestAltSync(sender, kNorm, v)
                         end
                     end
                 end
@@ -98,7 +109,9 @@ function GBankClassic_Chat:OnCommReceived(prefix, message, _, sender)
 
     if prefix == "gbank-r" then
         local success, data = GBankClassic_Core:Deserialize(message)
-        if success then
+        if not success then
+            if self.debug then GBankClassic_Core:Print('OnCommReceived: failed to deserialize gbank-r from', sender) end
+        else
             if data.player == player then
                 if data.type == "roster" then
                     local time = GetServerTime()
@@ -109,7 +122,8 @@ function GBankClassic_Chat:OnCommReceived(prefix, message, _, sender)
                 end
 
                 if data.type == "alt" then
-                    table.insert(self.sync_queue, data.name)
+                    local nameNorm = (GBankClassic_Guild and GBankClassic_Guild.NormalizePlayerName) and GBankClassic_Guild.NormalizePlayerName(data.name) or data.name
+                    table.insert(self.sync_queue, nameNorm)
                     if not self.is_syncing then
                         GBankClassic_Chat:ProcessQueue()
                     end
@@ -120,13 +134,49 @@ function GBankClassic_Chat:OnCommReceived(prefix, message, _, sender)
 
     if prefix == "gbank-d" then
         local success, data = GBankClassic_Core:Deserialize(message)
-        if success then
+        if not success then
+            if self.debug then GBankClassic_Core:Print('OnCommReceived: failed to deserialize gbank-d from', sender) end
+        else
             if data.type == "roster" then
-                GBankClassic_Guild:ReceiveRosterData(data.roster)
+                -- only accept roster updates from a sender that is marked as a bank in guild notes
+                local allowed = GBankClassic_Guild and GBankClassic_Guild.SenderHasGbankNote and GBankClassic_Guild:SenderHasGbankNote(sender)
+                if self.debug then GBankClassic_Core:Print('OnCommReceived: gbank-d roster from', sender, 'allowed=', tostring(allowed)) end
+                if allowed then
+                    GBankClassic_Guild:ReceiveRosterData(data.roster)
+                end
             end
 
             if data.type == "alt" then
-                GBankClassic_Guild:ReceiveAltData(data.name, data.alt)
+                -- only accept alt data if the sender matches the claimed alt name
+                local claimed = data.name
+                local claimedNorm = (GBankClassic_Guild and GBankClassic_Guild.NormalizePlayerName) and GBankClassic_Guild.NormalizePlayerName(claimed) or claimed
+                if self.debug then GBankClassic_Core:Print('OnCommReceived: gbank-d alt from', sender, 'claims', claimed, 'normClaim=', claimedNorm) end
+                -- 'sender' was normalized near the top of this function
+                local allowed = false
+                -- If the sender is the claimed owner, always accept
+                if sender == claimedNorm then
+                    allowed = true
+                else
+                    -- If the claimed owner is a registered bank toon, only accept from bank-marked senders
+                    local claimedIsBank = (GBankClassic_Guild and GBankClassic_Guild.IsBank) and GBankClassic_Guild:IsBank(claimedNorm) or false
+                    if claimedIsBank then
+                        if GBankClassic_Guild and GBankClassic_Guild.SenderHasGbankNote and GBankClassic_Guild:SenderHasGbankNote(sender) then
+                            allowed = true
+                        else
+                            allowed = false
+                        end
+                    else
+                        -- claimed owner is not a bank toon: accept delegated shares from anyone
+                        allowed = true
+                    end
+                end
+                if self.debug then GBankClassic_Core:Print('OnCommReceived: alt allowed=', tostring(allowed), 'from', sender, 'claimedNorm=', claimedNorm, 'claimedIsBank=', tostring(claimedIsBank)) end
+                if allowed then
+                    GBankClassic_Guild:ReceiveAltData(claimedNorm, data.alt)
+                else
+                    -- ignore spoofed alt data
+                    return
+                end
             end
         end
     end
@@ -141,7 +191,9 @@ function GBankClassic_Chat:OnCommReceived(prefix, message, _, sender)
 	if prefix == "gbank-hr" then
         local success, data = GBankClassic_Core:Deserialize(message)
         if success then
-			GBankClassic_Core:Print(data)
+            if self.debug then
+                GBankClassic_Core:Print(data)
+            end
         end
     end	
     if prefix == "gbank-s" then
@@ -181,6 +233,29 @@ function GBankClassic_Chat:ChatCommand(input)
             ["help"] = function ()
                 GBankClassic_Chat:ShowHelp()
             end,
+            ["debug"] = function ()
+                self.debug = not self.debug
+                GBankClassic_Core:Print("Debug:", tostring(self.debug))
+            end,
+            ["debugdump"] = function ()
+                local G = GBankClassic_Guild
+                if not G or not G.Info or not G.Info.alts then
+                    GBankClassic_Core:Print('no alts table available')
+                    return
+                end
+                GBankClassic_Core:Print('Listing Info.alts keys:')
+                local i=0
+                for k,v in pairs(G.Info.alts) do
+                    i=i+1
+                    GBankClassic_Core:Print(i, tostring(k), type(v))
+                    if i>=200 then
+                        GBankClassic_Core:Print('truncated at 200 entries')
+                        break
+                    end
+                end
+                if i==0 then GBankClassic_Core:Print('no entries') end
+            end,
+            
             ["hello"] = function ()
                 GBankClassic_Guild:Hello()
             end,

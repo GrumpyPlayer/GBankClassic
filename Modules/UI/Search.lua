@@ -136,7 +136,8 @@ function GBankClassic_UI_Search:BuildSearchData()
 
     local items = {}
     for _, player in pairs(info.roster.alts) do
-        local alt = info.alts[player]
+        local norm = (GBankClassic_Guild and GBankClassic_Guild.NormalizePlayerName) and GBankClassic_Guild.NormalizePlayerName(player) or player
+        local alt = info.alts[norm]
         ---START CHANGES
         --if alt then
         if alt and type(alt) == "table" then
@@ -161,7 +162,8 @@ function GBankClassic_UI_Search:BuildSearchData()
 
         for _, player in pairs(info.roster.alts) do
             local altItems = {}
-            local alt = info.alts[player]
+            local norm = (GBankClassic_Guild and GBankClassic_Guild.NormalizePlayerName) and GBankClassic_Guild.NormalizePlayerName(player) or player
+            local alt = info.alts[norm]
             ---START CHANGES
             --if alt then
             if alt and type(alt) == "table" then
@@ -174,21 +176,23 @@ function GBankClassic_UI_Search:BuildSearchData()
                 end
             end
 
-            for _, v in pairs(altItems) do
-                local name = itemNames[v.ID]
-                if not self.SearchData.Lookup[name] then
-                    self.SearchData.Lookup[name] = {}
-                end
-                local found = false
-                for _, v in pairs(self.SearchData.Lookup[name]) do
-                    if v == player then
-                        found = true
-                        break
+            for _, itemEntry in pairs(altItems) do
+                local name = itemNames[itemEntry.ID]
+                if name then
+                    if not self.SearchData.Lookup[name] then
+                        self.SearchData.Lookup[name] = {}
                     end
-                end
-                if not found then
-                    local info = GBankClassic_Item:GetInfo(v.ID, v.Link)
-                    table.insert(self.SearchData.Lookup[name], {alt = player, item = {ID = v.ID, Count = v.Count, Link = v.Link, Info = info}})
+                    local found = false
+                    for _, existingEntry in pairs(self.SearchData.Lookup[name]) do
+                        if existingEntry.alt == player then
+                            found = true
+                            break
+                        end
+                    end
+                    if not found then
+                        local info = GBankClassic_Item:GetInfo(itemEntry.ID, itemEntry.Link)
+                        table.insert(self.SearchData.Lookup[name], {alt = player, item = {ID = itemEntry.ID, Count = itemEntry.Count, Link = itemEntry.Link, Info = info}})
+                    end
                 end
             end
         end
