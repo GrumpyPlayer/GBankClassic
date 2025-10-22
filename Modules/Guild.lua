@@ -247,7 +247,7 @@ end
 function GBankClassic_Guild:ReceiveAltData(name, alt)
     if not self.Info then return end
     local norm = NormalizePlayerName(name)
-    if self.Info.alts[norm] and alt.version ~= nil and alt.version < self.Info.alts[norm].version then return end
+    if self.Info.alts[norm] and alt.version ~= nil and self.Info.alts[norm].version ~= nil and alt.version < self.Info.alts[norm].version then return end
     if self.hasRequested then
       if self.requestCount == nil then self.requestCount = 0 else self.requestCount = self.requestCount - 1 end
         if self.requestCount == 0 then
