@@ -9,6 +9,24 @@ function GetPlayerWithNormalizedRealm(name)
 	end
 	return name.."-"..GetNormalizedRealmName("player")
 end
+
+-- wrapper to ensure consistent normalization across the addon
+local function NormalizePlayerName(name)
+    if not name then return nil end
+    -- Canonicalize hyphen spacing: convert "Name - Realm" or "Name- Realm" to "Name-Realm"
+    local normalized = string.gsub(name, "%s*%-%s*", "-")
+    if string.match(normalized, "^(.-)%-(.-)$") then
+        return normalized
+    end
+    -- If helper exists, use it
+    if GetPlayerWithNormalizedRealm then
+        return GetPlayerWithNormalizedRealm(name)
+    end
+    -- Fallback: append current realm
+    return name.."-"..GetNormalizedRealmName("player")
+end
+-- expose for other modules
+GBankClassic_Guild.NormalizePlayerName = NormalizePlayerName
 ---END CHANGES
 
 function GBankClassic_Guild:GetPlayer()
@@ -251,16 +269,35 @@ function GBankClassic_Guild:ReceiveRosterData(roster)
     self.Info.roster = roster
 end
 
+-- returns true if the given normalized sender has a public or officer note containing 'gbank'
+function GBankClassic_Guild:SenderHasGbankNote(sender)
+    if not sender then return false end
+    for i = 1, GetNumGuildMembers() do
+        local playerRealm, _, _, _, _, _, publicNote, officer_note = GetGuildRosterInfo(i)
+        if playerRealm then
+            local norm = NormalizePlayerName(playerRealm)
+            if norm == sender then
+                if (publicNote and string.match(publicNote, "(.*)gbank(.*)")) or (officer_note and string.match(officer_note, "(.*)gbank(.*)")) then
+                    return true
+                end
+            end
+        end
+    end
+    return false
+end
+
 function GBankClassic_Guild:SendAltData(name, force)
     if not name then return end
-    if not self.Info or not self.Info.alts or not self.Info.alts[name] then return end
+    local norm = NormalizePlayerName(name)
+    if not self.Info or not self.Info.alts or not self.Info.alts[norm] then return end
 
     -- Bump the version so this transfer wins conflict resolution
     if force then
-        self.Info.alts[name].version = GetServerTime()
+        self.Info.alts[norm].version = GetServerTime()
     end
 
-    local data = GBankClassic_Core:Serialize({type = "alt", name = name, alt = self.Info.alts[name]})
+    local data = GBankClassic_Core:Serialize({type = "alt", name = norm, alt = self.Info.alts[norm]})
+    ---START CHANGES
     GBankClassic_Core:SendCommMessage("gbank-d", data, "Guild", nil, "BULK", OnChunkSent)
 end
 
@@ -296,7 +333,10 @@ function GBankClassic_Guild:ReceiveAltData(name, alt)
     alt = sanitizeAlt(alt)
     if not alt then return end
 
-    local existing = self.Info.alts[name]
+    local norm = NormalizePlayerName(name)
+    local existing = self.Info.alts[norm]
+    if existing and alt.version ~= nil and existing.version ~= nil and alt.version < existing.version then return end
+
     -- Accept incoming if newer version
     -- If same version, accept the alt with more items
     local function itemCount(a)
@@ -316,6 +356,7 @@ function GBankClassic_Guild:ReceiveAltData(name, alt)
         end
     end
 
+    if self.Info.alts[name] and alt.version ~= nil and alt.version < self.Info.alts[name].version then return end
     if self.hasRequested then
         if self.requestCount == nil then self.requestCount = 0 else self.requestCount = self.requestCount - 1 end
         if self.requestCount == 0 then
@@ -327,7 +368,7 @@ function GBankClassic_Guild:ReceiveAltData(name, alt)
         end
     end
 
-    self.Info.alts[name] = alt
+    self.Info.alts[norm] = alt
 
 end
 
@@ -397,9 +438,10 @@ function GBankClassic_Guild:Share(type)
     if not guild then return end
     self.Info = GBankClassic_Database:Load(guild)
     local player = GBankClassic_Guild:GetPlayer()
+    local normPlayer = (GBankClassic_Guild and GBankClassic_Guild.NormalizePlayerName) and GBankClassic_Guild.NormalizePlayerName(player) or player
     local share = "I'm sharing my bank data. Share yours please."
-    if not self.Info.alts[player] then if type ~= "reply" then share = "Share your bank data please." else share = "Nothing to share." end end
-    if self.Info.alts[player] and GBankClassic_Guild:IsBank(player) then GBankClassic_Guild:SendAltData(player, true) end
+    if not self.Info.alts[normPlayer] then if type ~= "reply" then share = "Share your bank data please." else share = "Nothing to share." end end
+    if self.Info.alts[normPlayer] and GBankClassic_Guild:IsBank(normPlayer) then GBankClassic_Guild:SendAltData(normPlayer) end
 
     local data = GBankClassic_Core:Serialize(share)
     if type ~= "reply" then

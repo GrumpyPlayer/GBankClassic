@@ -26,3 +26,10 @@ function GBankClassic_Core:OnDisable()
     -- Called when the addon is disabled
     GBankClassic_Events:UnregisterEvents()
 end
+
+-- Debug print helper (no-op unless enabled by a module flag)
+function GBankClassic_Core:DebugPrint(...)
+    -- Modules can check their own debug flag and call this when desired.
+    -- Keep this simple: always print (modules gate the calls).
+    GBankClassic_Core:Print("[DEBUG]", ...)
+end
