@@ -1,23 +1,38 @@
 GBankClassic_Item = {}
 
 function GBankClassic_Item:GetItems(items, callback)
+    -- Only consider items that have a valid ID
     local total = 0
-    for _, _ in pairs(items) do
-        total = total + 1
+    for _, item in pairs(items) do
+        if item and item.ID then
+            total = total + 1
+        end
     end
 
     local list = {}
     local count = 0
+
+    -- If there are no valid items to load, return an empty list immediately
+    if total == 0 then
+        callback(list)
+        return
+    end
+
     for _, item in pairs(items) do
-        local itemData = Item:CreateFromItemID(item.ID)
-        itemData:ContinueOnItemLoad(function()
-            item.Info = self:GetInfo(item.ID, item.Link)
-            table.insert(list, item)
-            count = count + 1
-            if count == total then
-                callback(list)
-            end
-        end)
+        if item and item.ID then
+            local itemData = Item:CreateFromItemID(item.ID)
+            itemData:ContinueOnItemLoad(function()
+                item.Info = self:GetInfo(item.ID, item.Link)
+                table.insert(list, item)
+                count = count + 1
+                if count == total then
+                    callback(list)
+                end
+            end)
+        else
+            -- Skip malformed entry
+            -- GBankClassic_Core:Print("[GBankClassic_Item:GetItems] skipping malformed item:", tostring(item))
+        end
     end
 end
 
@@ -70,24 +85,32 @@ function GBankClassic_Item:Aggregate(a, b)
     local items = {}
     if a then
         for _, v in pairs(a) do
-            local key = v.ID .. v.Link
-            if items[key] then
-                local item = items[key]
-                items[key] = {ID = item.ID, Count = item.Count + v.Count, Link = item.Link}
+            if not v or not v.ID then
+                -- Skip malformed entries
             else
-                items[key] = v
+                local key = v.ID .. v.Link
+                if items[key] then
+                    local item = items[key]
+                    items[key] = {ID = item.ID, Count = item.Count + v.Count, Link = item.Link}
+                else
+                    items[key] = v
+                end
             end
         end
     end
 
     if b then
         for _, v in pairs(b) do
-            local key = v.ID .. v.Link
-            if items[key] then
-                local item = items[key]
-                items[key] = {ID = item.ID, Count = item.Count + v.Count, Link = item.Link}
+            if not v or not v.ID then
+                -- Skip malformed entries
             else
-                items[key] = v
+                local key = v.ID .. v.Link
+                if items[key] then
+                    local item = items[key]
+                    items[key] = {ID = item.ID, Count = item.Count + v.Count, Link = item.Link}
+                else
+                    items[key] = v
+                end
             end
         end
     end

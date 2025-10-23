@@ -3,6 +3,15 @@ GBankClassic_Core = LibStub("AceAddon-3.0"):NewAddon("GBankClassic", "AceComm-3.
 function GBankClassic_Core:OnInitialize()
     -- Called when the addon is loaded
     GBankClassic_Database:Init()
+    -- Load guild data and perform a one-time cleanup of malformed alt entries
+    local guild = GBankClassic_Guild:GetGuild()
+    if guild then
+        GBankClassic_Guild:Init(guild)
+        local cleaned = GBankClassic_Guild:CleanupMalformedAlts()
+        if cleaned and cleaned > 0 then
+            GBankClassic_Core:Printf("Cleaned %d malformed alt entries from saved database", cleaned)
+        end
+    end
     GBankClassic_Chat:Init()
     GBankClassic_Options:Init()
     GBankClassic_UI:Init()

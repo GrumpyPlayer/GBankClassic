@@ -77,6 +77,66 @@ function GBankClassic_Guild:Init(name)
     return true
 end
 
+-- Cleanup malformed entries in the saved guild data
+-- This attempts to be conservative:
+-- - remove alts that are not tables
+-- - remove per-alt entries that have badly shaped bank/bags item lists
+-- - ensure roster.alts is a proper array
+-- Returns number of alts cleaned
+function GBankClassic_Guild:CleanupMalformedAlts()
+    if not self.Info or not self.Info.alts then return 0 end
+
+    local cleaned = 0
+    for name, alt in pairs(self.Info.alts) do
+        local remove = false
+        if type(alt) ~= "table" then
+            remove = true
+        else
+            -- Ensure version is present, but malformed nested fields are problematic
+            if alt.bank and type(alt.bank) == "table" and alt.bank.items then
+                -- alt.bank.items should be an array or a map of items with ID fields; remove any empty entries
+                for k, v in pairs(alt.bank.items) do
+                    if not v or type(v) ~= "table" or not v.ID then
+                        alt.bank.items[k] = nil
+                    end
+                end
+            end
+            if alt.bags and type(alt.bags) == "table" and alt.bags.items then
+                for k, v in pairs(alt.bags.items) do
+                    if not v or type(v) ~= "table" or not v.ID then
+                        alt.bags.items[k] = nil
+                    end
+                end
+            end
+            -- If after cleaning the alt has no meaningful fields (no version, no money, no items), remove it
+            local hasData = false
+            if alt.version then hasData = true end
+            if alt.money then hasData = true end
+            if alt.bank and next(alt.bank.items or {}) then hasData = true end
+            if alt.bags and next(alt.bags.items or {}) then hasData = true end
+            if not hasData then remove = true end
+        end
+
+        if remove then
+            self.Info.alts[name] = nil
+            cleaned = cleaned + 1
+        end
+    end
+
+    -- Ensure roster.alts is a proper array (remove nils and non-strings)
+    if self.Info.roster and self.Info.roster.alts then
+        local new_alts = {}
+        for _, v in pairs(self.Info.roster.alts) do
+            if type(v) == "string" and v ~= "" then
+                table.insert(new_alts, v)
+            end
+        end
+        self.Info.roster.alts = new_alts
+    end
+
+    return cleaned
+end
+
 function GBankClassic_Guild:GetBanks()
     local hasBanks = false
     local banks = {}
@@ -191,11 +251,17 @@ function GBankClassic_Guild:ReceiveRosterData(roster)
     self.Info.roster = roster
 end
 
-function GBankClassic_Guild:SendAltData(name)
+function GBankClassic_Guild:SendAltData(name, force)
+    if not name then return end
+    if not self.Info or not self.Info.alts or not self.Info.alts[name] then return end
+
+    -- Bump the version so this transfer wins conflict resolution
+    if force then
+        self.Info.alts[name].version = GetServerTime()
+    end
+
     local data = GBankClassic_Core:Serialize({type = "alt", name = name, alt = self.Info.alts[name]})
-    ---START CHANGES
     GBankClassic_Core:SendCommMessage("gbank-d", data, "Guild", nil, "BULK", OnChunkSent)
-    ---END CHANGES
 end
 
 ---START CHANGES
@@ -210,9 +276,48 @@ end
 
 function GBankClassic_Guild:ReceiveAltData(name, alt)
     if not self.Info then return end
-    if self.Info.alts[name] and alt.version ~= nil and alt.version < self.Info.alts[name].version then return end
+
+    -- Sanitize incoming alt data
+    local function sanitizeAlt(a)
+        if not a or type(a) ~= "table" then return nil end
+        if a.bank and type(a.bank) == "table" and a.bank.items then
+            for k, v in pairs(a.bank.items) do
+                if not v or type(v) ~= "table" or not v.ID then a.bank.items[k] = nil end
+            end
+        end
+        if a.bags and type(a.bags) == "table" and a.bags.items then
+            for k, v in pairs(a.bags.items) do
+                if not v or type(v) ~= "table" or not v.ID then a.bags.items[k] = nil end
+            end
+        end
+        return a
+    end
+
+    alt = sanitizeAlt(alt)
+    if not alt then return end
+
+    local existing = self.Info.alts[name]
+    -- Accept incoming if newer version
+    -- If same version, accept the alt with more items
+    local function itemCount(a)
+        local c = 0
+        if a and a.bank and a.bank.items then for _, v in pairs(a.bank.items) do if v and v.ID then c = c + 1 end end end
+        if a and a.bags and a.bags.items then for _, v in pairs(a.bags.items) do if v and v.ID then c = c + 1 end end end
+        return c
+    end
+
+    if existing and existing.version and alt.version and alt.version < existing.version then
+        -- Incoming is older; ignore
+        return
+    elseif existing and existing.version and alt.version and alt.version == existing.version then
+        -- Tie-breaker: choose the one with more items
+        if itemCount(alt) <= itemCount(existing) then
+            return
+        end
+    end
+
     if self.hasRequested then
-      if self.requestCount == nil then self.requestCount = 0 else self.requestCount = self.requestCount - 1 end
+        if self.requestCount == nil then self.requestCount = 0 else self.requestCount = self.requestCount - 1 end
         if self.requestCount == 0 then
             self.hasRequested = false
             shutup = GBankClassic_Options:GetBankVerbosity()
@@ -294,7 +399,7 @@ function GBankClassic_Guild:Share(type)
     local player = GBankClassic_Guild:GetPlayer()
     local share = "I'm sharing my bank data. Share yours please."
     if not self.Info.alts[player] then if type ~= "reply" then share = "Share your bank data please." else share = "Nothing to share." end end
-    if self.Info.alts[player] and GBankClassic_Guild:IsBank(player) then GBankClassic_Guild:SendAltData(player) end
+    if self.Info.alts[player] and GBankClassic_Guild:IsBank(player) then GBankClassic_Guild:SendAltData(player, true) end
 
     local data = GBankClassic_Core:Serialize(share)
     if type ~= "reply" then
