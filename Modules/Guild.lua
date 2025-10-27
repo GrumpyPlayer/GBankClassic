@@ -488,4 +488,19 @@ function GBankClassic_Guild:AuthorRosterData()
       return
   end
 end
+
+function GBankClassic_Guild:SenderIsGM(player)
+    if not player then return false end
+    if not IsInGuild() then return false end
+    for i = 1, GetNumGuildMembers() do
+        local playerRealm, _, rankIndex, _, _, _, publicNote, officer_note = GetGuildRosterInfo(i)
+        if playerRealm then
+            local norm = GBankClassic_Guild.NormalizePlayerName(playerRealm)
+            if rankIndex == 0 and norm == player then
+                return true
+            end
+        end
+    end
+    return false
+end
 ---END CHANGES

@@ -104,8 +104,17 @@ function GBankClassic_Events:GUILD_RANKS_UPDATE(_)
     local guild = GBankClassic_Guild:GetGuild()
     if not guild then return end
 
+    -- Load guild data and perform a one-time cleanup of malformed alt entries
     if GBankClassic_Guild:Init(guild) then
         GBankClassic_Options:InitGuild()
+        if IsInRaid() then
+            if self.debug then GBankClassic_Core:Print('GUILD_RANKS_UPDATE: ignoring cleanup', prefix, 'from', sender, '(in raid)') end
+            return
+        end
+        local cleaned = GBankClassic_Guild:CleanupMalformedAlts()
+        if cleaned and cleaned > 0 then
+            GBankClassic_Core:Printf("Cleaned %d malformed alt entries from saved database", cleaned)
+        end
     end
 end
 

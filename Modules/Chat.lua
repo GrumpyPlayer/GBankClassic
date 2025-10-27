@@ -138,8 +138,8 @@ function GBankClassic_Chat:OnCommReceived(prefix, message, _, sender)
             if self.debug then GBankClassic_Core:Print('OnCommReceived: failed to deserialize gbank-d from', sender) end
         else
             if data.type == "roster" then
-                -- only accept roster updates from a sender that is marked as a bank in guild notes
-                local allowed = GBankClassic_Guild and GBankClassic_Guild.SenderHasGbankNote and GBankClassic_Guild:SenderHasGbankNote(sender)
+                -- only accept roster updates from a sender that is marked as a bank in guild notes, or from the guild master
+                local allowed = (GBankClassic_Guild and GBankClassic_Guild.SenderHasGbankNote and GBankClassic_Guild:SenderHasGbankNote(sender)) or GBankClassic_Guild:SenderIsGM(sender)
                 if self.debug then GBankClassic_Core:Print('OnCommReceived: gbank-d roster from', sender, 'allowed=', tostring(allowed)) end
                 if allowed then
                     GBankClassic_Guild:ReceiveRosterData(data.roster)
