@@ -84,6 +84,12 @@ function GBankClassic_Options:InitGuild()
     local player = GBankClassic_Guild:GetPlayer()
     if not GBankClassic_Guild:IsBank(player) then return end
 
+    -- If this character is recognized as a bank and the per-character option
+    -- hasn't been set yet, enable bank reporting by default to avoid manual steps.
+    if self.db and self.db.char and self.db.char.bank and self.db.char.bank['enabled'] == nil then
+        self.db.char.bank['enabled'] = true
+    end
+
     local bankOptions = {
         type = "group",
         name = "Bank",

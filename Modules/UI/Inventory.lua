@@ -144,7 +144,8 @@ function GBankClassic_UI_Inventory:DrawContent()
     local total_slots = 0
     local i = 1
     for _, player in pairs(players) do
-        local alt = info.alts[player]
+        local norm = (GBankClassic_Guild and GBankClassic_Guild.NormalizePlayerName) and GBankClassic_Guild.NormalizePlayerName(player) or player
+        local alt = info.alts[norm]
         ---START CHANGES
         --if alt then
         if alt and type(alt) == "table" then
@@ -175,7 +176,8 @@ function GBankClassic_UI_Inventory:DrawContent()
     self.Window:SetStatusText(defaultStatus)
     self.Window:SetCallback("OnEnterStatusBar", function(_)
         local tab = self.TabGroup.localstatus.selected
-        local alt = info.alts[tab]
+    local normTab = (GBankClassic_Guild and GBankClassic_Guild.NormalizePlayerName) and GBankClassic_Guild.NormalizePlayerName(tab) or tab
+    local alt = info.alts[normTab]
 
         local datetime = date("%Y-%m-%d %H:%M:%S", alt.version)
         local slot_count = 0

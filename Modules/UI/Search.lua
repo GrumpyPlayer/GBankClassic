@@ -136,11 +136,12 @@ function GBankClassic_UI_Search:BuildSearchData()
 
     local items = {}
     for _, player in pairs(info.roster.alts) do
-        local alt = info.alts[player]
+        local norm = (GBankClassic_Guild and GBankClassic_Guild.NormalizePlayerName) and GBankClassic_Guild.NormalizePlayerName(player) or player
+        local alt = info.alts[norm]
         ---START CHANGES
         --if alt then
         if alt and type(alt) == "table" then
-        ---END CHANGES
+            ---END CHANGES
             if alt.bank then
                 items = GBankClassic_Item:Aggregate(items, alt.bank.items)
             end
@@ -153,7 +154,8 @@ function GBankClassic_UI_Search:BuildSearchData()
     local itemNames = {}
     GBankClassic_Item:GetItems(items, function (list)
         for _, v in pairs(list) do
-            if not itemNames[v.ID] then
+            -- Skip malformed list entries
+            if v and v.ID and v.Info and v.Info.name and not itemNames[v.ID] then
                 table.insert(self.SearchData.Corpus, v.Info.name)
                 itemNames[v.ID] = v.Info.name
             end
@@ -161,11 +163,12 @@ function GBankClassic_UI_Search:BuildSearchData()
 
         for _, player in pairs(info.roster.alts) do
             local altItems = {}
-            local alt = info.alts[player]
+            local norm = (GBankClassic_Guild and GBankClassic_Guild.NormalizePlayerName) and GBankClassic_Guild.NormalizePlayerName(player) or player
+            local alt = info.alts[norm]
             ---START CHANGES
             --if alt then
             if alt and type(alt) == "table" then
-            ---END CHANGES
+                ---END CHANGES
                 if alt.bank then
                     altItems = GBankClassic_Item:Aggregate(altItems, alt.bank.items)
                 end
@@ -174,21 +177,23 @@ function GBankClassic_UI_Search:BuildSearchData()
                 end
             end
 
-            for _, v in pairs(altItems) do
-                local name = itemNames[v.ID]
-                if not self.SearchData.Lookup[name] then
-                    self.SearchData.Lookup[name] = {}
-                end
-                local found = false
-                for _, v in pairs(self.SearchData.Lookup[name]) do
-                    if v == player then
-                        found = true
-                        break
+            for _, itemEntry in pairs(altItems) do
+                local name = itemNames[itemEntry.ID]
+                if name then
+                    if not self.SearchData.Lookup[name] then
+                        self.SearchData.Lookup[name] = {}
                     end
-                end
-                if not found then
-                    local info = GBankClassic_Item:GetInfo(v.ID, v.Link)
-                    table.insert(self.SearchData.Lookup[name], {alt = player, item = {ID = v.ID, Count = v.Count, Link = v.Link, Info = info}})
+                    local found = false
+                    for _, existingEntry in pairs(self.SearchData.Lookup[name]) do
+                        if existingEntry.alt == player then
+                            found = true
+                            break
+                        end
+                    end
+                    if not found then
+                        local info = GBankClassic_Item:GetInfo(itemEntry.ID, itemEntry.Link)
+                        table.insert(self.SearchData.Lookup[name], {alt = player, item = {ID = itemEntry.ID, Count = itemEntry.Count, Link = itemEntry.Link, Info = info}})
+                    end
                 end
             end
         end
@@ -234,19 +239,28 @@ function GBankClassic_UI_Search:DrawContent()
 
     local count = 0
     for _, v in pairs(searchData.Corpus) do
-        local result = string.find(v:lower(), searchText)
-        if result ~= nil then
-            for _, vv in pairs(searchData.Lookup[v]) do
-                --draw item larger to add pading - icon and label smaller by the same to get dimensions
-                GBankClassic_UI:DrawItem(vv.item, self.Results, 30, 35, 30, 30, 0, 5)
+        if not v then
+            -- Skip malformed corpus entries
+        else
+            local result = string.find(v:lower(), searchText)
+            if result ~= nil then
+                local lookupList = searchData.Lookup[v]
+                if not lookupList then
+                    -- No lookup for this name; skip
+                else
+                    for _, vv in pairs(lookupList) do
+                        --draw item larger to add pading - icon and label smaller by the same to get dimensions
+                        GBankClassic_UI:DrawItem(vv.item, self.Results, 30, 35, 30, 30, 0, 5)
 
-                local label = GBankClassic_UI:Create("Label")
-                label:SetText(vv.alt)
-                label.label:SetSize(100, 30)
-                label.label:SetJustifyV("MIDDLE")
-                self.Results:AddChild(label)
+                        local label = GBankClassic_UI:Create("Label")
+                        label:SetText(vv.alt)
+                        label.label:SetSize(100, 30)
+                        label.label:SetJustifyV("MIDDLE")
+                        self.Results:AddChild(label)
 
-                count = count + 1
+                        count = count + 1
+                    end
+                end
             end
         end
     end
