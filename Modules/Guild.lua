@@ -250,6 +250,7 @@ function GBankClassic_Guild:RequestAltSync(player, name, version)
 end
 
 function GBankClassic_Guild:SendRosterData(author)
+    if not self.Info then return end
     local payload = {type = "roster", roster = self.Info.roster}
     if author then payload.author = author end
     local data = GBankClassic_Core:Serialize(payload)
