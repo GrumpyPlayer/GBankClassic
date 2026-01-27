@@ -2,7 +2,7 @@
 ## Title: GBankClassic - Revived
 ## Notes: A simple way to aggregate and view the inventories of multiple guild bank alts.
 ## Author: Dominion-Myzrael, GrumpyPlayers (also known as <SG>Soul), Lothsahn
-## Version: 2.4.3
+## Version: 2.4.4
 
 ## SavedVariables: GBankClassicDB, GBankClassicIconDB, GBankClassicOptionDB
 ## OptionalDeps: Ace3
