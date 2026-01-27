@@ -356,9 +356,11 @@ end
 function OnChunkSent(arg, sent, total)
     local shutup = GBankClassic_Options:GetBankVerbosity()
     if shutup == false then
-        if sent <= 255 then if GBankClassic_Chat.debug then GBankClassic_Core:DebugPrint("Sharing guild bank data...") end
+        if sent <= 255 then 
+            if GBankClassic_Chat.debug then GBankClassic_Core:DebugPrint("Sharing guild bank data...") end
+        end
         if sent == total then
-            if GBankClassic_Chat.debug then GBankClassic_Core:DebugPrint("Sharing guild bank data has completed.")
+            if GBankClassic_Chat.debug then GBankClassic_Core:DebugPrint("Sharing guild bank data has completed.") end
             -- If a peer discovery happened shortly before sending, report recipients
             if GBankClassic_Chat and GBankClassic_Chat.last_discovery then
                 local names = {}
