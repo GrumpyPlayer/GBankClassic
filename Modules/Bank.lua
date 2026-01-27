@@ -188,6 +188,7 @@ function GBankClassic_Bank:Scan()
         if GBankClassic_Chat.debug then GBankClassic_Core:DebugPrint("Local gbank data changed, updating version.") end
         if GBankClassic_UI_Inventory.isOpen then GBankClassic_UI_Inventory:DrawContent() end
         --TODO: Share with just the online peers privately instead of guild-wide (no peers may be online)
+        GBankClassic_Guild:AuthorRosterData()
         GBankClassic_Guild:Share("reply")
     else
         if GBankClassic_Chat.debug then GBankClassic_Core:DebugPrint("No changes detected after scan.") end

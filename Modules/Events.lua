@@ -109,9 +109,9 @@ function GBankClassic_Events:GUILD_ROSTER_UPDATE(...)
         end)
 
         --TODO: Share data with newly online peer only and nominate one player to do this instead of all peers doing this
-        GBankClassic_Guild:AuthorRosterData()
-        GBankClassic_Guild:Share("reply")
-        GBankClassic_Events:Sync()
+        -- GBankClassic_Guild:AuthorRosterData()
+        -- GBankClassic_Guild:Share("reply")
+        -- GBankClassic_Events:Sync()
     end)
 end
 
