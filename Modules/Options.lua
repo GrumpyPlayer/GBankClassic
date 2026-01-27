@@ -144,11 +144,6 @@ function GBankClassic_Options:InitGuild()
                 desc = "This panel is only available to bank alts.",
                 hidden = function()
                     local player = GBankClassic_Guild:GetPlayer()
-                    if not GBankClassic_Guild:IsBank(player) then
-                        local guild = GBankClassic_Guild:GetGuild()
-                        if not guild then return end
-                        GBankClassic_Database:ResetPlayer(guild, player)
-                    end
                     return GBankClassic_Guild:IsBank(player)
                 end,
             },
