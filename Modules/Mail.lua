@@ -14,6 +14,7 @@ function GBankClassic_Mail:Scan()
     if not info then return end
 
     local player = GBankClassic_Guild:GetPlayer()
+    if not player then return end
 
     local isBank = false
     local banks = GBankClassic_Guild:GetBanks()
@@ -75,8 +76,7 @@ function GBankClassic_Mail:Scan()
 end
 
 function GBankClassic_Mail:ResetScan()
-    -- have to wait for server to remove item from inbox before we can take another
-    -- so we wait a second before trying the next item
+    -- We wait a second for the server to remove the item from the inbox before we take another
     GBankClassic_Core:ScheduleTimer(function (...) GBankClassic_Mail:OnTimer() end, 1)
 end
 
@@ -93,24 +93,22 @@ function GBankClassic_Mail:Open(mailId)
     end
 
     local info = GBankClassic_Guild.Info
-    ---START CHANGES
     if not info then return end
-    ---END CHANGES
-    local player = GBankClassic_Guild:GetPlayer()
-    local norm = (GBankClassic_Guild and GBankClassic_Guild.NormalizePlayerName) and GBankClassic_Guild.NormalizePlayerName(player) or player
 
+    local player = GBankClassic_Guild:GetPlayer()
+    if not player then return end
+
+    local norm = (GBankClassic_Guild and GBankClassic_Guild.NormalizePlayerName) and GBankClassic_Guild.NormalizePlayerName(player) or player
     if not info.alts[norm] then
         info.alts[norm] = {}
     end
 
     local alt = info.alts[norm]
-
     if not alt.ledger then
         alt.ledger = {}
     end
 
     local ledger = alt.ledger
-
     local current_score = 0
     if ledger[sender] then
         current_score = ledger[sender]
@@ -118,7 +116,7 @@ function GBankClassic_Mail:Open(mailId)
 
     local score = 0
     if money > 0 then
-        -- convert from copper to gold
+        -- Convert from copper to gold
         score = money / 10000
 
         if GBankClassic_Options:GetBankReporting() then
@@ -177,8 +175,7 @@ function GBankClassic_Mail:Open(mailId)
 end
 
 function GBankClassic_Mail:RetryOpen(mailId)
-    -- have to wait for server to remove item from inbox before we can take another
-    -- so we wait a second before trying the next item
+    -- We wait a second for the server to remove the item from the inbox before we take another
     GBankClassic_Core:ScheduleTimer(function (...) GBankClassic_Mail:OnRetryTimer(mailId) end, 1)
 end
 

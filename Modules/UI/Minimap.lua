@@ -5,7 +5,7 @@ function GBankClassic_UI_Minimap:Init()
     local iconDB = LibStub("LibDataBroker-1.1"):NewDataObject("GBankClassicIcon", {
         type = "data source",
         text = "GBankClassic",
-        icon = "Interface/ICONS/INV_Box_04", --purplebox
+        icon = "Interface/ICONS/INV_Box_04",
         OnEnter = function ()
             self:ShowTooltip()
         end,

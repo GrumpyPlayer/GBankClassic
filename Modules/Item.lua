@@ -29,9 +29,6 @@ function GBankClassic_Item:GetItems(items, callback)
                     callback(list)
                 end
             end)
-        else
-            -- Skip malformed entry
-            -- GBankClassic_Core:Print("[GBankClassic_Item:GetItems] skipping malformed item:", tostring(item))
         end
     end
 end

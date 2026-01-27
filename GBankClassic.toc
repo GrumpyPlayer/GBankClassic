@@ -1,10 +1,10 @@
-## Interface: 11508
+## Interface: 11508, 20505
 ## Title: GBankClassic - Revived
 ## Notes: A simple way to aggregate and view the inventories of multiple guild bank alts.
 ## Author: Dominion-Myzrael, GrumpyPlayers (also known as <SG>Soul), Lothsahn
-## Version: 2.3.0
+## Version: 2.4.0
 
-## SavedVariables: GBankClassicDB, GBankClassicIcon, GBankClassicIconDB, GBankClassicOptionDB
+## SavedVariables: GBankClassicDB, GBankClassicIconDB, GBankClassicOptionDB
 ## OptionalDeps: Ace3
 ## X-Embeds: Ace3
 ## X-Curse-Project-ID: 807339

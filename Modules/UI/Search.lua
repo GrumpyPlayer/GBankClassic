@@ -138,10 +138,7 @@ function GBankClassic_UI_Search:BuildSearchData()
     for _, player in pairs(info.roster.alts) do
         local norm = (GBankClassic_Guild and GBankClassic_Guild.NormalizePlayerName) and GBankClassic_Guild.NormalizePlayerName(player) or player
         local alt = info.alts[norm]
-        ---START CHANGES
-        --if alt then
-        if alt and type(alt) == "table" then
-            ---END CHANGES
+        if alt and _G.type(alt) == "table" then
             if alt.bank then
                 items = GBankClassic_Item:Aggregate(items, alt.bank.items)
             end
@@ -165,10 +162,7 @@ function GBankClassic_UI_Search:BuildSearchData()
             local altItems = {}
             local norm = (GBankClassic_Guild and GBankClassic_Guild.NormalizePlayerName) and GBankClassic_Guild.NormalizePlayerName(player) or player
             local alt = info.alts[norm]
-            ---START CHANGES
-            --if alt then
-            if alt and type(alt) == "table" then
-                ---END CHANGES
+            if alt and _G.type(alt) == "table" then
                 if alt.bank then
                     altItems = GBankClassic_Item:Aggregate(altItems, alt.bank.items)
                 end
@@ -209,7 +203,6 @@ function GBankClassic_UI_Search:DrawContent()
 
     if not self.SearchText then return end
 
-    --retain search input after close
     if self.SearchText then
         self.searchField:SetText(self.SearchText)
         local searchLength = string.len(self.SearchText)
@@ -249,7 +242,6 @@ function GBankClassic_UI_Search:DrawContent()
                     -- No lookup for this name; skip
                 else
                     for _, vv in pairs(lookupList) do
-                        --draw item larger to add pading - icon and label smaller by the same to get dimensions
                         GBankClassic_UI:DrawItem(vv.item, self.Results, 30, 35, 30, 30, 0, 5)
 
                         local label = GBankClassic_UI:Create("Label")
@@ -271,6 +263,5 @@ function GBankClassic_UI_Search:DrawContent()
     end
     self.Window:SetStatusText(status)
 
-    --redo layout after all items are loaded to get scroll bar to load
     self.Results:DoLayout()
 end

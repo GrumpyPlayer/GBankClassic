@@ -2,33 +2,22 @@ GBankClassic_Options = {}
 
 function GBankClassic_Options:Init()
     self.db = LibStub("AceDB-3.0"):New("GBankClassicOptionDB")
-    if self.db.char.minimap == nil then
-        self.db.char.minimap = {enabled = true}
-    end
-    if self.db.char.combat == nil then
-        self.db.char.combat = {hide = true}
-    end
-    if self.db.char.bank == nil then
-        self.db.char.bank = {}
-    end
-    if self.db.char.bank['donations'] == nil then
-        self.db.char.bank['donations'] = true
-    end
-    if self.db.global.bank == nil then
-        self.db.global.bank = {report = true, shutup = false}
-    end
+    self.db.char = self.db.char or {}
+    self.db.char.minimap = self.db.char.minimap or { enabled = true }
+    self.db.char.combat = self.db.char.combat or { hide = true }
+    self.db.char.bank = self.db.char.bank or { donations = true }
+    self.db.char.bank['donations'] = (self.db.char.bank['donations'] == nil) and true or self.db.char.bank['donations']
+    self.db.global = self.db.global or {}
+    self.db.global.bank = self.db.global.bank or { report = true, shutup = false, prefer_direct_all = false }
 
     local options = {
         type = "group",
-        ---START CHANGES
-        --name = "GBankClassic",
         name = "GBankClassic - Revived",
-        ---END CHANGES
         args = {
             ["minimap"] = {
                 order = 0,
                 type = "toggle",
-                name = "Show Minimap Button",
+                name = "Show minimap button",
                 desc = "Toggles visibility of the minimap button",
                 set = function(_, v)
                     self.db.char.minimap["enabled"] = v
@@ -39,7 +28,7 @@ function GBankClassic_Options:Init()
             ["combat"] = {
                 order = 1,
                 type = "toggle",
-                name = "Hide During Combat",
+                name = "Hide during combat",
                 desc = "Toggles visibility of the window during combat",
                 set = function(_, v)
                     self.db.char.combat["hide"] = v
@@ -51,12 +40,24 @@ function GBankClassic_Options:Init()
                 type = "toggle",
                 name = "Mute addon messages",
                 desc = "Stops the addon from sending messages to the chat window",
-                set = function(_, v) self.db.global.bank['shutup'] = v end,
+                set = function(_, v)
+                    self.db.global.bank['shutup'] = v
+                end,
                 get = function() return self.db.global.bank['shutup'] end
+            },
+            ["prefer_direct"] = {
+                order = 3,
+                type = "toggle",
+                name = "Prefer direct-only",
+                desc = "When enabled, this account will refuse relayed alt/roster payloads and prefer direct updates from banks/GMs/officers",
+                set = function(_, v)
+                    self.db.global.bank['prefer_direct_all'] = v
+                end,
+                get = function() return self.db.global.bank['prefer_direct_all'] end
             },
             ["reset"] = {
                 order = -1,
-                name = "Reset Database",
+                name = "Reset database",
                 type = "execute",
                 func = function()
                     local guild = GBankClassic_Guild:GetGuild()
@@ -67,39 +68,46 @@ function GBankClassic_Options:Init()
         }
     }
 
-    ---START CHANGES
-    --LibStub("AceConfig-3.0"):RegisterOptionsTable("GBankClassic", options)
-    --LibStub("AceConfigDialog-3.0"):AddToBlizOptions("GBankClassic", "GBankClassic")
     LibStub("AceConfig-3.0"):RegisterOptionsTable("GBankClassic - Revived", options)
     LibStub("AceConfigDialog-3.0"):AddToBlizOptions("GBankClassic - Revived", "GBankClassic - Revived")
-    ---END CHANGES
 end
 
 function GBankClassic_Options:InitGuild()
-    ---START CHANGES
-    -- Guild banks shouldn't be required to read the officer note, perhaps we want to use public note
-    --if not CanViewOfficerNote() then return end
-    ---END CHANGES
-
     local player = GBankClassic_Guild:GetPlayer()
-    if not GBankClassic_Guild:IsBank(player) then return end
+    if not GBankClassic_Guild:IsBank(player) then 
+        return
+    end
 
-    -- If this character is recognized as a bank and the per-character option
-    -- hasn't been set yet, enable bank reporting by default to avoid manual steps.
     if self.db and self.db.char and self.db.char.bank and self.db.char.bank['enabled'] == nil then
         self.db.char.bank['enabled'] = true
+        GBankClassic_Guild:AuthorRosterData()
     end
 
     local bankOptions = {
         type = "group",
-        name = "Bank",
+        name = function()
+            local player = GBankClassic_Guild:GetPlayer()
+            if GBankClassic_Guild:IsBank(player) then
+                return "Bank"
+            end
+            return "Error"
+        end,
+        hidden = function()
+            local player = GBankClassic_Guild:GetPlayer()
+            return not GBankClassic_Guild:IsBank(player)
+        end,
         args = {
             ["enabled"] = {
                 order = 0,
                 type = "toggle",
                 name = "Enable for " .. player,
                 desc = "Enables reporting and scanning for this player",
-                set = function(_, v) self.db.char.bank['enabled'] = v end,
+                set = function(_, v) 
+                    self.db.char.bank['enabled'] = v 
+                    if v == true then
+                        GBankClassic_Guild:AuthorRosterData()
+                    end
+                end,
                 get = function() return self.db.char.bank['enabled'] end
             },
             ["report"] = {
@@ -120,55 +128,77 @@ function GBankClassic_Options:InitGuild()
             },
             ["reset"] = {
                 order = 2,
-                name = "Reset Player Database",
+                name = "Reset player database",
                 type = "execute",
                 func = function()
                     local guild = GBankClassic_Guild:GetGuild()
                     if not guild then return end
+                    local player = GBankClassic_Guild:GetPlayer()
                     GBankClassic_Database:ResetPlayer(guild, player)
                 end,
-            }
+            },
+            ["error"] = {
+                order = 3,
+                type = "description",
+                name = "This panel is only available to bank alts.",
+                desc = "This panel is only available to bank alts.",
+                hidden = function()
+                    local player = GBankClassic_Guild:GetPlayer()
+                    if not GBankClassic_Guild:IsBank(player) then
+                        local guild = GBankClassic_Guild:GetGuild()
+                        if not guild then return end
+                        GBankClassic_Database:ResetPlayer(guild, player)
+                    end
+                    return GBankClassic_Guild:IsBank(player)
+                end,
+            },
         },
     }
-
-    ---START CHANGES
-    --LibStub("AceConfig-3.0"):RegisterOptionsTable("GBankClassic/Bank", bankOptions)
-    --LibStub("AceConfigDialog-3.0"):AddToBlizOptions("GBankClassic/Bank", "Bank", "GBankClassic")
     LibStub("AceConfig-3.0"):RegisterOptionsTable("GBankClassic - Revived/Bank", bankOptions)
+    if self.optionsAdded then return end
     LibStub("AceConfigDialog-3.0"):AddToBlizOptions("GBankClassic - Revived/Bank", "Bank", "GBankClassic - Revived")
-    ---END CHANGES
+    self.optionsAdded = true
 end
 
 function GBankClassic_Options:GetBankEnabled()
+    if not self.db or not self.db.char or not self.db.char.bank then return false end
     return self.db.char.bank['enabled']
 end
 
 function GBankClassic_Options:GetDonationEnabled()
+    if not self.db or not self.db.char or not self.db.char.bank then return false end
     return self.db.char.bank['donations']
 end
 
 function GBankClassic_Options:GetBankReporting()
+    if not self.db or not self.db.global or not self.db.global.bank then return true end
     return self.db.global.bank['report']
 end
 
 function GBankClassic_Options:GetBankVerbosity()
+    if not self.db or not self.db.global or not self.db.global.bank then return false end
     if self.db.global.bank['shutup'] == nil then
         return false
     end
     return self.db.global.bank['shutup']
 end
 
+function GBankClassic_Options:GetPreferDirect()
+    if not self.db or not self.db.global or not self.db.global.bank then return false end
+    if self.db.global.bank['prefer_direct_all'] == nil then return false end
+    return self.db.global.bank['prefer_direct_all']
+end
+
 function GBankClassic_Options:GetMinimapEnabled()
+    if not self.db or not self.db.char or not self.db.char.minimap then return true end
     return self.db.char.minimap["enabled"]
 end
 
 function GBankClassic_Options:GetCombatHide()
+    if not self.db or not self.db.char or not self.db.char.combat then return true end
     return self.db.char.combat["hide"]
 end
 
 function GBankClassic_Options:Open()
-    -- NOTE: WoW API bug, requires call twice to open to specific category
-    ---START CHANGES    
     Settings.OpenToCategory("GBankClassic - Revived")
-    ---END CHANGES
 end

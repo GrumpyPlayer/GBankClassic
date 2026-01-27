@@ -20,7 +20,7 @@ function GBankClassic_UI_Mail:Open()
     self.Content:ReleaseChildren()
     self.Window:Show()
 
-    -- NOTE: Call the delayed version to give time for inbox data to be fetched
+    -- Call the delayed version to give time for inbox data to be fetched
     self:RedrawContent()
 end
 
@@ -164,9 +164,7 @@ function GBankClassic_UI_Mail:DrawContent()
                     table.insert(items, {ID = id, Link = link, Count = quantity})
                 end
             else
-                ---START CHANGES
                 self:RedrawContent()
-                ---END CHANGES
                 return
             end
         end

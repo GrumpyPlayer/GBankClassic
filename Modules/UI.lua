@@ -9,16 +9,13 @@ function GBankClassic_UI:Init()
 end
 
 function GBankClassic_UI:Controller()
-    --this is used to process escape to exit events
     local controller = CreateFrame("Frame","GBankClassic",UIParent)
     controller:SetScript("OnHide", function()
         GBankClassic_UI_Inventory:Close()
     end)
-    --insert to global escape table
     table.insert(UISpecialFrames, "GBankClassic")
 end
 
---handle all events
 function GBankClassic_UI:EventHandler(self, event, ...)
     if event == "OnClick" then
         if IsShiftKeyDown() then
@@ -67,12 +64,10 @@ function GBankClassic_UI:DrawItem(item, parent, size, height, imageSize, imageHe
     image:SetPoint("TOP",image:GetParent(),"TOP",0,0)
     if item.Count > 1 then
         slot:SetLabel(item.Count)
-        --format the label
         local fontName,fontHeight = label:GetFont()
         label:SetFont(fontName, fontHeight, "OUTLINE")
-        --clear the set points
         label:ClearAllPoints()
-        label:SetPoint("BOTTOMRIGHT",label:GetParent(),"BOTTOMRIGHT", labelXOffset, labelYOffset) --use this to position label
+        label:SetPoint("BOTTOMRIGHT",label:GetParent(),"BOTTOMRIGHT", labelXOffset, labelYOffset)
         label:SetHeight(14)
         label:SetShadowColor(0,0,0)
     else
@@ -86,8 +81,6 @@ function GBankClassic_UI:DrawItem(item, parent, size, height, imageSize, imageHe
     if item.Link then
         slot:SetCallback("OnEnter", function() GBankClassic_UI:ShowItemTooltip(item.Link) end)
         slot:SetCallback("OnLeave", function() GBankClassic_UI:HideTooltip() end)
-
-        --handle on click or drag
         slot:SetCallback("OnClick", function (self, event)
             GBankClassic_UI:EventHandler(self, event)
         end)
@@ -96,26 +89,22 @@ function GBankClassic_UI:DrawItem(item, parent, size, height, imageSize, imageHe
             GBankClassic_UI:EventHandler(slot, "OnDragStart")
         end)
     end
-
     slot.info = item.Info
     slot.link = item.Link
 
-    --border highlight
     local border = frame:CreateTexture(nil,"OVERLAY")
     border:SetAllPoints(image)
     border:SetTexCoord(0, 0, 0,1,1, 0,1,1)
     border:SetBlendMode("BLEND")
     border:SetTexture("Interface\\Common\\WhiteIconFrame")
-    --fix issue where rarity doesn't return immediately
     if item.Info.rarity then
         local r, g, b = GetItemQualityColor(item.Info.rarity)
         border:SetVertexColor(r,g,b)
     end
-
     slot.border = border
+
     parent:AddChild(slot)
 end
-
 
 function GBankClassic_UI:ShowItemTooltip(link)
     if not link then return end
