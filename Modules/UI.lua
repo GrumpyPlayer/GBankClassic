@@ -9,7 +9,7 @@ function GBankClassic_UI:Init()
 end
 
 function GBankClassic_UI:Controller()
-    local controller = CreateFrame("Frame","GBankClassic",UIParent)
+    local controller = CreateFrame("Frame", "GBankClassic", UIParent)
     controller:SetScript("OnHide", function()
         GBankClassic_UI_Inventory:Close()
     end)
@@ -67,15 +67,15 @@ function GBankClassic_UI:DrawItem(item, parent, size, height, imageSize, imageHe
     local image = slot.image
     local frame = slot.frame
 
-    image:SetPoint("TOP",image:GetParent(),"TOP",0,0)
+    image:SetPoint("TOP", image:GetParent(), "TOP", 0, 0)
     if item.Count > 1 then
         slot:SetLabel(item.Count)
-        local fontName,fontHeight = label:GetFont()
+        local fontName, fontHeight = label:GetFont()
         label:SetFont(fontName, fontHeight, "OUTLINE")
         label:ClearAllPoints()
-        label:SetPoint("BOTTOMRIGHT",label:GetParent(),"BOTTOMRIGHT", labelXOffset, labelYOffset)
+        label:SetPoint("BOTTOMRIGHT", label:GetParent(), "BOTTOMRIGHT", labelXOffset, labelYOffset)
         label:SetHeight(14)
-        label:SetShadowColor(0,0,0)
+        label:SetShadowColor(0, 0, 0)
     else
         slot:SetLabel(" ")
     end
@@ -91,25 +91,25 @@ function GBankClassic_UI:DrawItem(item, parent, size, height, imageSize, imageHe
         slot:SetCallback("OnLeave", function()
             GBankClassic_UI:HideTooltip()
         end)
-        slot:SetCallback("OnClick", function (self, event)
+        slot:SetCallback("OnClick", function(self, event)
             GBankClassic_UI:EventHandler(self, event)
         end)
-        frame:RegisterForDrag("LeftButton");
-        frame:SetScript("OnDragStart", function (_)
+        frame:RegisterForDrag("LeftButton")
+        frame:SetScript("OnDragStart", function(_)
             GBankClassic_UI:EventHandler(slot, "OnDragStart")
         end)
     end
     slot.info = item.Info
     slot.link = item.Link
 
-    local border = frame:CreateTexture(nil,"OVERLAY")
+    local border = frame:CreateTexture(nil, "OVERLAY")
     border:SetAllPoints(image)
-    border:SetTexCoord(0, 0, 0,1,1, 0,1,1)
+    border:SetTexCoord(0, 0, 0, 1, 1, 0, 1, 1)
     border:SetBlendMode("BLEND")
     border:SetTexture("Interface\\Common\\WhiteIconFrame")
     if item.Info.rarity then
         local r, g, b = GetItemQualityColor(item.Info.rarity)
-        border:SetVertexColor(r,g,b)
+        border:SetVertexColor(r, g, b)
     end
     slot.border = border
 

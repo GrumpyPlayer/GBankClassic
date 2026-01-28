@@ -73,8 +73,8 @@ function GBankClassic_UI_Mail:DrawWindow()
     content:SetFullWidth(true)
     content:SetFullHeight(true)
     content.content:ClearAllPoints()
-    content.content:SetPoint("TOPLEFT",  10, -10)
-    content.content:SetPoint("BOTTOMRIGHT",  -10, 10)
+    content.content:SetPoint("TOPLEFT", 10, -10)
+    content.content:SetPoint("BOTTOMRIGHT", -10, 10)
     window:AddChild(content)
 
     self.Content = content
@@ -170,7 +170,7 @@ function GBankClassic_UI_Mail:DrawContent()
                 if not GBankClassic_Item:IsUnique(link) then
                     local id = GetItemInfoInstant(link)
                     local _, _, _, quantity, _ = GetInboxItem(self.MailId, attachmentIndex)
-                    table.insert(items, {ID = id, Link = link, Count = quantity})
+                    table.insert(items, { ID = id, Link = link, Count = quantity })
                 end
             else
                 self:RedrawContent()
@@ -182,7 +182,7 @@ function GBankClassic_UI_Mail:DrawContent()
 
     if showItems then
         self.Content:AddChild(itemGroup)
-        GBankClassic_Item:GetItems(items, function (list)
+        GBankClassic_Item:GetItems(items, function(list)
             for _, item in pairs(list) do
                 GBankClassic_UI:DrawItem(item, itemGroup, 30, 35, 30, 30, 0, 5)
             end
@@ -194,7 +194,7 @@ function GBankClassic_UI_Mail:DrawContent()
     checkbox:SetValue(self.ScoreMail)
     checkbox:SetLabel("Add to score")
     checkbox:SetWidth(100)
-    checkbox:SetCallback("OnValueChanged", function (target)
+    checkbox:SetCallback("OnValueChanged", function(target)
         self.ScoreMail = target:GetValue()
     end)
     self.Content:AddChild(checkbox)
@@ -211,7 +211,7 @@ function GBankClassic_UI_Mail:DrawContent()
 end
 
 function GBankClassic_UI_Mail:RedrawContent()
-    GBankClassic_Core:ScheduleTimer(function (...)
+    GBankClassic_Core:ScheduleTimer(function(...)
         GBankClassic_UI_Mail:OnTimer()
     end, 0.25)
 end

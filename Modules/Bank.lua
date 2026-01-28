@@ -1,4 +1,4 @@
-GBankClassic_Bank = {...}
+GBankClassic_Bank = { ... }
 
 local function IsBankAvailable()
     local _, bagType = C_Container.GetContainerNumFreeSlots(BANK_CONTAINER)
@@ -24,9 +24,9 @@ local function ScanBag(bag, slots)
                 local key = itemID .. itemLink
                 if items[key] then
                     local item = items[key]
-                    items[key] = {ID = item.ID, Count = item.Count + itemCount, Link = item.Link}
+                    items[key] = { ID = item.ID, Count = item.Count + itemCount, Link = item.Link }
                 else
-                    items[key] = {ID = itemID, Count = itemCount, Link = itemLink}
+                    items[key] = { ID = itemID, Count = itemCount, Link = itemLink }
                 end
                 count = count + 1
             end
@@ -47,12 +47,12 @@ local function ScanBags(bag_info)
         if bagItems == nil then
             bagItems = items
         else
-        for k, v in pairs(items) do
-            if bagItems[k] then
-                local item = bagItems[k]
-                bagItems[k] = {ID = item.ID, Count = item.Count + v.Count, Link = item.Link}
-            else
-                bagItems[k] = v
+            for k, v in pairs(items) do
+                if bagItems[k] then
+                    local item = bagItems[k]
+                    bagItems[k] = { ID = item.ID, Count = item.Count + v.Count, Link = item.Link }
+                else
+                    bagItems[k] = v
                 end
             end
         end
@@ -77,7 +77,7 @@ local function ScanBank(bank_info)
         for k, v in pairs(items) do
             if bankItems[k] then
                 local item = bankItems[k]
-                bankItems[k] = {ID = item.ID, Count = item.Count + v.Count, Link = item.Link}
+                bankItems[k] = { ID = item.ID, Count = item.Count + v.Count, Link = item.Link }
             else
                 bankItems[k] = v
             end
@@ -185,7 +185,7 @@ function GBankClassic_Bank:Scan()
 	info.alts[player] = alt
 
     -- Share updated inventory with guild
-    GBankClassic_Guild:Share()
+    GBankClassic_Guild:Share() --TODO: decide to remove?
 end
 
 function GBankClassic_Bank:HasInventorySpace()

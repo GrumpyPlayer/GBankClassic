@@ -907,5 +907,3 @@ function Tests:RunTest(testName)
         end
     end
 end
-
--- Note: Test command is now /bank test (handled in Chat.lua)

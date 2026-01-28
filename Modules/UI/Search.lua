@@ -70,22 +70,27 @@ function GBankClassic_UI_Search:DrawWindow()
     searchWindow:SetWidth(250)
     searchWindow:EnableResize(false)
 
+	-- Persist window position/size across reloads
+	if GBankClassic_Options and GBankClassic_Options.db then
+		searchWindow:SetStatusTable(GBankClassic_Options.db.char.framePositions)
+	end
+
     self.Window = searchWindow
 
     local searchInput = GBankClassic_UI:Create("EditBox")
     searchInput:SetMaxLetters(50)
     searchInput:SetLabel("Item name")
-    searchInput:SetCallback("OnTextChanged", function (input)
+    searchInput:SetCallback("OnTextChanged", function(input)
         self.SearchText = input:GetText()
         self:DrawContent()
     end)
-    searchInput:SetCallback("OnEnterPressed", function (input)
+    searchInput:SetCallback("OnEnterPressed", function(input)
         self.SearchText = input:GetText()
         self:DrawContent()
         self.searchField:ClearFocus()
     end)
     searchInput:SetFullWidth(true)
-    searchInput.editbox:SetScript("OnReceiveDrag", function (input)
+    searchInput.editbox:SetScript("OnReceiveDrag", function(input)
         local type, _, info = GetCursorInfo()
         if type == "item" then
             self.SearchText = info
@@ -121,7 +126,7 @@ function GBankClassic_UI_Search:DrawWindow()
     })
 
     resultGroup.scrollframe:ClearAllPoints()
-    resultGroup.scrollframe:SetPoint("TOPLEFT",  10, -10)
+    resultGroup.scrollframe:SetPoint("TOPLEFT", 10, -10)
 
     resultGroup.scrollbar:ClearAllPoints()
     resultGroup.scrollbar:SetPoint("TOPLEFT", resultGroup.scrollframe, "TOPRIGHT", -6, -12)
@@ -158,7 +163,7 @@ function GBankClassic_UI_Search:BuildSearchData()
     end
 
     local itemNames = {}
-    GBankClassic_Item:GetItems(items, function (list)
+    GBankClassic_Item:GetItems(items, function(list)
         for _, v in pairs(list) do
             -- Skip malformed list entries
             if v and v.ID and v.Info and v.Info.name and not itemNames[v.ID] then
@@ -195,7 +200,7 @@ function GBankClassic_UI_Search:BuildSearchData()
                     end
                     if not found then
                         local info = GBankClassic_Item:GetInfo(itemEntry.ID, itemEntry.Link)
-                        table.insert(self.SearchData.Lookup[name], {alt = player, item = {ID = itemEntry.ID, Count = itemEntry.Count, Link = itemEntry.Link, Info = info}})
+                        table.insert(self.SearchData.Lookup[name], { alt = player, item = { ID = itemEntry.ID, Count = itemEntry.Count, Link = itemEntry.Link, Info = info } })
                     end
                 end
             end
@@ -223,7 +228,7 @@ function GBankClassic_UI_Search:DrawContent()
     end
 
     local search = self.SearchText
-    if string.sub(search, 0, 2) == "|c" then
+    if search and string.sub(search, 0, 2) == "|c" then
         self.searchField:SetText("")
         local item = Item:CreateFromItemLink(search)
 		if item then

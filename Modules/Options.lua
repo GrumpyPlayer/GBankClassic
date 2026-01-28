@@ -6,6 +6,7 @@ function GBankClassic_Options:Init()
     self.db.char.minimap = self.db.char.minimap or { enabled = true }
     self.db.char.combat = self.db.char.combat or { hide = true }
     self.db.char.bank = self.db.char.bank or { donations = true }
+    self.db.char.framePositions = self.db.char.framePositions or { }
     self.db.char.bank['donations'] = (self.db.char.bank['donations'] == nil) and true or self.db.char.bank['donations']
     self.db.global = self.db.global or {}
     self.db.global.bank = self.db.global.bank or { report = true, logLevel = LOG_LEVEL.INFO, commDebug = false, muteSyncProgress = false }
@@ -21,6 +22,7 @@ function GBankClassic_Options:Init()
     local options = {
         type = "group",
         name = "GBankClassic - Revived",
+		childGroups = "tab",
         args = {
 			general = {
 				order = 1,
@@ -30,6 +32,7 @@ function GBankClassic_Options:Init()
                     ["minimap"] = {
                         order = 0,
                         type = "toggle",
+						width = "full",
                         name = "Show minimap button",
                         desc = "Toggles visibility of the minimap button",
                         set = function(_, v)
@@ -43,6 +46,7 @@ function GBankClassic_Options:Init()
                     ["combat"] = {
                         order = 1,
                         type = "toggle",
+						width = "full",
                         name = "Hide during combat",
                         desc = "Toggles visibility of the window during combat",
                         set = function(_, v)
@@ -96,8 +100,7 @@ function GBankClassic_Options:Init()
                             local guild = GBankClassic_Guild:GetGuild()
                             if not guild then
                                 return
-
-                                end
+							end
                             GBankClassic_Guild:Reset(guild)
                         end,
                     },
@@ -284,63 +287,6 @@ function GBankClassic_Options:Init()
 						type = "description",
 						name = " ",
 					},
-					-- ["perfHeader"] = {
-					-- 	order = 41,
-					-- 	type = "header",
-					-- 	name = "Performance monitoring",
-					-- },
-					-- ["perfEnabled"] = {
-					-- 	order = 42,
-					-- 	type = "toggle",
-					-- 	width = "full",
-					-- 	name = "Enable performance monitoring",
-					-- 	desc = "Track event frequency, operation timing, and memory usage. Disable to reduce overhead if experiencing performance issues.",
-					-- 	get = function() return GBankClassic_PerfEnabled end,
-					-- 	set = function(info, value)
-					-- 		GBankClassic_PerfEnabled = value
-					-- 		if value then
-					-- 			GBankClassic_Output:Info("Performance monitoring enabled")
-					-- 		else
-					-- 			GBankClassic_Output:Info("Performance monitoring disabled")
-					-- 		end
-					-- 	end,
-					-- },
-					-- ["perfStatsButton"] = {
-					-- 	order = 43,
-					-- 	type = "execute",
-					-- 	width = "full",
-					-- 	name = "Show performance statistics",
-					-- 	desc = "Display event frequency, operation timing, and memory usage for current session",
-					-- 	func = function()
-					-- 		GBankClassic_Performance:PrintReport()
-					-- 	end,
-					-- },
-					-- ["spacer3"] = {
-					-- 	order = 44,
-					-- 	type = "description",
-					-- 	name = " ",
-					-- },
-					-- ["debugLogHeader"] = {
-					-- 	order = 45,
-					-- 	type = "header",
-					-- 	name = "Debug logging",
-					-- },
-					-- ["debugLogEnabled"] = {
-					-- 	order = 46,
-					-- 	type = "toggle",
-					-- 	width = "full",
-					-- 	name = "Enable debug logging to SavedVariables",
-					-- 	desc = "Save debug messages to your SavedVariables (GBankClassicDebugLog). Auto-cleans old entries (max 50,000 entries or 7 days). Disable to reduce SavedVariables file size.",
-					-- 	get = function() return GBankClassic_DebugLogEnabled end,
-					-- 	set = function(info, value)
-					-- 		GBankClassic_DebugLogEnabled = value
-					-- 		if value then
-					-- 			GBankClassic_Output:Info("Debug logging to SavedVariables enabled")
-					-- 		else
-					-- 			GBankClassic_Output:Info("Debug logging to SavedVariables disabled")
-					-- 		end
-					-- 	end,
-					-- },
 				},
 			},
         },
@@ -356,20 +302,14 @@ function GBankClassic_Options:InitGuild()
         return
     end
 
-    if self.db and self.db.char and self.db.char.bank and self.db.char.bank['enabled'] == nil then
-        self.db.char.bank['enabled'] = true
+    if self.db and self.db.char and self.db.char.bank and self.db.char.bank["enabled"] == nil then
+        self.db.char.bank["enabled"] = true
         GBankClassic_Guild:AuthorRosterData()
     end
 
     local bankOptions = {
         type = "group",
-        name = function()
-            local player = GBankClassic_Guild:GetPlayer()
-            if GBankClassic_Guild:IsBank(player) then
-                return "Bank"
-            end
-            return "Error"
-        end,
+		name = "Bank",
         hidden = function()
             local player = GBankClassic_Guild:GetPlayer()
             return not GBankClassic_Guild:IsBank(player)
@@ -382,14 +322,14 @@ function GBankClassic_Options:InitGuild()
                 name = "Enable for " .. player,
                 desc = "Enables reporting and scanning for this player",
                 set = function(_, v) 
-                    self.db.char.bank['enabled'] = v 
+                    self.db.char.bank["enabled"] = v 
                     if v == true then
                         GBankClassic_Guild:AuthorRosterData()
                     end
                 end,
                 get = function()
-                    return self.db.char.bank['enabled']
-                end
+                    return self.db.char.bank["enabled"]
+                end,
             },
             ["report"] = {
                 order = 1,
@@ -398,12 +338,11 @@ function GBankClassic_Options:InitGuild()
                 name = "Report contributions",
                 desc = "Enables contribution reports",
                 set = function(_, v)
-                    self.db.global.bank['report'] = v
-
-                    end,
+                    self.db.global.bank["report"] = v
+				end,
                 get = function()
-                    return self.db.global.bank['report']
-                end
+                    return self.db.global.bank["report"]
+                end,
             },
             ["donations"] = {
                 order = 2,
@@ -412,11 +351,11 @@ function GBankClassic_Options:InitGuild()
                 name = "Enable donations",
                 desc = "Displays donation window at mailbox",
                 set = function(_, v)
-                    self.db.char.bank['donations'] = v
+                    self.db.char.bank["donations"] = v
                 end,
                 get = function()
-                    return self.db.char.bank['donations']
-                end
+                    return self.db.char.bank["donations"]
+                end,
             },
             ["reset"] = {
                 order = 3,
@@ -448,15 +387,15 @@ function GBankClassic_Options:InitGuild()
 end
 
 function GBankClassic_Options:GetBankEnabled()
-    return self.db.char.bank['enabled']
+    return self.db.char.bank["enabled"]
 end
 
 function GBankClassic_Options:GetDonationEnabled()
-    return self.db.char.bank['donations']
+    return self.db.char.bank["donations"]
 end
 
 function GBankClassic_Options:GetBankReporting()
-    return self.db.global.bank['report']
+    return self.db.global.bank["report"]
 end
 
 function GBankClassic_Options:GetLogLevel()

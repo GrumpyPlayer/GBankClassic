@@ -104,7 +104,7 @@ end
 
 function GBankClassic_Mail:ResetScan()
     -- We wait a second for the server to remove the item from the inbox before we take another
-    GBankClassic_Core:ScheduleTimer(function (...)
+    GBankClassic_Core:ScheduleTimer(function(...)
         GBankClassic_Mail:OnTimer()
     end, 1)
 end
@@ -179,7 +179,7 @@ function GBankClassic_Mail:Open(mailId)
             if link then
                 local _, _, _, quantity, _ = GetInboxItem(mailId, attachmentIndex)
                 local name, _, quality, level, _, _, _, _, _, _, price = GetItemInfo(link)
-                if level == nil then
+                if not name or level == nil then
                     GBankClassic_Mail:RetryOpen(mailId)
 
                     return
@@ -213,7 +213,7 @@ end
 
 function GBankClassic_Mail:RetryOpen(mailId)
     -- We wait a second for the server to remove the item from the inbox before we take another
-    GBankClassic_Core:ScheduleTimer(function (...)
+    GBankClassic_Core:ScheduleTimer(function(...)
         GBankClassic_Mail:OnRetryTimer(mailId)
     end, 1)
 end

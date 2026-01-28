@@ -69,7 +69,7 @@ function GBankClassic_UI_Donations:DrawWindow()
     donations:EnableResize(false)
     donations.frame:EnableKeyboard(true)
     donations.frame:SetPropagateKeyboardInput(true)
-    donations.frame:SetScript("OnKeyDown", function (self, event)
+    donations.frame:SetScript("OnKeyDown", function(self, event)
         GBankClassic_UI:EventHandler(self, event)
     end)
 
@@ -86,12 +86,12 @@ function GBankClassic_UI_Donations:DrawWindow()
             {
                 width = 0.6,
                 alignH = "start",
-                alignV = "middle"
+                alignV = "middle",
             },
             {
                 width = 0.2,
                 alignH = "end",
-                alignV = "middle"
+                alignV = "middle",
             },
         },
         spaceH = 5,
@@ -134,10 +134,10 @@ function GBankClassic_UI_Donations:DrawContent()
 
     local scoreboard = {}
     for k, v in pairs(players) do
-        table.insert(scoreboard, {player = k, score = v})
+        table.insert(scoreboard, { player = k, score = v })
     end
 
-    table.sort(scoreboard, function (a, b)
+    table.sort(scoreboard, function(a, b)
         return a.score > b.score
     end)
 

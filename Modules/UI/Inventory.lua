@@ -71,10 +71,16 @@ function GBankClassic_UI_Inventory:DrawWindow()
     window:SetTitle("GBankClassic")
     window:SetLayout("Flow")
     window:SetWidth(550)
+
+	-- Persist window position/size across reloads
+	if GBankClassic_Options and GBankClassic_Options.db then
+		window:SetStatusTable(GBankClassic_Options.db.char.framePositions)
+	end
+
     window.frame:SetResizeBounds(500, 500)
     window.frame:EnableKeyboard(true)
     window.frame:SetPropagateKeyboardInput(true)
-    window.frame:SetScript("OnKeyDown", function (self, event)
+    window.frame:SetScript("OnKeyDown", function(self, event)
         GBankClassic_UI:EventHandler(self, event)
     end)
     self.Window = window
@@ -158,7 +164,7 @@ function GBankClassic_UI_Inventory:DrawContent()
         if not first_tab then
             first_tab = player
         end
-        tabs[i] = {value = player, text = player}
+        tabs[i] = { value = player, text = player }
         if alt and _G.type(alt) == "table" then
             if alt.money then
                 total_gold = total_gold + alt.money
@@ -194,7 +200,9 @@ function GBankClassic_UI_Inventory:DrawContent()
         local tab = self.TabGroup.localstatus.selected
 		local normTab = GBankClassic_Guild:NormalizeName(tab)
 		local alt = info.alts[normTab] or nil
-        if not alt or not alt.version then return end
+        if not alt or not alt.version then
+            return
+        end
 
         local datetime = date("%Y-%m-%d %H:%M:%S", alt.version)
         local slot_count = 0
@@ -222,7 +230,7 @@ function GBankClassic_UI_Inventory:DrawContent()
         self.Window:SetStatusText(defaultStatus)
     end)
 
-    self.TabGroup:SetCallback("OnGroupSelected", function (group)
+    self.TabGroup:SetCallback("OnGroupSelected", function(group)
         local tab = group.localstatus.selected
 
         self.TabGroup:ReleaseChildren()
@@ -259,7 +267,7 @@ function GBankClassic_UI_Inventory:DrawContent()
             end
             if alt.bags then
                 local items = GBankClassic_Item:Aggregate(bank, alt.bags.items)
-                GBankClassic_Item:GetItems(items, function (list)
+                GBankClassic_Item:GetItems(items, function(list)
                     GBankClassic_Item:Sort(list)
                     for _, item in pairs(list) do
                         GBankClassic_UI:DrawItem(item, scroll)

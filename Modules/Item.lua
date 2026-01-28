@@ -74,7 +74,7 @@ end
 
 -- NOTE: Sort was adapted from ElvUI
 function GBankClassic_Item:Sort(items)
-    table.sort(items, function (a, b)
+    table.sort(items, function(a, b)
         if a.Info.rarity ~= b.Info.rarity and a.Info.rarity and b.Info.rarity then
             return a.Info.rarity < b.Info.rarity
         end
@@ -102,7 +102,7 @@ function GBankClassic_Item:Aggregate(a, b)
     if a then
         for _, v in pairs(a) do
 			if not v or not v.ID or not v.Link then
-                -- Skip malformed entries
+				-- Skip malformed entries (missing required fields)
             else
                 local key = v.ID .. v.Link
                 if items[key] then
@@ -120,7 +120,7 @@ function GBankClassic_Item:Aggregate(a, b)
     if b then
         for _, v in pairs(b) do
 			if not v or not v.ID or not v.Link then
-                -- Skip malformed entries
+				-- Skip malformed entries (missing required fields)
             else
                 local key = v.ID .. v.Link
                 if items[key] then
@@ -147,8 +147,8 @@ function GBankClassic_Item:IsUnique(link)
     tip:ClearLines()
     tip:SetOwner(UIParent, "ANCHOR_NONE")
     tip:SetHyperlink(link)
-    for i=1, tip:NumLines() do
-        local line = _G["scanTipTextLeft"..i]
+	for i = 1, tip:NumLines() do
+		local line = _G["scanTipTextLeft" .. i]
         if line and line:IsVisible() then
             local l = line:GetText()
             if l and l:find(ITEM_UNIQUE) then

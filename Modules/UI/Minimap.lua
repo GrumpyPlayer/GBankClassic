@@ -6,7 +6,7 @@ function GBankClassic_UI_Minimap:Init()
         type = "data source",
         text = "GBankClassic",
         icon = "Interface/ICONS/INV_Box_04",
-        OnEnter = function ()
+        OnEnter = function()
             self:ShowTooltip()
         end,
         OnLeave = function()
