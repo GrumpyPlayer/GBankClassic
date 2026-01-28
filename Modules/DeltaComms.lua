@@ -111,9 +111,6 @@ function GBankClassic_DeltaComms:ValidateItemDelta(itemDelta)
 			if not item.ID or type(item.ID) ~= "number" then
 				return false, "removed item missing or invalid ID"
 			end
-			if not item.Link or type(item.Link) ~= "string" then
-				return false, "removed item missing or invalid link"
-			end
 		end
 	end
 
@@ -771,8 +768,6 @@ function GBankClassic_DeltaComms:ApplyDeltaChain(guildInfo, altName, deltaChain)
 
 			return status
 		end
-
-		currentVersion = deltaEntry.version
 	end
 
 	local chainTime = debugprofilestop() - chainStart
@@ -870,6 +865,10 @@ end
 
 -- Reset failure count for an alt (called on successful sync)
 function GBankClassic_DeltaComms:ResetDeltaErrorCount(guildName, altName)
+	if not altName then
+		return
+	end
+
 	-- Reset in database if available
 	if guildName then
 		local db = GBankClassic_Database.db.factionrealm[guildName]
@@ -928,28 +927,6 @@ function GBankClassic_DeltaComms:GetDeltaFailureCount(guildName, altName)
 	end
 
 	return 0
-end
-
--- Reset error counters for an alt after successful full sync
-function GBankClassic_DeltaComms:ResetDeltaErrorCount(guildName, altName)
-	if not altName then
-		return
-	end
-
-	-- Clear from database if available
-	if guildName then
-		local db = GBankClassic_Database.db.factionrealm[guildName]
-		if db and db.deltaErrors then
-			db.deltaErrors.failureCounts[altName] = nil
-			db.deltaErrors.notifiedAlts[altName] = nil
-		end
-	end
-
-	-- Clear from temporary storage
-	if GBankClassic_Guild.tempDeltaErrors then
-		GBankClassic_Guild.tempDeltaErrors.failureCounts[altName] = nil
-		GBankClassic_Guild.tempDeltaErrors.notifiedAlts[altName] = nil
-	end
 end
 
 -- Clear error counters for all offline players (called on roster update)
@@ -1047,6 +1024,7 @@ function GBankClassic_DeltaComms:FastFillMissingAlts(guildInfo)
 
 	if #missing == 0 then
 		GBankClassic_Output:Debug("DELTA", "All %d roster alts present locally", #rosterAlts)
+		
 		return
 	end
 

@@ -121,24 +121,6 @@ function GBankClassic_Options:Init()
 						type = "description",
 						name = "Enable specific debug categories to filter output. Categories are only active when log level is set to 'Debug'.",
 					},
-					["showUncategorized"] = {
-						order = 2,
-						type = "toggle",
-						width = "full",
-						name = "Show uncategorized debug messages",
-						desc = "Show debug messages that don't have a category assigned. Disable this to only see categorized messages.",
-						set = function(_, v)
-							GBankClassic_Database.db.global.showUncategorizedDebug = v
-						end,
-						get = function()
-							return GBankClassic_Database.db.global.showUncategorizedDebug
-						end,
-					},
-					["spacer1"] = {
-						order = 9,
-						type = "description",
-						name = " ",
-					},
 					["roster"] = {
 						order = 10,
 						type = "toggle",
@@ -187,8 +169,20 @@ function GBankClassic_Options:Init()
 							return GBankClassic_Output:IsCategoryEnabled("SYNC")
 						end,
 					},
-					["cache"] = {
+					["chunk"] = {
 						order = 14,
+						type = "toggle",
+						width = "full",
+						name = "CHUNK - Data synchronization operations specific to chunk sending",
+						set = function(_, v)
+							GBankClassic_Output:SetCategoryEnabled("CHUNK", v)
+						end,
+						get = function()
+							return GBankClassic_Output:IsCategoryEnabled("CHUNK")
+						end,
+					},
+					["cache"] = {
+						order = 15,
 						type = "toggle",
 						width = "full",
 						name = "CACHE - Cache operations (guild roster cache, etc.)",
@@ -200,7 +194,7 @@ function GBankClassic_Options:Init()
 						end,
 					},
 					["whisper"] = {
-						order = 15,
+						order = 16,
 						type = "toggle",
 						width = "full",
 						name = "WHISPER - Whisper sends, skips, and online checks",

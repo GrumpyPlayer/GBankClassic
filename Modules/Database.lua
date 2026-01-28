@@ -8,6 +8,7 @@ function GBankClassic_Database:Init()
 				COMMS = false,
 				DELTA = false,
 				SYNC = false,
+				CHUNK = false,
 				CACHE = false,
 				WHISPER = false,
 				UI = false,
@@ -15,7 +16,6 @@ function GBankClassic_Database:Init()
 				DATABASE = false,
 				EVENTS = false,
 			},
-			showUncategorizedDebug = true, -- Show uncategorized debug messages by default
 		},
 	})
 end

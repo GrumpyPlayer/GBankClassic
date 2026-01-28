@@ -38,7 +38,6 @@ function GBankClassic_Events:RegisterEvents()
 	self:RegisterEvent("PLAYER_ENTERING_WORLD")
 	self:RegisterEvent("GUILD_RANKS_UPDATE")
     self:RegisterEvent("GUILD_ROSTER_UPDATE")
-    self:RegisterEvent("PLAYER_GUILD_UPDATE")
     self:RegisterEvent("BANKFRAME_OPENED")
     self:RegisterEvent("BANKFRAME_CLOSED")
     self:RegisterEvent("MAIL_SHOW")
@@ -75,7 +74,6 @@ function GBankClassic_Events:UnregisterEvents()
 	self:UnregisterEvent("PLAYER_ENTERING_WORLD")
 	self:UnregisterEvent("GUILD_RANKS_UPDATE")
     self:UnregisterEvent("GUILD_ROSTER_UPDATE")
-    self:UnregisterEvent("PLAYER_GUILD_UPDATE")
     self:UnregisterEvent("BANKFRAME_OPENED")
     self:UnregisterEvent("BANKFRAME_CLOSED")
     self:UnregisterEvent("MAIL_SHOW")
@@ -215,11 +213,13 @@ function GBankClassic_Events:GUILD_ROSTER_UPDATE(_)
 	GBankClassic_Guild:RefreshOnlineCache()
 	-- Invalidate banks cache when roster updates
 	GBankClassic_Guild:InvalidateBanksCache()
+	-- Rebuild guild bank alts roster from guild notes (local only, no network communication)
+	GBankClassic_Guild:RebuildGuildBankAltsRoster()
 	-- Clear delta error counters for offline players
 	GBankClassic_DeltaComms:ClearOfflineErrorCounters(GBankClassic_Guild.Info and GBankClassic_Guild.Info.name)
 end
 
-function GBankClassic_Events:PLAYER_GUILD_UPDATE(_)
+function GBankClassic_Events:GUILD_RANKS_UPDATE(_)
 	local guild = GBankClassic_Guild:GetGuild()
 	if not guild then
 		return
@@ -256,7 +256,6 @@ end
 function GBankClassic_Events:MAIL_SHOW(_)
     GBankClassic_Bank:OnUpdateStart()
     GBankClassic_Mail.isOpen = true
-	GBankClassic_Mail:InitSendHook()
     GBankClassic_Mail:Check()
 end
 

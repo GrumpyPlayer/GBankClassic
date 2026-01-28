@@ -72,11 +72,6 @@ function GBankClassic_UI_Inventory:DrawWindow()
     window:SetLayout("Flow")
     window:SetWidth(550)
 
-	-- Persist window position/size across reloads
-	if GBankClassic_Options and GBankClassic_Options.db then
-		window:SetStatusTable(GBankClassic_Options.db.char.framePositions)
-	end
-
     window.frame:SetResizeBounds(500, 500)
     window.frame:EnableKeyboard(true)
     window.frame:SetPropagateKeyboardInput(true)

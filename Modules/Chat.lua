@@ -1,5 +1,8 @@
 GBankClassic_Chat = {}
 
+-- Store pre-debug log level for restoration
+local preDebugLogLevel = nil
+
 function GBankClassic_Chat:Init()
 	GBankClassic_Output:Debug("PROTOCOL", "[INIT] GBankClassic_Chat:Init() starting")
     GBankClassic_Core:RegisterChatCommand("bank", function(input)
@@ -17,7 +20,7 @@ function GBankClassic_Chat:Init()
 	self.last_share_sync = nil
 
     -- Version
-    GBankClassic_Core:RegisterComm("gbank-v", function (prefix, message, distribution, sender)
+    GBankClassic_Core:RegisterComm("gbank-v", function(prefix, message, distribution, sender)
         GBankClassic_Chat:OnCommReceived(prefix, message, distribution, sender)
     end)
     -- Delta version
@@ -46,7 +49,7 @@ function GBankClassic_Chat:Init()
 	end)
 
     -- Query
-    GBankClassic_Core:RegisterComm("gbank-r", function (prefix, message, distribution, sender)
+    GBankClassic_Core:RegisterComm("gbank-r", function(prefix, message, distribution, sender)
         GBankClassic_Chat:OnCommReceived(prefix, message, distribution, sender)
     end)
     -- Query reply
@@ -64,29 +67,29 @@ function GBankClassic_Chat:Init()
 	end)
 
     -- Hello
-    GBankClassic_Core:RegisterComm("gbank-h", function (prefix, message, distribution, sender)
+    GBankClassic_Core:RegisterComm("gbank-h", function(prefix, message, distribution, sender)
         GBankClassic_Chat:OnCommReceived(prefix, message, distribution, sender)
     end)
     -- Hello reply
-    GBankClassic_Core:RegisterComm("gbank-hr", function (prefix, message, distribution, sender)
+    GBankClassic_Core:RegisterComm("gbank-hr", function(prefix, message, distribution, sender)
         GBankClassic_Chat:OnCommReceived(prefix, message, distribution, sender)
     end)
 
     -- Share
-    GBankClassic_Core:RegisterComm("gbank-s", function (prefix, message, distribution, sender)
+    GBankClassic_Core:RegisterComm("gbank-s", function(prefix, message, distribution, sender)
         GBankClassic_Chat:OnCommReceived(prefix, message, distribution, sender)
     end)
     -- Share reply
-    GBankClassic_Core:RegisterComm("gbank-sr", function (prefix, message, distribution, sender)
+    GBankClassic_Core:RegisterComm("gbank-sr", function(prefix, message, distribution, sender)
         GBankClassic_Chat:OnCommReceived(prefix, message, distribution, sender)
     end)
 
     -- Wipe
-    GBankClassic_Core:RegisterComm("gbank-w", function (prefix, message, distribution, sender)
+    GBankClassic_Core:RegisterComm("gbank-w", function(prefix, message, distribution, sender)
         GBankClassic_Chat:OnCommReceived(prefix, message, distribution, sender)
     end)
     -- Wipe reply
-    GBankClassic_Core:RegisterComm("gbank-o", function (prefix, message, distribution, sender)
+    GBankClassic_Core:RegisterComm("gbank-o", function(prefix, message, distribution, sender)
         GBankClassic_Chat:OnOfferReceived(prefix, message, distribution, sender)
     end)
 end
@@ -348,9 +351,7 @@ function GBankClassic_Chat:OnCommReceived(prefix, message, distribution, sender)
 					if not self.addon_outdated then
 						-- only make the callout once
 						self.addon_outdated = true
-						GBankClassic_Output:Info(
-							"A newer version is available! Download it from https://www.curseforge.com/wow/addons/gbankclassic/"
-						)
+						GBankClassic_Output:Info("A newer version is available! Download it from https://www.curseforge.com/wow/addons/gbankclassic/")
 					end
 				end
 			end
@@ -468,7 +469,6 @@ function GBankClassic_Chat:OnCommReceived(prefix, message, distribution, sender)
 			local altName = data.name
 
 			GBankClassic_Output:DebugComm("RECEIVED PULL-BASED REQUEST from %s for alt %s", sender, altName)
-
 			self:Debug(
 				"SYNC",
 				">",
@@ -497,7 +497,6 @@ function GBankClassic_Chat:OnCommReceived(prefix, message, distribution, sender)
 				if not GBankClassic_Core:SendWhisper("gbank-rr", ackData, sender, "NORMAL") then
 					return
 				end
-
 				self:Debug(
 					"SYNC",
 					"<",
@@ -568,7 +567,6 @@ function GBankClassic_Chat:OnCommReceived(prefix, message, distribution, sender)
 			local hasData = data.hasData or false
 
 			GBankClassic_Output:DebugComm("RECEIVED ACK: gbank-rr from %s for alt %s (isGuildBankAlt=%s, hasData=%s)", sender, altName, tostring(isGuildBankAlt), tostring(hasData))
-
 			self:Debug(
 				"SYNC",
 				">",
@@ -597,7 +595,6 @@ function GBankClassic_Chat:OnCommReceived(prefix, message, distribution, sender)
 			local summary = data.summary
 
 			GBankClassic_Output:DebugComm("RECEIVED STATE SUMMARY from %s for alt %s (hash=%s, version=%s)", sender, altName, tostring(summary and summary.hash), tostring(summary and summary.version))
-
 			self:Debug(
 				"SYNC",
 				">",
@@ -619,7 +616,6 @@ function GBankClassic_Chat:OnCommReceived(prefix, message, distribution, sender)
 			local version = data.version or 0
 
 			GBankClassic_Output:DebugComm("RECEIVED NO-CHANGE from %s for alt %s (version=%d)", sender, altName, version)
-
 			self:Debug(
 				"SYNC",
 				">",
@@ -646,6 +642,35 @@ function GBankClassic_Chat:OnCommReceived(prefix, message, distribution, sender)
 
 	-- gbank-d: link-less full sync
 	if prefix == "gbank-d" then
+		GBankClassic_Output:DebugComm("gbank-d received from %s: type=%s", sender, tostring(data.type))
+		self:Debug(
+			"SYNC",
+			">",
+			ColorPlayerName(sender),
+			QUERIES_COLOR,
+			string.format("gbank-d received from %s: type=%s", ColorPlayerName(sender), tostring(data.type))
+		)
+
+		if data.type == "roster" then
+			-- Only accept roster updates from a sender that is marked as a bank in guild notes, or from the guild master
+			-- TODO: also accept from players that can view guild notes
+			local allowed = (
+				GBankClassic_Guild
+				and GBankClassic_Guild.SenderHasGbankNote
+				and GBankClassic_Guild:SenderHasGbankNote(sender)
+			) or GBankClassic_Guild:SenderIsGM(sender)
+			if GBankClassic_Guild:ConsumePendingSync("roster", sender) then
+				allowed = true
+			end
+			self:Debug(
+				"SYNC",
+				">",
+				ColorPlayerName(sender),
+				SHARES_COLOR,
+				"roster data. We",
+				allowed and "accept it." or "do not accept it."
+			)
+		end
 		if data.type == "alt" then
 			-- only accept alt data if the sender matches the claimed alt name
 			local claimed = data.name
@@ -791,7 +816,6 @@ function GBankClassic_Chat:OnCommReceived(prefix, message, distribution, sender)
 					if not GBankClassic_Core:SendWhisper("gbank-dc", serialized, sender, "ALERT") then
 						return
 					end
-
 					self:Debug(
 						"<",
 						"gbank-dc (delta chain) to",
@@ -1125,10 +1149,25 @@ local COMMAND_REGISTRY = {
 		handler = function()
 			local currentLevel = GBankClassic_Output:GetLevel()
 			if currentLevel == LOG_LEVEL.DEBUG then
-				GBankClassic_Output:SetLevel(LOG_LEVEL.INFO)
-				GBankClassic_Options.db.global.bank["logLevel"] = LOG_LEVEL.INFO
-				GBankClassic_Output:Response("Debug: off (log level: Info)")
+				-- Restore to pre-debug level
+				local restoreLevel = preDebugLogLevel or LOG_LEVEL.INFO
+				preDebugLogLevel = nil
+				GBankClassic_Output:SetLevel(restoreLevel)
+				GBankClassic_Options.db.global.bank["logLevel"] = restoreLevel
+
+				-- Get level name for response message
+				local levelName = "Info"
+				if restoreLevel == LOG_LEVEL.RESPONSE then
+					levelName = "Quiet"
+				elseif restoreLevel == LOG_LEVEL.ERROR then
+					levelName = "Error"
+				elseif restoreLevel == LOG_LEVEL.WARN then
+					levelName = "Warn"
+				end
+				GBankClassic_Output:Response("Debug: off (log level: " .. levelName .. ")")
 			else
+				-- Save current level before entering debug mode
+				preDebugLogLevel = GBankClassic_Options.db.global.bank["logLevel"]
 				GBankClassic_Output:SetLevel(LOG_LEVEL.DEBUG)
 				GBankClassic_Options.db.global.bank["logLevel"] = LOG_LEVEL.DEBUG
 				GBankClassic_Output:Response("Debug: on (log level: Debug)")
@@ -1386,7 +1425,7 @@ function GBankClassic_Chat:ProcessQueue()
 end
 
 function GBankClassic_Chat:ReprocessQueue()
-    GBankClassic_Core:ScheduleTimer(function (...)
+    GBankClassic_Core:ScheduleTimer(function(...)
         GBankClassic_Chat:OnTimer()
     end, TIMER_INTERVALS.ALT_DATA_QUEUE_RETRY)
 end

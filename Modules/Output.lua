@@ -331,12 +331,8 @@ function GBankClassic_Output:Debug(fmt, ...)
 		local args = {select(2, ...)}
 		return Log(LOG_LEVEL.DEBUG, "|cff888888[DEBUG]|r", actualFmt, unpack(args))
 	end
-	-- No category or unknown category - check if uncategorized debug is enabled
-	if GBankClassic_Database and GBankClassic_Database.db then
-		if not GBankClassic_Database.db.global.showUncategorizedDebug then
-			return false
-		end
-	end
+	
+	-- Fallback: no category specified
 	return Log(LOG_LEVEL.DEBUG, "|cff888888[DEBUG]|r", fmt, ...)
 end
 

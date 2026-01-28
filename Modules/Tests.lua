@@ -860,7 +860,7 @@ function Tests:RunAllTests()
     end
 
     addon:Print("\nBe sure to /reload before proceeding!\n")
-    -- TODO: Reset data to avoid UI errors --
+    -- TODO: reset data to avoid UI errors when opening /bank after running /bank test
 
     return failed == 0
 end

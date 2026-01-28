@@ -28,6 +28,7 @@ DEBUG_CATEGORY = {
 	COMMS = "COMMS",             -- All addon communication traffic
 	DELTA = "DELTA",             -- Delta sync operations and computations
 	SYNC = "SYNC",               -- Data synchronization operations
+	CHUNK = "CHUNK",             -- Data synchronization operations specific to chunk sending
 	CACHE = "CACHE",             -- Cache operations (guild roster cache, etc.)
 	WHISPER = "WHISPER",         -- Whisper sends, skips, and online checks
 	UI = "UI",                   -- UI operations, window opens/closes

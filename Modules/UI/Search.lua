@@ -69,12 +69,6 @@ function GBankClassic_UI_Search:DrawWindow()
     searchWindow:SetLayout("Flow")
     searchWindow:SetWidth(250)
     searchWindow:EnableResize(false)
-
-	-- Persist window position/size across reloads
-	if GBankClassic_Options and GBankClassic_Options.db then
-		searchWindow:SetStatusTable(GBankClassic_Options.db.char.framePositions)
-	end
-
     self.Window = searchWindow
 
     local searchInput = GBankClassic_UI:Create("EditBox")

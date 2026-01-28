@@ -5,8 +5,10 @@ function GBankClassic_Core:SendCommMessage(prefix, text, distribution, target, p
     local prefixDesc = COMM_PREFIX_DESCRIPTIONS[prefix] or "(Unknown)"
     if IsInRaid() then
         GBankClassic_Output:Debug("COMMS", "< (suppressing) %s %s (in raid)", prefix, prefixDesc)
+
         return
     end
+
     if not AceComm_SendCommMessage then
         return
     end
@@ -23,6 +25,7 @@ function GBankClassic_Core:SendWhisper(prefix, text, target, prio, callbackFn, c
     -- Check if target is online
     if not GBankClassic_Guild:IsPlayerOnline(target) then
         GBankClassic_Output:Debug("WHISPER", "Cannot send %s WHISPER to %s - player is offline", prefix, target)
+
         return false
     end
 
@@ -35,6 +38,7 @@ function GBankClassic_Core:SendWhisper(prefix, text, target, prio, callbackFn, c
 
     -- Send the whisper
     self:SendCommMessage(prefix, text, "WHISPER", nameOnly, prio, callbackFn, callbackArg)
+    
     return true
 end
 
