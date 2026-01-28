@@ -18,7 +18,10 @@ function GBankClassic_UI_Donations:Toggle()
 end
 
 function GBankClassic_UI_Donations:Open()
-    if self.isOpen then return end
+	if self.isOpen then
+		return
+	end
+
     self.isOpen = true
 
     if not self.Window then
@@ -41,8 +44,13 @@ function GBankClassic_UI_Donations:Open()
 end
 
 function GBankClassic_UI_Donations:Close()
-    if not self.isOpen then return end
-    if not self.Window then return end
+	if not self.isOpen then
+		return
+	end
+
+	if not self.Window then
+		return
+	end
 
     OnClose(self.Window)
 
@@ -103,22 +111,22 @@ function GBankClassic_UI_Donations:DrawContent()
     self.Content:ReleaseChildren()
 
     local info = GBankClassic_Guild.Info
-    if not info or not info.roster.version then
-        return
-    end
+	local roster_alts = GBankClassic_Guild:GetRosterAlts()
+	if not info or not roster_alts then
+		return
+	end
 
     local players = {}
     local alts = info.alts
-    for _, v in pairs(info.roster.alts) do
-        if alts[v] then
-            local alt = alts[v]
-            if alt.ledger then
-                for p, s in pairs(alt.ledger) do
-                    if not players[p] then
-                        players[p] = s
-                    else
-                        players[p] = players[p] + s
-                    end
+	for _, v in pairs(roster_alts) do
+		local norm = GBankClassic_Guild:NormalizeName(v)
+		local alt = alts[norm]
+		if alt and alt.ledger then
+            for p, s in pairs(alt.ledger) do
+                if not players[p] then
+                    players[p] = s
+                else
+                    players[p] = players[p] + s
                 end
             end
         end
@@ -129,7 +137,9 @@ function GBankClassic_UI_Donations:DrawContent()
         table.insert(scoreboard, {player = k, score = v})
     end
 
-    table.sort(scoreboard, function (a, b) return a.score > b.score end)
+    table.sort(scoreboard, function (a, b)
+        return a.score > b.score
+    end)
 
     local header = GBankClassic_UI:Create("Label")
     header:SetText("")

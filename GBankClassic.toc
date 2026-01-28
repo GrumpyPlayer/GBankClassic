@@ -1,10 +1,9 @@
 ## Interface: 11508, 20505
 ## Title: GBankClassic - Revived
 ## Notes: A simple way to aggregate and view the inventories of multiple guild bank alts.
-## Author: Dominion-Myzrael, GrumpyPlayers (also known as <SG>Soul), Lothsahn
-## Version: 2.4.4
-
-## SavedVariables: GBankClassicDB, GBankClassicIconDB, GBankClassicOptionDB
+## Author: Dominion-Myzrael, GrumpyPlayers (also known as <SG>Soul), Lothsahn, Huntmehuntme-Myzrael, Pimptasty
+## Version: 2.5.0
+## SavedVariables: GBankClassicDB, GBankClassicIconDB, GBankClassicOptionDB, GBankClassicDebugLogEnabled, GBankClassicDebugLog, GBankClassicPerfMetricsEnabled, GBankClassicPerfMetrics
 ## OptionalDeps: Ace3
 ## X-Embeds: Ace3
 ## X-Curse-Project-ID: 807339
@@ -13,6 +12,10 @@
 embeds.xml
 
 # Modules
+Modules/Constants.lua
+Modules/Output.lua
+Modules/Performance.lua
+Modules/DeltaComms.lua
 Modules/Bank.lua
 Modules/Chat.lua
 Modules/Database.lua
@@ -27,5 +30,6 @@ Modules/UI/Inventory.lua
 Modules/UI/Mail.lua
 Modules/UI/Minimap.lua
 Modules/UI/Search.lua
+Modules/Tests.lua
 
 Core.lua

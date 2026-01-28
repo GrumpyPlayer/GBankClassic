@@ -23,7 +23,9 @@ function GBankClassic_Item:GetItems(items, callback)
             local itemData = Item:CreateFromItemID(item.ID)
             itemData:ContinueOnItemLoad(function()
                 item.Info = self:GetInfo(item.ID, item.Link)
-                table.insert(list, item)
+				if item.Info then
+					table.insert(list, item)
+				end
                 count = count + 1
                 if count == total then
                     callback(list)
@@ -34,10 +36,27 @@ function GBankClassic_Item:GetItems(items, callback)
 end
 
 function GBankClassic_Item:GetInfo(id, link)
+	if not link then
+		return nil
+	end
+
     local name, _, rarity, level, _, _, _, _, _, icon, price, itemClassId, itemSubClassId = GetItemInfo(link)
+	if not name then
+		return nil
+	end
+
     local equip = C_Item.GetItemInventoryTypeByID(id)
 
-    return {class = itemClassId, subClass = itemSubClassId, equipId = equip, rarity = rarity, name = name, level = level, price = price, icon = icon}
+	return {
+		class = itemClassId,
+		subClass = itemSubClassId,
+		equipId = equip,
+		rarity = rarity,
+		name = name,
+		level = level,
+		price = price,
+		icon = icon,
+	}
 end
 
 -- NOTE: Sort was adapted from ElvUI
@@ -82,15 +101,17 @@ function GBankClassic_Item:Aggregate(a, b)
     local items = {}
     if a then
         for _, v in pairs(a) do
-            if not v or not v.ID then
+			if not v or not v.ID or not v.Link then
                 -- Skip malformed entries
             else
                 local key = v.ID .. v.Link
                 if items[key] then
                     local item = items[key]
-                    items[key] = {ID = item.ID, Count = item.Count + v.Count, Link = item.Link}
+					local itemCount = item.Count or 1
+					local vCount = v.Count or 1
+					items[key] = { ID = item.ID, Count = itemCount + vCount, Link = item.Link }
                 else
-                    items[key] = v
+					items[key] = { ID = v.ID, Count = v.Count or 1, Link = v.Link }
                 end
             end
         end
@@ -98,15 +119,17 @@ function GBankClassic_Item:Aggregate(a, b)
 
     if b then
         for _, v in pairs(b) do
-            if not v or not v.ID then
+			if not v or not v.ID or not v.Link then
                 -- Skip malformed entries
             else
                 local key = v.ID .. v.Link
                 if items[key] then
                     local item = items[key]
-                    items[key] = {ID = item.ID, Count = item.Count + v.Count, Link = item.Link}
+					local itemCount = item.Count or 1
+					local vCount = v.Count or 1
+					items[key] = { ID = item.ID, Count = itemCount + vCount, Link = item.Link }
                 else
-                    items[key] = v
+					items[key] = { ID = v.ID, Count = v.Count or 1, Link = v.Link }
                 end
             end
         end
@@ -116,6 +139,10 @@ function GBankClassic_Item:Aggregate(a, b)
 end
 
 function GBankClassic_Item:IsUnique(link)
+	if not link then
+		return false
+	end
+    
     local tip = CreateFrame("GameTooltip", "scanTip", UIParent, "GameTooltipTemplate")
     tip:ClearLines()
     tip:SetOwner(UIParent, "ANCHOR_NONE")

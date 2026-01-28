@@ -10,7 +10,10 @@ local function OnClose(_)
 end
 
 function GBankClassic_UI_Mail:Open()
-    if self.isOpen then return end
+	if self.isOpen then
+		return
+	end
+
     self.isOpen = true
 
     if not self.Window then
@@ -25,8 +28,13 @@ function GBankClassic_UI_Mail:Open()
 end
 
 function GBankClassic_UI_Mail:Close()
-    if not self.isOpen then return end
-    if not self.Window then return end
+	if not self.isOpen then
+		return
+	end
+
+	if not self.Window then
+		return
+	end
 
     OnClose(self.Window)
 end
@@ -76,9 +84,10 @@ function GBankClassic_UI_Mail:DrawContent()
     self.Content:ReleaseChildren()
     self.Content:ResumeLayout()
 
-    local _, _, sender, subject, money, CODAmount, _, itemCount, _, wasReturned, _, _, _, _ = GetInboxHeaderInfo(self.MailId)
+    local _, _, sender, subject, money = GetInboxHeaderInfo(self.MailId)
     if not sender then
         GBankClassic_UI_Mail:RedrawContent()
+
         return
     end
 
@@ -165,6 +174,7 @@ function GBankClassic_UI_Mail:DrawContent()
                 end
             else
                 self:RedrawContent()
+
                 return
             end
         end
@@ -201,7 +211,9 @@ function GBankClassic_UI_Mail:DrawContent()
 end
 
 function GBankClassic_UI_Mail:RedrawContent()
-    GBankClassic_Core:ScheduleTimer(function (...) GBankClassic_UI_Mail:OnTimer() end, 0.25)
+    GBankClassic_Core:ScheduleTimer(function (...)
+        GBankClassic_UI_Mail:OnTimer()
+    end, 0.25)
 end
 
 function GBankClassic_UI_Mail:OnTimer()

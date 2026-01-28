@@ -18,7 +18,10 @@ function GBankClassic_UI_Search:Toggle()
 end
 
 function GBankClassic_UI_Search:Open()
-    if self.isOpen then return end
+	if self.isOpen then
+		return
+	end
+
     self.isOpen = true
 
     if not self.Window then
@@ -43,8 +46,13 @@ function GBankClassic_UI_Search:Open()
 end
 
 function GBankClassic_UI_Search:Close()
-    if not self.isOpen then return end
-    if not self.Window then return end
+	if not self.isOpen then
+		return
+	end
+
+	if not self.Window then
+		return
+	end
 
     OnClose(self.Window)
 
@@ -66,7 +74,7 @@ function GBankClassic_UI_Search:DrawWindow()
 
     local searchInput = GBankClassic_UI:Create("EditBox")
     searchInput:SetMaxLetters(50)
-    searchInput:SetLabel("Item Name")
+    searchInput:SetLabel("Item name")
     searchInput:SetCallback("OnTextChanged", function (input)
         self.SearchText = input:GetText()
         self:DrawContent()
@@ -130,19 +138,20 @@ function GBankClassic_UI_Search:BuildSearchData()
     }
 
     local info = GBankClassic_Guild.Info
-    if not info or not info.roster.version then
-        return
-    end
+	local roster_alts = GBankClassic_Guild:GetRosterAlts()
+	if not info or not roster_alts then
+		return
+	end
 
     local items = {}
-    for _, player in pairs(info.roster.alts) do
-        local norm = (GBankClassic_Guild and GBankClassic_Guild.NormalizePlayerName) and GBankClassic_Guild.NormalizePlayerName(player) or player
+	for _, player in pairs(roster_alts) do
+		local norm = GBankClassic_Guild:NormalizeName(player)
         local alt = info.alts[norm]
         if alt and _G.type(alt) == "table" then
-            if alt.bank then
+            if alt.bank and alt.bank.items then
                 items = GBankClassic_Item:Aggregate(items, alt.bank.items)
             end
-            if alt.bags then
+            if alt.bags and alt.bags.items then
                 items = GBankClassic_Item:Aggregate(items, alt.bags.items)
             end
         end
@@ -158,15 +167,15 @@ function GBankClassic_UI_Search:BuildSearchData()
             end
         end
 
-        for _, player in pairs(info.roster.alts) do
+		for _, player in pairs(roster_alts) do
             local altItems = {}
-            local norm = (GBankClassic_Guild and GBankClassic_Guild.NormalizePlayerName) and GBankClassic_Guild.NormalizePlayerName(player) or player
+			local norm = GBankClassic_Guild:NormalizeName(player)
             local alt = info.alts[norm]
             if alt and _G.type(alt) == "table" then
-                if alt.bank then
+                if alt.bank and alt.bank.items then
                     altItems = GBankClassic_Item:Aggregate(altItems, alt.bank.items)
                 end
-                if alt.bags then
+                if alt.bags and alt.bags.items then
                     altItems = GBankClassic_Item:Aggregate(altItems, alt.bags.items)
                 end
             end
@@ -195,13 +204,17 @@ function GBankClassic_UI_Search:BuildSearchData()
 end
 
 function GBankClassic_UI_Search:DrawContent()
-    if not self.Results then return end
+	if not self.Results then
+		return
+	end
 
     self.Results:ReleaseChildren()
     self.Window:SetStatusText("")
     self.Results:DoLayout()
 
-    if not self.SearchText then return end
+	if not self.SearchText then
+		return
+	end
 
     if self.SearchText then
         self.searchField:SetText(self.SearchText)
@@ -213,22 +226,32 @@ function GBankClassic_UI_Search:DrawContent()
     if string.sub(search, 0, 2) == "|c" then
         self.searchField:SetText("")
         local item = Item:CreateFromItemLink(search)
-        item:ContinueOnItemLoad(function()
-            local name = item:GetItemName()
-            self.SearchText = name
-            self.searchField:SetText(name)
-            self:DrawContent()
-            self.searchField:ClearFocus()
-        end)
-        return
+		if item then
+			item:ContinueOnItemLoad(function()
+				local name = item:GetItemName()
+				if name then
+					self.SearchText = name
+					self.searchField:SetText(name)
+					self:DrawContent()
+					self.searchField:ClearFocus()
+				end
+			end)
+		end
+
+		return
     end
 
     local searchText = search:lower()
 
-    if string.len(searchText) < 3 then return end
+
+	if string.len(searchText) < 3 then
+		return
+	end
 
     local searchData = self.SearchData
-    if not searchData then return end
+	if not searchData then
+		return
+	end
 
     local count = 0
     for _, v in pairs(searchData.Corpus) do

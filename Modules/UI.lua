@@ -21,13 +21,19 @@ function GBankClassic_UI:EventHandler(self, event, ...)
         if IsShiftKeyDown() then
             ChatEdit_InsertLink(self.link)
         elseif IsControlKeyDown() then
-            DressUpItemLink(self.link)
+			if self.link then
+				DressUpItemLink(self.link)
+			end
         else
-            PickupItem(self.link)
+			if self.link then
+				PickupItem(self.link)
+			end
         end
     end
     if event == "OnDragStart" then
-        PickupItem(self.link)
+		if self.link then
+			PickupItem(self.link)
+		end
     end
 end
 
@@ -79,8 +85,12 @@ function GBankClassic_UI:DrawItem(item, parent, size, height, imageSize, imageHe
     slot:SetHeight(height)
 
     if item.Link then
-        slot:SetCallback("OnEnter", function() GBankClassic_UI:ShowItemTooltip(item.Link) end)
-        slot:SetCallback("OnLeave", function() GBankClassic_UI:HideTooltip() end)
+        slot:SetCallback("OnEnter", function()
+            GBankClassic_UI:ShowItemTooltip(item.Link) 
+        end)
+        slot:SetCallback("OnLeave", function()
+            GBankClassic_UI:HideTooltip()
+        end)
         slot:SetCallback("OnClick", function (self, event)
             GBankClassic_UI:EventHandler(self, event)
         end)
@@ -104,10 +114,14 @@ function GBankClassic_UI:DrawItem(item, parent, size, height, imageSize, imageHe
     slot.border = border
 
     parent:AddChild(slot)
+
+	return slot
 end
 
 function GBankClassic_UI:ShowItemTooltip(link)
-    if not link then return end
+    if not link then
+        return
+    end
     GameTooltip:SetOwner(WorldFrame, "ANCHOR_CURSOR")
     GameTooltip:SetHyperlink(link)
     GameTooltip:Show()

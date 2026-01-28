@@ -1,23 +1,8 @@
 GBankClassic_Bank = {...}
 
-local function AreInventoriesEqual(alt1, alt2)
-    if alt1 == alt2 then return true end
-    if not alt1 or not alt2 then return false end
-
-    local items1 = GBankClassic_Item:Aggregate(alt1.bags and alt1.bags.items, alt1.bank and alt1.bank.items)
-    local items2 = GBankClassic_Item:Aggregate(alt2.bags and alt2.bags.items, alt2.bank and alt2.bank.items)
-
-    for k, v in pairs(items1) do
-        if not items2[k] or items2[k].Count ~= v.Count then return false end
-    end
-    for k, _ in pairs(items2) do
-        if not items1[k] then return false end
-    end
-    return true
-end
-
 local function IsBankAvailable()
     local _, bagType = C_Container.GetContainerNumFreeSlots(BANK_CONTAINER)
+
     return bagType ~= nil
 end
 
@@ -116,26 +101,32 @@ function GBankClassic_Bank:Scan()
     end
 
     local info = GBankClassic_Guild.Info
-    if not info then return end
+    if not info then
+        return
+    end
 
-    local player = GBankClassic_Guild:GetPlayer()
-    if not player then return end
-    player = (GBankClassic_Guild and GBankClassic_Guild.NormalizePlayerName) and GBankClassic_Guild.NormalizePlayerName(player) or player
-
+	local player = GBankClassic_Guild:GetNormalizedPlayer()
+    
     local isBank = false
     local banks = GBankClassic_Guild:GetBanks()
-    if banks == nil then return end
+	if banks == nil then
+		return
+	end
 
     for _, v in pairs(banks) do
-        local normV = (GBankClassic_Guild and GBankClassic_Guild.NormalizePlayerName) and GBankClassic_Guild.NormalizePlayerName(v) or v
+        local normV = GBankClassic_Guild:NormalizeName(v)
         if normV == player then
             isBank = true
             break
         end
     end
-    if not isBank then return end
+	if not isBank then
+		return
+	end
 
-    if not GBankClassic_Options:GetBankEnabled() then return end
+    if not GBankClassic_Options:GetBankEnabled() then
+		return
+	end
 
     local updateRoster = false
     if info.roster["version"] ~= nil then
@@ -150,49 +141,51 @@ function GBankClassic_Bank:Scan()
         info.roster.version = GetServerTime()
     end
 
-    local current_data = {
-        money = GetMoney(),
-        bank = { items = {}, slots = {} },
-        bags = { items = {}, slots = {} },
-    }
+	local alt = {}
+	if info.alts[player] then
+		alt = info.alts[player]
+	end
 
-    if IsBankAvailable() then
-        local count, slots = ScanBank(current_data.bank.items)
-        current_data.bank.slots = {count = count, total = slots}
-    else
-        -- Inherit existing bank data if bank is not open
-        if info.alts[player] and info.alts[player].bank then
-            current_data.bank = info.alts[player].bank
-        end
-    end
+	if IsBankAvailable() then
+		alt.bank = {
+			items = {},
+			slots = {},
+		}
+		local count, slots = ScanBank(alt.bank.items)
+		alt.bank.slots = { count = count, total = slots }
+	end
 
-    local count, slots = ScanBags(current_data.bags.items)
-    current_data.bags.slots = {count = count, total = slots}
+	alt.bags = {
+		items = {},
+		slots = {},
+	}
+	local count, slots = ScanBags(alt.bags.items)
+	alt.bags.slots = { count = count, total = slots }
 
-    local existing = info.alts[player]
-    local changed = false
+	local money = GetMoney()
+	alt.money = money
 
-    if not existing then
-        changed = true
-    else
-        if existing.money ~= current_data.money then
-            changed = true
-        elseif not AreInventoriesEqual(existing, current_data) then
-            changed = true
-        end
-    end
+	local currentHash = GBankClassic_Core:ComputeInventoryHash(alt.bank, alt.bags, money)
+	local previousHash = alt.inventoryHash
 
-    if changed then
-        current_data.version = GetServerTime()
-        info.alts[player] = current_data
-        if GBankClassic_Chat.debug then GBankClassic_Core:DebugPrint("Local gbank data changed, updating version.") end
-        if GBankClassic_UI_Inventory.isOpen then GBankClassic_UI_Inventory:DrawContent() end
-        --TODO: Share with just the online peers privately instead of guild-wide (no peers may be online)
-        GBankClassic_Guild:AuthorRosterData()
-        GBankClassic_Guild:Share("reply")
-    else
-        if GBankClassic_Chat.debug then GBankClassic_Core:DebugPrint("No changes detected after scan.") end
-    end
+	if currentHash ~= previousHash then
+		-- Inventory changed, update version timestamp
+		alt.version = GetServerTime()
+		alt.inventoryHash = currentHash
+		GBankClassic_Output:Debug("SYNC", "Inventory changed for %s, version updated to %d", player, alt.version)
+	else
+		-- No changes detected, preserve existing version
+		GBankClassic_Output:Debug("SYNC", "No inventory changes for %s, version unchanged", player)
+	end
+
+	if not info.alts then
+		info.alts = {}
+	end
+
+	info.alts[player] = alt
+
+    -- Share updated inventory with guild
+    GBankClassic_Guild:Share()
 end
 
 function GBankClassic_Bank:HasInventorySpace()
@@ -201,6 +194,7 @@ function GBankClassic_Bank:HasInventorySpace()
         local slots, _ = C_Container.GetContainerNumFreeSlots(bag)
         total = total + slots
     end
+
     return total > 0
 end
 

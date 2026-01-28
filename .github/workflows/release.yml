@@ -35,7 +35,7 @@ jobs:
         with:
           fetch-depth: 0  # gets entire git history, needed for automatic changelogs
 
-      # once cloned, we just run the GitHub Action
+      # once cloned, we just run the GitHub action
       - name: Package and release
         uses: BigWigsMods/packager@v2
         with:

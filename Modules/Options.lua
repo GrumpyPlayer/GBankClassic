@@ -8,64 +8,342 @@ function GBankClassic_Options:Init()
     self.db.char.bank = self.db.char.bank or { donations = true }
     self.db.char.bank['donations'] = (self.db.char.bank['donations'] == nil) and true or self.db.char.bank['donations']
     self.db.global = self.db.global or {}
-    self.db.global.bank = self.db.global.bank or { report = true, shutup = false, prefer_direct_all = false }
+    self.db.global.bank = self.db.global.bank or { report = true, logLevel = LOG_LEVEL.INFO, commDebug = false, muteSyncProgress = false }
+	self.db.global.bank["logLevel"] = self.db.global.bank["logLevel"] or LOG_LEVEL.INFO
+	self.db.global.bank["commDebug"] = self.db.global.bank["commDebug"] or false
+	self.db.global.bank["muteSyncProgress"] = self.db.global.bank["muteSyncProgress"] or false
+
+    -- Initialize logger with saved level
+	GBankClassic_Output:SetLevel(self.db.global.bank["logLevel"])
+	-- Initialize comm debug with saved setting
+	GBankClassic_Output:SetCommDebug(self.db.global.bank["commDebug"])
 
     local options = {
         type = "group",
         name = "GBankClassic - Revived",
         args = {
-            ["minimap"] = {
-                order = 0,
-                type = "toggle",
-                name = "Show minimap button",
-                desc = "Toggles visibility of the minimap button",
-                set = function(_, v)
-                    self.db.char.minimap["enabled"] = v
-                    GBankClassic_UI_Minimap:Toggle()
-                end,
-                get = function() return self.db.char.minimap["enabled"] end,
+			general = {
+				order = 1,
+				type = "group",
+				name = "General",
+				args = {
+                    ["minimap"] = {
+                        order = 0,
+                        type = "toggle",
+                        name = "Show minimap button",
+                        desc = "Toggles visibility of the minimap button",
+                        set = function(_, v)
+                            self.db.char.minimap["enabled"] = v
+                            GBankClassic_UI_Minimap:Toggle()
+                        end,
+                        get = function()
+                            return self.db.char.minimap["enabled"]
+                        end,
+                    },
+                    ["combat"] = {
+                        order = 1,
+                        type = "toggle",
+                        name = "Hide during combat",
+                        desc = "Toggles visibility of the window during combat",
+                        set = function(_, v)
+                            self.db.char.combat["hide"] = v
+                        end,
+                        get = function()
+                            return self.db.char.combat["hide"]
+                        end,
+                    },
+                    ["logLevel"] = {
+                        order = 2,
+						type = "select",
+						style = "radio",
+						width = "full",
+						name = "Log level",
+						desc = "Controls which messages are shown in chat",
+						values = {
+							[LOG_LEVEL.RESPONSE] = "Quiet (only respond to /bank commands)",
+							[LOG_LEVEL.ERROR] = "Errors and above",
+							[LOG_LEVEL.WARN] = "Warnings and above",
+							[LOG_LEVEL.INFO] = "Info and above (default)",
+							[LOG_LEVEL.DEBUG] = "Debug (show everything)",
+						},
+						sorting = { LOG_LEVEL.RESPONSE, LOG_LEVEL.ERROR, LOG_LEVEL.WARN, LOG_LEVEL.INFO, LOG_LEVEL.DEBUG },
+						set = function(_, v)
+							self.db.global.bank["logLevel"] = v
+							GBankClassic_Output:SetLevel(v)
+						end,
+						get = function()
+							return self.db.global.bank["logLevel"]
+						end,
+                    },
+					["muteSyncProgress"] = {
+						order = 2.6,
+						type = "toggle",
+						width = "full",
+						name = "Mute sync progress messages",
+						desc = "Hides 'Sharing guild bank data...' and 'Send complete...' messages during data sync",
+						set = function(_, v)
+							self.db.global.bank["muteSyncProgress"] = v
+						end,
+						get = function()
+							return self.db.global.bank["muteSyncProgress"]
+						end,
+					},
+                    ["reset"] = {
+                        order = -1,
+                        name = "Reset database",
+                        type = "execute",
+                        func = function()
+                            local guild = GBankClassic_Guild:GetGuild()
+                            if not guild then
+                                return
+
+                                end
+                            GBankClassic_Guild:Reset(guild)
+                        end,
+                    },
+                },
             },
-            ["combat"] = {
-                order = 1,
-                type = "toggle",
-                name = "Hide during combat",
-                desc = "Toggles visibility of the window during combat",
-                set = function(_, v)
-                    self.db.char.combat["hide"] = v
-                end,
-                get = function() return self.db.char.combat["hide"] end,
-            },
-            ["shutup"] = {
-                order = 2,
-                type = "toggle",
-                name = "Mute addon messages",
-                desc = "Stops the addon from sending messages to the chat window",
-                set = function(_, v)
-                    self.db.global.bank['shutup'] = v
-                end,
-                get = function() return self.db.global.bank['shutup'] end
-            },
-            ["prefer_direct"] = {
-                order = 3,
-                type = "toggle",
-                name = "Prefer direct-only",
-                desc = "When enabled, this account will refuse relayed alt/roster payloads and prefer direct updates from banks/GMs/officers",
-                set = function(_, v)
-                    self.db.global.bank['prefer_direct_all'] = v
-                end,
-                get = function() return self.db.global.bank['prefer_direct_all'] end
-            },
-            ["reset"] = {
-                order = -1,
-                name = "Reset database",
-                type = "execute",
-                func = function()
-                    local guild = GBankClassic_Guild:GetGuild()
-                    if not guild then return end
-                    GBankClassic_Guild:Reset(guild)
-                end,
-            }
-        }
+			debug = {
+				order = 2,
+				type = "group",
+				name = "Debug",
+				args = {
+					["debugHeader"] = {
+						order = 0,
+						type = "header",
+						name = "Debug categories",
+					},
+					["debugDesc"] = {
+						order = 1,
+						type = "description",
+						name = "Enable specific debug categories to filter output. Categories are only active when log level is set to 'Debug'.",
+					},
+					["showUncategorized"] = {
+						order = 2,
+						type = "toggle",
+						width = "full",
+						name = "Show uncategorized debug messages",
+						desc = "Show debug messages that don't have a category assigned. Disable this to only see categorized messages.",
+						set = function(_, v)
+							GBankClassic_Database.db.global.showUncategorizedDebug = v
+						end,
+						get = function()
+							return GBankClassic_Database.db.global.showUncategorizedDebug
+						end,
+					},
+					["spacer1"] = {
+						order = 9,
+						type = "description",
+						name = " ",
+					},
+					["roster"] = {
+						order = 10,
+						type = "toggle",
+						width = "full",
+						name = "ROSTER - Guild roster updates, online/offline tracking",
+						set = function(_, v)
+							GBankClassic_Output:SetCategoryEnabled("ROSTER", v)
+						end,
+						get = function()
+							return GBankClassic_Output:IsCategoryEnabled("ROSTER")
+						end,
+					},
+					["comms"] = {
+						order = 11,
+						type = "toggle",
+						width = "full",
+						name = "COMMS - All addon communication traffic (high volume)",
+						set = function(_, v)
+							GBankClassic_Output:SetCategoryEnabled("COMMS", v)
+						end,
+						get = function()
+							return GBankClassic_Output:IsCategoryEnabled("COMMS")
+						end,
+					},
+					["delta"] = {
+						order = 12,
+						type = "toggle",
+						width = "full",
+						name = "DELTA - Delta sync operations and computations",
+						set = function(_, v)
+							GBankClassic_Output:SetCategoryEnabled("DELTA", v)
+						end,
+						get = function()
+							return GBankClassic_Output:IsCategoryEnabled("DELTA")
+						end,
+					},
+					["sync"] = {
+						order = 13,
+						type = "toggle",
+						width = "full",
+						name = "SYNC - Data synchronization operations",
+						set = function(_, v)
+							GBankClassic_Output:SetCategoryEnabled("SYNC", v)
+						end,
+						get = function()
+							return GBankClassic_Output:IsCategoryEnabled("SYNC")
+						end,
+					},
+					["cache"] = {
+						order = 14,
+						type = "toggle",
+						width = "full",
+						name = "CACHE - Cache operations (guild roster cache, etc.)",
+						set = function(_, v)
+							GBankClassic_Output:SetCategoryEnabled("CACHE", v)
+						end,
+						get = function()
+							return GBankClassic_Output:IsCategoryEnabled("CACHE")
+						end,
+					},
+					["whisper"] = {
+						order = 15,
+						type = "toggle",
+						width = "full",
+						name = "WHISPER - Whisper sends, skips, and online checks",
+						set = function(_, v)
+							GBankClassic_Output:SetCategoryEnabled("WHISPER", v)
+						end,
+						get = function()
+							return GBankClassic_Output:IsCategoryEnabled("WHISPER")
+						end,
+					},
+					["ui"] = {
+						order = 17,
+						type = "toggle",
+						width = "full",
+						name = "UI - Interface operations (window opens/closes)",
+						set = function(_, v)
+							GBankClassic_Output:SetCategoryEnabled("UI", v)
+						end,
+						get = function()
+							return GBankClassic_Output:IsCategoryEnabled("UI")
+						end,
+					},
+					["protocol"] = {
+						order = 18,
+						type = "toggle",
+						width = "full",
+						name = "PROTOCOL - Protocol version negotiation",
+						set = function(_, v)
+							GBankClassic_Output:SetCategoryEnabled("PROTOCOL", v)
+						end,
+						get = function()
+							return GBankClassic_Output:IsCategoryEnabled("PROTOCOL")
+						end,
+					},
+					["database"] = {
+						order = 19,
+						type = "toggle",
+						width = "full",
+						name = "DATABASE - Database and SavedVariables operations",
+						set = function(_, v)
+							GBankClassic_Output:SetCategoryEnabled("DATABASE", v)
+						end,
+						get = function()
+							return GBankClassic_Output:IsCategoryEnabled("DATABASE")
+						end,
+					},
+					["events"] = {
+						order = 20,
+						type = "toggle",
+						width = "full",
+						name = "EVENTS - WoW event handling (GUILD_ROSTER_UPDATE, etc.)",
+						set = function(_, v)
+							GBankClassic_Output:SetCategoryEnabled("EVENTS", v)
+						end,
+						get = function()
+							return GBankClassic_Output:IsCategoryEnabled("EVENTS")
+						end,
+					},
+					["spacer"] = {
+						order = 30,
+						type = "description",
+						name = " ",
+					},
+					["enableAll"] = {
+						order = 31,
+						type = "execute",
+						name = "Enable all categories",
+						func = function()
+							GBankClassic_Output:EnableAllCategories()
+							GBankClassic_Output:Info("All debug categories enabled")
+						end,
+					},
+					["disableAll"] = {
+						order = 32,
+						type = "execute",
+						name = "Disable all categories",
+						func = function()
+							GBankClassic_Output:DisableAllCategories()
+							GBankClassic_Output:Info("All debug categories disabled")
+						end,
+					},
+					["spacer2"] = {
+						order = 40,
+						type = "description",
+						name = " ",
+					},
+					-- ["perfHeader"] = {
+					-- 	order = 41,
+					-- 	type = "header",
+					-- 	name = "Performance monitoring",
+					-- },
+					-- ["perfEnabled"] = {
+					-- 	order = 42,
+					-- 	type = "toggle",
+					-- 	width = "full",
+					-- 	name = "Enable performance monitoring",
+					-- 	desc = "Track event frequency, operation timing, and memory usage. Disable to reduce overhead if experiencing performance issues.",
+					-- 	get = function() return GBankClassic_PerfEnabled end,
+					-- 	set = function(info, value)
+					-- 		GBankClassic_PerfEnabled = value
+					-- 		if value then
+					-- 			GBankClassic_Output:Info("Performance monitoring enabled")
+					-- 		else
+					-- 			GBankClassic_Output:Info("Performance monitoring disabled")
+					-- 		end
+					-- 	end,
+					-- },
+					-- ["perfStatsButton"] = {
+					-- 	order = 43,
+					-- 	type = "execute",
+					-- 	width = "full",
+					-- 	name = "Show performance statistics",
+					-- 	desc = "Display event frequency, operation timing, and memory usage for current session",
+					-- 	func = function()
+					-- 		GBankClassic_Performance:PrintReport()
+					-- 	end,
+					-- },
+					-- ["spacer3"] = {
+					-- 	order = 44,
+					-- 	type = "description",
+					-- 	name = " ",
+					-- },
+					-- ["debugLogHeader"] = {
+					-- 	order = 45,
+					-- 	type = "header",
+					-- 	name = "Debug logging",
+					-- },
+					-- ["debugLogEnabled"] = {
+					-- 	order = 46,
+					-- 	type = "toggle",
+					-- 	width = "full",
+					-- 	name = "Enable debug logging to SavedVariables",
+					-- 	desc = "Save debug messages to your SavedVariables (GBankClassicDebugLog). Auto-cleans old entries (max 50,000 entries or 7 days). Disable to reduce SavedVariables file size.",
+					-- 	get = function() return GBankClassic_DebugLogEnabled end,
+					-- 	set = function(info, value)
+					-- 		GBankClassic_DebugLogEnabled = value
+					-- 		if value then
+					-- 			GBankClassic_Output:Info("Debug logging to SavedVariables enabled")
+					-- 		else
+					-- 			GBankClassic_Output:Info("Debug logging to SavedVariables disabled")
+					-- 		end
+					-- 	end,
+					-- },
+				},
+			},
+        },
     }
 
     LibStub("AceConfig-3.0"):RegisterOptionsTable("GBankClassic - Revived", options)
@@ -100,6 +378,7 @@ function GBankClassic_Options:InitGuild()
             ["enabled"] = {
                 order = 0,
                 type = "toggle",
+				width = "full",
                 name = "Enable for " .. player,
                 desc = "Enables reporting and scanning for this player",
                 set = function(_, v) 
@@ -108,42 +387,55 @@ function GBankClassic_Options:InitGuild()
                         GBankClassic_Guild:AuthorRosterData()
                     end
                 end,
-                get = function() return self.db.char.bank['enabled'] end
+                get = function()
+                    return self.db.char.bank['enabled']
+                end
             },
             ["report"] = {
-                order = 0,
-                type = "toggle",
-                name = "Report contributions",
-                desc = "Enables contribution reports",
-                set = function(_, v) self.db.global.bank['report'] = v end,
-                get = function() return self.db.global.bank['report'] end
-            },
-            ["donations"] = {
                 order = 1,
                 type = "toggle",
+				width = "full",
+                name = "Report contributions",
+                desc = "Enables contribution reports",
+                set = function(_, v)
+                    self.db.global.bank['report'] = v
+
+                    end,
+                get = function()
+                    return self.db.global.bank['report']
+                end
+            },
+            ["donations"] = {
+                order = 2,
+                type = "toggle",
+				width = "full",
                 name = "Enable donations",
                 desc = "Displays donation window at mailbox",
-                set = function(_, v) self.db.char.bank['donations'] = v end,
-                get = function() return self.db.char.bank['donations'] end
+                set = function(_, v)
+                    self.db.char.bank['donations'] = v
+                end,
+                get = function()
+                    return self.db.char.bank['donations']
+                end
             },
             ["reset"] = {
-                order = 2,
+                order = 3,
                 name = "Reset player database",
                 type = "execute",
                 func = function()
                     local guild = GBankClassic_Guild:GetGuild()
-                    if not guild then return end
-                    local player = GBankClassic_Guild:GetPlayer()
+                    if not guild then
+                        return
+                    end
                     GBankClassic_Database:ResetPlayer(guild, player)
                 end,
             },
             ["error"] = {
-                order = 3,
+                order = 4,
                 type = "description",
                 name = "This panel is only available to bank alts.",
                 desc = "This panel is only available to bank alts.",
                 hidden = function()
-                    local player = GBankClassic_Guild:GetPlayer()
                     return GBankClassic_Guild:IsBank(player)
                 end,
             },
@@ -156,42 +448,31 @@ function GBankClassic_Options:InitGuild()
 end
 
 function GBankClassic_Options:GetBankEnabled()
-    if not self.db or not self.db.char or not self.db.char.bank then return false end
     return self.db.char.bank['enabled']
 end
 
 function GBankClassic_Options:GetDonationEnabled()
-    if not self.db or not self.db.char or not self.db.char.bank then return false end
     return self.db.char.bank['donations']
 end
 
 function GBankClassic_Options:GetBankReporting()
-    if not self.db or not self.db.global or not self.db.global.bank then return true end
     return self.db.global.bank['report']
 end
 
-function GBankClassic_Options:GetBankVerbosity()
-    if not self.db or not self.db.global or not self.db.global.bank then return false end
-    if self.db.global.bank['shutup'] == nil then
-        return false
-    end
-    return self.db.global.bank['shutup']
-end
-
-function GBankClassic_Options:GetPreferDirect()
-    if not self.db or not self.db.global or not self.db.global.bank then return false end
-    if self.db.global.bank['prefer_direct_all'] == nil then return false end
-    return self.db.global.bank['prefer_direct_all']
+function GBankClassic_Options:GetLogLevel()
+	return self.db.global.bank["logLevel"] or LOG_LEVEL.INFO
 end
 
 function GBankClassic_Options:GetMinimapEnabled()
-    if not self.db or not self.db.char or not self.db.char.minimap then return true end
     return self.db.char.minimap["enabled"]
 end
 
 function GBankClassic_Options:GetCombatHide()
-    if not self.db or not self.db.char or not self.db.char.combat then return true end
     return self.db.char.combat["hide"]
+end
+
+function GBankClassic_Options:IsSyncProgressMuted()
+	return self.db.global.bank["muteSyncProgress"] or false
 end
 
 function GBankClassic_Options:Open()
