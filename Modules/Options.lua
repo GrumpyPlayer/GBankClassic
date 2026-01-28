@@ -6,7 +6,6 @@ function GBankClassic_Options:Init()
     self.db.char.minimap = self.db.char.minimap or { enabled = true }
     self.db.char.combat = self.db.char.combat or { hide = true }
     self.db.char.bank = self.db.char.bank or { donations = true }
-    self.db.char.framePositions = self.db.char.framePositions or { }
     self.db.char.bank['donations'] = (self.db.char.bank['donations'] == nil) and true or self.db.char.bank['donations']
     self.db.global = self.db.global or {}
     self.db.global.bank = self.db.global.bank or { report = true, logLevel = LOG_LEVEL.INFO, commDebug = false, muteSyncProgress = false }
