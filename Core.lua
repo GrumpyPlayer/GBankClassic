@@ -44,7 +44,6 @@ end
 
 function GBankClassic_Core:OnInitialize()
     -- Called when the addon is loaded
-    GBankClassic_Performance:Initialize()
     GBankClassic_Database:Init()
     GBankClassic_Chat:Init()
     GBankClassic_Options:Init()
@@ -54,16 +53,6 @@ function GBankClassic_Core:OnInitialize()
     -- if GBankClassic_ItemHighlight and GBankClassic_ItemHighlight.Initialize then
     --     GBankClassic_ItemHighlight:Initialize()
     -- end
-
-    -- -- Setup periodic memory snapshots (every 5 minutes)
-    -- local memoryFrame = CreateFrame("Frame")
-    -- memoryFrame:SetScript("OnUpdate", function(self, elapsed)
-    --     self.elapsed = (self.elapsed or 0) + elapsed
-    --     if self.elapsed >= 300 then -- 5 minutes
-    --         self.elapsed = 0
-    --         GBankClassic_Performance:RecordMemory("periodic")
-    --     end
-    -- end)
 end
 
 function GBankClassic_Core:OnEnable()

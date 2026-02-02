@@ -471,41 +471,39 @@ end
 
 -- Compute full delta for an alt
 function GBankClassic_DeltaComms:ComputeDelta(guildName, altName, currentAlt)
-	return GBankClassic_Performance:Track("ComputeDelta", function()
-		if not guildName or not altName or not currentAlt then
-			return nil
-		end
+	if not guildName or not altName or not currentAlt then
+		return nil
+	end
 
-		-- Get previous snapshot
-		local previous = GBankClassic_Database:GetSnapshot(guildName, altName)
-		if not previous then
-			return nil
-		end
+	-- Get previous snapshot
+	local previous = GBankClassic_Database:GetSnapshot(guildName, altName)
+	if not previous then
+		return nil
+	end
 
-		-- Build delta structure
-		-- In pull-based protocol, receiver states what they have
-		local delta = {
-			type = "alt-delta",
-			name = altName,
-			version = currentAlt.version or GetServerTime(),
-			changes = {},
-		}
+	-- Build delta structure
+	-- In pull-based protocol, receiver states what they have
+	local delta = {
+		type = "alt-delta",
+		name = altName,
+		version = currentAlt.version or GetServerTime(),
+		changes = {},
+	}
 
-		-- Money change
-		if currentAlt.money ~= previous.money then
-			delta.changes.money = currentAlt.money
-		end
+	-- Money change
+	if currentAlt.money ~= previous.money then
+		delta.changes.money = currentAlt.money
+	end
 
-		-- Items delta (aggregated bank + bags + mail)
-		local previousItems = previous.items or {}
-		local currentItems = currentAlt.items or {}
+	-- Items delta (aggregated bank + bags + mail)
+	local previousItems = previous.items or {}
+	local currentItems = currentAlt.items or {}
 
-		-- Log item counts
-		GBankClassic_Output:Debug("DELTA", "Comparing %s: previous aggregation has %d items, current aggregation has %d items", altName, #previousItems, #currentItems)
-		delta.changes.items = self:ComputeItemDelta(previousItems, currentItems)
+	-- Log item counts
+	GBankClassic_Output:Debug("DELTA", "Comparing %s: previous aggregation has %d items, current aggregation has %d items", altName, #previousItems, #currentItems)
+	delta.changes.items = self:ComputeItemDelta(previousItems, currentItems)
 
-		return delta
-	end)
+	return delta
 end
 
 -- Estimate serialized size of a data structure
@@ -604,120 +602,118 @@ end
 
 -- Apply a delta to alt data
 function GBankClassic_DeltaComms:ApplyDelta(guildInfo, altName, deltaData, sender)
-	return GBankClassic_Performance:Track("ApplyDelta", function()
-		if not guildInfo then
-			return ADOPTION_STATUS.IGNORED
-		end
+	if not guildInfo then
+		return ADOPTION_STATUS.IGNORED
+	end
 
-		local applyStart = debugprofilestop()
-		local norm = GBankClassic_Guild:NormalizeName(altName)
-		local current = guildInfo.alts[norm]
+	local applyStart = debugprofilestop()
+	local norm = GBankClassic_Guild:NormalizeName(altName)
+	local current = guildInfo.alts[norm]
 
-		-- Validate base version matches
-		if not current then
-			-- No existing data, request full sync (but only if not already pending)
-			local hasPending = GBankClassic_Guild.pending_sync and GBankClassic_Guild.pending_sync.alts and GBankClassic_Guild.pending_sync.alts[norm]
-			if not hasPending then
-				local errorMsg = string.format("No existing data for %s", norm)
-				GBankClassic_Output:Debug("DELTA", errorMsg .. ", requesting full sync")
-				self:RecordDeltaError(guildInfo.name, norm, "NO_DATA", errorMsg)
-				GBankClassic_Guild:QueryAlt(nil, norm, nil)
-			else
-				GBankClassic_Output:Debug("DELTA", "No data for %s but full sync already pending, skipping duplicate request", norm)
-			end
-
-			if guildInfo and guildInfo.name then
-				GBankClassic_Database:RecordDeltaFailed(guildInfo.name)
-			end
-
-			return ADOPTION_STATUS.INVALID
-		end
-
-		-- Protect guild bank alt data as source of truth
-		-- Non-guild bank alts accept all deltas (they're not the authority)
-		local player = UnitName("player")
-		local realm = GetNormalizedRealmName()
-		local playerFull = player .. "-" .. realm
-		local playerNorm = GBankClassic_Guild:NormalizeName(playerFull)
-		local playerIsGuildBankAlt = GBankClassic_Guild:IsBank(playerNorm)
-		if playerIsGuildBankAlt then
-			-- We are a guild bank alt - protect our own data and other guild bank alt data
-
-			-- CRITICAL: If this delta is about US, reject it (we are the source of truth for our own data)
-			if norm == playerNorm then
-				local errorMsg = string.format("Rejected delta from %s about ourselves (guild bank alt is source of truth for own data)", sender or "unknown")
-				GBankClassic_Output:Debug("DELTA", "%s", errorMsg)
-
-				return ADOPTION_STATUS.UNAUTHORIZED
-			end
-			
-			-- Also protect OTHER guild bank alt data from non-guild bank alt updates
-			local currentIsGuildBankAlt = GBankClassic_Guild:IsBank(norm)
-			local senderNorm = sender and GBankClassic_Guild:NormalizeName(sender) or nil
-			local senderIsGuildBankAlt = senderNorm and GBankClassic_Guild:IsBank(senderNorm) or false
-			if currentIsGuildBankAlt and not senderIsGuildBankAlt then
-				-- Reject: non-guild bank alt trying to update guild bank alt data
-				local errorMsg = string.format("Rejected delta from non-guild bank alt %s for guild bank alt %s (guild bank alts are source of truth)", sender or "unknown", norm)
-				GBankClassic_Output:Debug("DELTA", "%s", errorMsg)
-
-				return ADOPTION_STATUS.UNAUTHORIZED
-			end
-		end
-
-		-- Apply changes (wrapped in pcall for safety)
-		local success, err = pcall(function()
-			local changes = deltaData.changes
-
-			if changes.money then
-				current.money = changes.money
-			end
-
-			-- Apply item changes (aggregated bank + bags + mail)
-			if changes.items then
-				if not current.items then
-					current.items = {}
-				end
-				self:ApplyItemDelta(current.items, changes.items)
-			end
-
-			-- Update version
-			current.version = deltaData.version
-		end)
-
-		if not success then
-			-- Delta application failed, request full sync
-			local errorMsg = string.format("Delta application error: %s", tostring(err))
-			GBankClassic_Output:Error("Failed to apply delta for %s: %s", norm, tostring(err))
-			self:RecordDeltaError(guildInfo.name, norm, "APPLICATION_ERROR", errorMsg)
+	-- Validate base version matches
+	if not current then
+		-- No existing data, request full sync (but only if not already pending)
+		local hasPending = GBankClassic_Guild.pending_sync and GBankClassic_Guild.pending_sync.alts and GBankClassic_Guild.pending_sync.alts[norm]
+		if not hasPending then
+			local errorMsg = string.format("No existing data for %s", norm)
+			GBankClassic_Output:Debug("DELTA", errorMsg .. ", requesting full sync")
+			self:RecordDeltaError(guildInfo.name, norm, "NO_DATA", errorMsg)
 			GBankClassic_Guild:QueryAlt(nil, norm, nil)
-			if guildInfo and guildInfo.name then
-				GBankClassic_Database:RecordDeltaFailed(guildInfo.name)
-			end
-
-			return ADOPTION_STATUS.INVALID
+		else
+			GBankClassic_Output:Debug("DELTA", "No data for %s but full sync already pending, skipping duplicate request", norm)
 		end
 
-		-- Save new snapshot for future deltas
 		if guildInfo and guildInfo.name then
-			GBankClassic_Database:SaveSnapshot(guildInfo.name, norm, current)
-			GBankClassic_Database:RecordDeltaApplied(guildInfo.name)
-
-			-- Record apply time
-			local applyTime = debugprofilestop() - applyStart
-			GBankClassic_Database:RecordDeltaApplyTime(guildInfo.name, applyTime)
-			GBankClassic_Output:Debug("DELTA", "✓ Applied delta for %s (v%d) in %.2fms", norm, deltaData.version, applyTime)
+			GBankClassic_Database:RecordDeltaFailed(guildInfo.name)
 		end
 
-		-- Reset error count on successful application
-		self:ResetDeltaErrorCount(guildInfo.name, norm)
+		return ADOPTION_STATUS.INVALID
+	end
 
-		-- Trigger UI refresh if Inventory window is open
-		if GBankClassic_UI_Inventory and GBankClassic_UI_Inventory.isOpen then
-			GBankClassic_UI_Inventory:DrawContent()
+	-- Protect guild bank alt data as source of truth
+	-- Non-guild bank alts accept all deltas (they're not the authority)
+	local player = UnitName("player")
+	local realm = GetNormalizedRealmName()
+	local playerFull = player .. "-" .. realm
+	local playerNorm = GBankClassic_Guild:NormalizeName(playerFull)
+	local playerIsGuildBankAlt = GBankClassic_Guild:IsBank(playerNorm)
+	if playerIsGuildBankAlt then
+		-- We are a guild bank alt - protect our own data and other guild bank alt data
+
+		-- CRITICAL: If this delta is about US, reject it (we are the source of truth for our own data)
+		if norm == playerNorm then
+			local errorMsg = string.format("Rejected delta from %s about ourselves (guild bank alt is source of truth for own data)", sender or "unknown")
+			GBankClassic_Output:Debug("DELTA", "%s", errorMsg)
+
+			return ADOPTION_STATUS.UNAUTHORIZED
+		end
+		
+		-- Also protect OTHER guild bank alt data from non-guild bank alt updates
+		local currentIsGuildBankAlt = GBankClassic_Guild:IsBank(norm)
+		local senderNorm = sender and GBankClassic_Guild:NormalizeName(sender) or nil
+		local senderIsGuildBankAlt = senderNorm and GBankClassic_Guild:IsBank(senderNorm) or false
+		if currentIsGuildBankAlt and not senderIsGuildBankAlt then
+			-- Reject: non-guild bank alt trying to update guild bank alt data
+			local errorMsg = string.format("Rejected delta from non-guild bank alt %s for guild bank alt %s (guild bank alts are source of truth)", sender or "unknown", norm)
+			GBankClassic_Output:Debug("DELTA", "%s", errorMsg)
+
+			return ADOPTION_STATUS.UNAUTHORIZED
+		end
+	end
+
+	-- Apply changes (wrapped in pcall for safety)
+	local success, err = pcall(function()
+		local changes = deltaData.changes
+
+		if changes.money then
+			current.money = changes.money
 		end
 
-		return ADOPTION_STATUS.ADOPTED
+		-- Apply item changes (aggregated bank + bags + mail)
+		if changes.items then
+			if not current.items then
+				current.items = {}
+			end
+			self:ApplyItemDelta(current.items, changes.items)
+		end
+
+		-- Update version
+		current.version = deltaData.version
 	end)
+
+	if not success then
+		-- Delta application failed, request full sync
+		local errorMsg = string.format("Delta application error: %s", tostring(err))
+		GBankClassic_Output:Error("Failed to apply delta for %s: %s", norm, tostring(err))
+		self:RecordDeltaError(guildInfo.name, norm, "APPLICATION_ERROR", errorMsg)
+		GBankClassic_Guild:QueryAlt(nil, norm, nil)
+		if guildInfo and guildInfo.name then
+			GBankClassic_Database:RecordDeltaFailed(guildInfo.name)
+		end
+
+		return ADOPTION_STATUS.INVALID
+	end
+
+	-- Save new snapshot for future deltas
+	if guildInfo and guildInfo.name then
+		GBankClassic_Database:SaveSnapshot(guildInfo.name, norm, current)
+		GBankClassic_Database:RecordDeltaApplied(guildInfo.name)
+
+		-- Record apply time
+		local applyTime = debugprofilestop() - applyStart
+		GBankClassic_Database:RecordDeltaApplyTime(guildInfo.name, applyTime)
+		GBankClassic_Output:Debug("DELTA", "✓ Applied delta for %s (v%d) in %.2fms", norm, deltaData.version, applyTime)
+	end
+
+	-- Reset error count on successful application
+	self:ResetDeltaErrorCount(guildInfo.name, norm)
+
+	-- Trigger UI refresh if Inventory window is open
+	if GBankClassic_UI_Inventory and GBankClassic_UI_Inventory.isOpen then
+		GBankClassic_UI_Inventory:DrawContent()
+	end
+
+	return ADOPTION_STATUS.ADOPTED
 end
 
 -- Apply a chain of deltas sequentially

@@ -14,7 +14,6 @@ embeds.xml
 # Modules
 Modules/Constants.lua
 Modules/Output.lua
-Modules/Performance.lua
 Modules/DeltaComms.lua
 Modules/Bank.lua
 Modules/Chat.lua

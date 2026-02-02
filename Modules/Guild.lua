@@ -766,9 +766,6 @@ function GBankClassic_Guild:RefreshOnlineCache()
 	for _ in pairs(self.onlineMembers) do
 		count = count + 1
 	end
-
-	local duration = debugprofilestop() - startTime
-	GBankClassic_Performance:RecordOperation("RefreshOnlineCache", duration)
 	GBankClassic_Output:Debug("CACHE", "Refreshed online cache: %d members online", count)
 	GBankClassic_Output:Debug("ROSTER", "Refreshed online cache: %d members online", count)
 end
@@ -1519,310 +1516,308 @@ function OnChunkSent(arg, bytesSent, totalBytes, sendResult)
 end
 
 function GBankClassic_Guild:ReceiveAltData(name, alt, sender)
-	return GBankClassic_Performance:Track("ReceiveAltData", function()
-		if not self.Info then
-			return ADOPTION_STATUS.IGNORED
+	if not self.Info then
+		return ADOPTION_STATUS.IGNORED
+	end
+
+	-- Sanitize incoming alt data
+	local function sanitizeAlt(a)
+		if not a or _G.type(a) ~= "table" then
+			return nil
 		end
 
-		-- Sanitize incoming alt data
-		local function sanitizeAlt(a)
-			if not a or _G.type(a) ~= "table" then
-				return nil
-			end
-
-			-- Sanitize alt.items (array)
-			if a.items then
-				local cleaned = {}
-				for k, v in pairs(a.items) do
-					if v and _G.type(v) == "table" and v.ID then
-						table.insert(cleaned, v)
-					end
+		-- Sanitize alt.items (array)
+		if a.items then
+			local cleaned = {}
+			for k, v in pairs(a.items) do
+				if v and _G.type(v) == "table" and v.ID then
+					table.insert(cleaned, v)
 				end
-				a.items = cleaned
 			end
+			a.items = cleaned
+		end
 
-			-- Sanitize bank items (array) - compact after removing invalids
-			if a.bank and _G.type(a.bank) == "table" and a.bank.items then
-				local cleaned = {}
-				for k, v in pairs(a.bank.items) do
-					if v and _G.type(v) == "table" and v.ID then
-						table.insert(cleaned, v)
-					end
+		-- Sanitize bank items (array) - compact after removing invalids
+		if a.bank and _G.type(a.bank) == "table" and a.bank.items then
+			local cleaned = {}
+			for k, v in pairs(a.bank.items) do
+				if v and _G.type(v) == "table" and v.ID then
+					table.insert(cleaned, v)
 				end
-				a.bank.items = cleaned
 			end
+			a.bank.items = cleaned
+		end
 
-			-- Sanitize bag items (array) - compact after removing invalids
-			if a.bags and _G.type(a.bags) == "table" and a.bags.items then
-				local cleaned = {}
-				local beforeCount = 0
-				local validCount = 0
-				local invalidCount = 0
-				for k, v in pairs(a.bags.items) do
-					beforeCount = beforeCount + 1
-					if v and _G.type(v) == "table" and v.ID then
-						table.insert(cleaned, v)
-						validCount = validCount + 1
-					else
-						invalidCount = invalidCount + 1
-						GBankClassic_Output:Debug("SYNC", "  Sanitize: invalid bag item at [%s]: v=%s, _G.type=%s, ID=%s", tostring(k), tostring(v), _G.type(v), v and tostring(v.ID) or "nil")
-					end
+		-- Sanitize bag items (array) - compact after removing invalids
+		if a.bags and _G.type(a.bags) == "table" and a.bags.items then
+			local cleaned = {}
+			local beforeCount = 0
+			local validCount = 0
+			local invalidCount = 0
+			for k, v in pairs(a.bags.items) do
+				beforeCount = beforeCount + 1
+				if v and _G.type(v) == "table" and v.ID then
+					table.insert(cleaned, v)
+					validCount = validCount + 1
+				else
+					invalidCount = invalidCount + 1
+					GBankClassic_Output:Debug("SYNC", "  Sanitize: invalid bag item at [%s]: v=%s, _G.type=%s, ID=%s", tostring(k), tostring(v), _G.type(v), v and tostring(v.ID) or "nil")
 				end
-				GBankClassic_Output:Debug("SYNC", "Sanitized bags: before=%d, valid=%d, invalid=%d", beforeCount, validCount, invalidCount)
-				a.bags.items = cleaned
 			end
-
-			return a
+			GBankClassic_Output:Debug("SYNC", "Sanitized bags: before=%d, valid=%d, invalid=%d", beforeCount, validCount, invalidCount)
+			a.bags.items = cleaned
 		end
 
-		alt = sanitizeAlt(alt)
-		if not alt then
-			return ADOPTION_STATUS.INVALID
+		return a
+	end
+
+	alt = sanitizeAlt(alt)
+	if not alt then
+		return ADOPTION_STATUS.INVALID
+	end
+
+	-- Debug: Log what we received
+	local function countItems(items)
+		if not items or _G.type(items) ~= "table" then
+			return 0
+		end
+		local count = 0
+		for _ in pairs(items) do
+			count = count + 1
 		end
 
-		-- Debug: Log what we received
-		local function countItems(items)
-			if not items or _G.type(items) ~= "table" then
-				return 0
-			end
-			local count = 0
-			for _ in pairs(items) do
-				count = count + 1
-			end
+		return count
+	end
 
-			return count
+	GBankClassic_Output:Debug("SYNC", "ReceiveAltData for %s: alt.items=%d, alt.bank.items=%d, alt.bags.items=%d", name, countItems(alt.items), (alt.bank and alt.bank.items) and countItems(alt.bank.items) or 0, (alt.bags and alt.bags.items) and countItems(alt.bags.items) or 0)
+
+	-- Backward compatibility: Compute alt.items from sources if missing
+	-- This handles data from players who haven't rescanned after the aggregation update
+	-- OLD STRUCTURE: Only bank and bags were synced (mail was local-only)
+
+	-- Check if alt.items has any content (handles both array and key-value formats)
+	local function hasAnyItems(items)
+		if not items or _G.type(items) ~= "table" then
+			return false
 		end
 
-		GBankClassic_Output:Debug("SYNC", "ReceiveAltData for %s: alt.items=%d, alt.bank.items=%d, alt.bags.items=%d", name, countItems(alt.items), (alt.bank and alt.bank.items) and countItems(alt.bank.items) or 0, (alt.bags and alt.bags.items) and countItems(alt.bags.items) or 0)
+		return next(items) ~= nil
+	end
 
-		-- Backward compatibility: Compute alt.items from sources if missing
-		-- This handles data from players who haven't rescanned after the aggregation update
-		-- OLD STRUCTURE: Only bank and bags were synced (mail was local-only)
+	local needsReconstruction = not hasAnyItems(alt.items)
 
-		-- Check if alt.items has any content (handles both array and key-value formats)
-		local function hasAnyItems(items)
-			if not items or _G.type(items) ~= "table" then
-				return false
+	if needsReconstruction then
+		local bankItems = (alt.bank and alt.bank.items) or {}
+		local bagItems = (alt.bags and alt.bags.items) or {}
+
+		GBankClassic_Output:Debug("SYNC", "Reconstructing alt.items for %s: bank=%d, bags=%d", name, #bankItems, #bagItems)
+
+		-- Aggregate bank + bags ONLY (mail was never synced in old system)
+		if #bankItems > 0 or #bagItems > 0 then
+			local aggregated = GBankClassic_Item:Aggregate(bankItems, bagItems)
+			alt.items = {}
+			for _, item in pairs(aggregated) do
+				table.insert(alt.items, item)
 			end
-
-			return next(items) ~= nil
-		end
-
-		local needsReconstruction = not hasAnyItems(alt.items)
-
-		if needsReconstruction then
-			local bankItems = (alt.bank and alt.bank.items) or {}
-			local bagItems = (alt.bags and alt.bags.items) or {}
-
-			GBankClassic_Output:Debug("SYNC", "Reconstructing alt.items for %s: bank=%d, bags=%d", name, #bankItems, #bagItems)
-
-			-- Aggregate bank + bags ONLY (mail was never synced in old system)
-			if #bankItems > 0 or #bagItems > 0 then
-				local aggregated = GBankClassic_Item:Aggregate(bankItems, bagItems)
-				alt.items = {}
-				for _, item in pairs(aggregated) do
-					table.insert(alt.items, item)
-				end
-				GBankClassic_Output:Debug("SYNC", "Reconstructed alt.items for %s: %d items from bank+bags", name, #alt.items)
-			else
-				GBankClassic_Output:Debug("SYNC", "No items to reconstruct for %s (bank and bags both empty)", name)
-			end
+			GBankClassic_Output:Debug("SYNC", "Reconstructed alt.items for %s: %d items from bank+bags", name, #alt.items)
 		else
-			-- alt.items exists, deduplicate and ensure array format
-			-- Items may have duplicates from corrupted syncs, so aggregate to dedupe
-			-- DEBUG: Log sample counts BEFORE deduplication
-			if alt.items and #alt.items > 0 then
-				local beforeSample = {}
-				for i = 1, math.min(5, #alt.items) do
-					local item = alt.items[i]
-					if item then
-						table.insert(beforeSample, string.format("%s:%d", item.ID or "?", item.Count or 0))
-					end
+			GBankClassic_Output:Debug("SYNC", "No items to reconstruct for %s (bank and bags both empty)", name)
+		end
+	else
+		-- alt.items exists, deduplicate and ensure array format
+		-- Items may have duplicates from corrupted syncs, so aggregate to dedupe
+		-- DEBUG: Log sample counts BEFORE deduplication
+		if alt.items and #alt.items > 0 then
+			local beforeSample = {}
+			for i = 1, math.min(5, #alt.items) do
+				local item = alt.items[i]
+				if item then
+					table.insert(beforeSample, string.format("%s:%d", item.ID or "?", item.Count or 0))
 				end
-				GBankClassic_Output:Debug("SYNC", "BEFORE dedupe - First 5 items received: %s", table.concat(beforeSample, ", "))
 			end
-
-			-- Check if we need to merge mail items into alt.items
-			-- Only merge if this is OLD data (no mailHash = created before mail sync existed)
-			-- If mailHash exists, alt.items already includes mail from sender's Bank:Scan()
-			local hasMailHash = alt.mailHash ~= nil
-			local mailItems = (alt.mail and alt.mail.items) or {}
-			local hasMailItems = mailItems and #mailItems > 0
-			local needsMailMerge = hasMailItems and not hasMailHash
-
-			if needsMailMerge then
-				GBankClassic_Output:Debug("SYNC", "OLD DATA: Merging %d mail items into alt.items for %s (no mailHash)", #mailItems, name)
-				-- Aggregate alt.items with mail to ensure mail is included
-				local aggregated = GBankClassic_Item:Aggregate(alt.items, mailItems)
-				local arrayItems = {}
-				for _, item in pairs(aggregated) do
-					table.insert(arrayItems, item)
-				end
-				alt.items = arrayItems
-				GBankClassic_Output:Debug("SYNC", "Merged alt.items for %s: %d items (including mail)", name, #alt.items)
-			else
-				if hasMailHash then
-					GBankClassic_Output:Debug("SYNC", "NEW DATA: alt.items already includes mail (mailHash present) for %s", name)
-				end
-				-- No mail merge needed, just deduplicate
-				local aggregated = GBankClassic_Item:Aggregate(alt.items, nil)
-				local arrayItems = {}
-				for _, item in pairs(aggregated) do
-					table.insert(arrayItems, item)
-				end
-				alt.items = arrayItems
-				GBankClassic_Output:Debug("SYNC", "alt.items exists for %s, deduplicated and converted to array: %d items", name, #alt.items)
-			end
-
-			-- DEBUG: Log sample counts AFTER deduplication
-			if alt.items and #alt.items > 0 then
-				local afterSample = {}
-				for i = 1, math.min(5, #alt.items) do
-					local item = alt.items[i]
-					if item then
-						table.insert(afterSample, string.format("%s:%d", item.ID or "?", item.Count or 0))
-					end
-				end
-				GBankClassic_Output:Debug("SYNC", "AFTER dedupe - First 5 items stored: %s", table.concat(afterSample, ", "))
-			end
+			GBankClassic_Output:Debug("SYNC", "BEFORE dedupe - First 5 items received: %s", table.concat(beforeSample, ", "))
 		end
 
-		local norm = self:NormalizeName(name)
-		local existing = self.Info.alts[norm]
-		local senderNorm = sender and self:NormalizeName(sender) or nil
+		-- Check if we need to merge mail items into alt.items
+		-- Only merge if this is OLD data (no mailHash = created before mail sync existed)
+		-- If mailHash exists, alt.items already includes mail from sender's Bank:Scan()
+		local hasMailHash = alt.mailHash ~= nil
+		local mailItems = (alt.mail and alt.mail.items) or {}
+		local hasMailItems = mailItems and #mailItems > 0
+		local needsMailMerge = hasMailItems and not hasMailHash
 
-		-- Guild bank alt protection logic
-		-- Rule 1: Never accept data about yourself (you are source of truth)
-		-- Rule 2: Guild bank alts only accept data about OTHER guild bank alts FROM that guild bank alt
-		-- Rule 3: Non-guild bank alts accept data from anyone
-		local player = UnitName("player") .. "-" .. GetNormalizedRealmName()
-		local playerNorm = self:NormalizeName(player)
-		local isOwnData = playerNorm == norm
-		local targetIsGuildBankAlt = self:IsBank(norm)
-		local senderIsGuildBankAlt = senderNorm and self:IsBank(senderNorm) or false
-		local receiverIsGuildBankAlt = self:IsBank(playerNorm)
+		if needsMailMerge then
+			GBankClassic_Output:Debug("SYNC", "OLD DATA: Merging %d mail items into alt.items for %s (no mailHash)", #mailItems, name)
+			-- Aggregate alt.items with mail to ensure mail is included
+			local aggregated = GBankClassic_Item:Aggregate(alt.items, mailItems)
+			local arrayItems = {}
+			for _, item in pairs(aggregated) do
+				table.insert(arrayItems, item)
+			end
+			alt.items = arrayItems
+			GBankClassic_Output:Debug("SYNC", "Merged alt.items for %s: %d items (including mail)", name, #alt.items)
+		else
+			if hasMailHash then
+				GBankClassic_Output:Debug("SYNC", "NEW DATA: alt.items already includes mail (mailHash present) for %s", name)
+			end
+			-- No mail merge needed, just deduplicate
+			local aggregated = GBankClassic_Item:Aggregate(alt.items, nil)
+			local arrayItems = {}
+			for _, item in pairs(aggregated) do
+				table.insert(arrayItems, item)
+			end
+			alt.items = arrayItems
+			GBankClassic_Output:Debug("SYNC", "alt.items exists for %s, deduplicated and converted to array: %d items", name, #alt.items)
+		end
 
-		-- Rule 1: Reject data about ourselves (we already have our own current data)
-		if isOwnData then
-			GBankClassic_Output:Debug("SYNC", "Rejected alt data about ourselves (we are the source of truth)")
-			
+		-- DEBUG: Log sample counts AFTER deduplication
+		if alt.items and #alt.items > 0 then
+			local afterSample = {}
+			for i = 1, math.min(5, #alt.items) do
+				local item = alt.items[i]
+				if item then
+					table.insert(afterSample, string.format("%s:%d", item.ID or "?", item.Count or 0))
+				end
+			end
+			GBankClassic_Output:Debug("SYNC", "AFTER dedupe - First 5 items stored: %s", table.concat(afterSample, ", "))
+		end
+	end
+
+	local norm = self:NormalizeName(name)
+	local existing = self.Info.alts[norm]
+	local senderNorm = sender and self:NormalizeName(sender) or nil
+
+	-- Guild bank alt protection logic
+	-- Rule 1: Never accept data about yourself (you are source of truth)
+	-- Rule 2: Guild bank alts only accept data about OTHER guild bank alts FROM that guild bank alt
+	-- Rule 3: Non-guild bank alts accept data from anyone
+	local player = UnitName("player") .. "-" .. GetNormalizedRealmName()
+	local playerNorm = self:NormalizeName(player)
+	local isOwnData = playerNorm == norm
+	local targetIsGuildBankAlt = self:IsBank(norm)
+	local senderIsGuildBankAlt = senderNorm and self:IsBank(senderNorm) or false
+	local receiverIsGuildBankAlt = self:IsBank(playerNorm)
+
+	-- Rule 1: Reject data about ourselves (we already have our own current data)
+	if isOwnData then
+		GBankClassic_Output:Debug("SYNC", "Rejected alt data about ourselves (we are the source of truth)")
+		
+		return ADOPTION_STATUS.UNAUTHORIZED
+	end
+
+	-- Rule 2: Guild bank alt protection - only apply if WE are a guild bank alt protecting our data
+	-- Regular users should accept guild bank alt data from anyone
+	if receiverIsGuildBankAlt and targetIsGuildBankAlt then
+		-- We are a guild bank alt, and data is about a guild bank alt - only accept if sender is that guild bank alt
+		if senderNorm ~= norm then
+			GBankClassic_Output:Debug("SYNC", "Rejected data about guild bank alt %s from %s (guild bank alts only update themselves)", norm, senderNorm or "unknown")
+
 			return ADOPTION_STATUS.UNAUTHORIZED
 		end
+		-- If we get here: senderNorm == norm (guild bank alt updating themselves) - ACCEPT
+		GBankClassic_Output:Debug("SYNC", "Accepting data about guild bank alt %s from themselves", norm)
+	end
 
-		-- Rule 2: Guild bank alt protection - only apply if WE are a guild bank alt protecting our data
-		-- Regular users should accept guild bank alt data from anyone
-		if receiverIsGuildBankAlt and targetIsGuildBankAlt then
-			-- We are a guild bank alt, and data is about a guild bank alt - only accept if sender is that guild bank alt
-			if senderNorm ~= norm then
-				GBankClassic_Output:Debug("SYNC", "Rejected data about guild bank alt %s from %s (guild bank alts only update themselves)", norm, senderNorm or "unknown")
+	-- Rule 3: Non-guild bank alts accept all data, non-guild bank alt data accepted from anyone
+	-- Version checking for all alts
+	if existing and alt.version ~= nil and existing.version ~= nil and alt.version < existing.version then
+		return ADOPTION_STATUS.STALE
+	end
 
-				return ADOPTION_STATUS.UNAUTHORIZED
-			end
-			-- If we get here: senderNorm == norm (guild bank alt updating themselves) - ACCEPT
-			GBankClassic_Output:Debug("SYNC", "Accepting data about guild bank alt %s from themselves", norm)
-		end
-
-		-- Rule 3: Non-guild bank alts accept all data, non-guild bank alt data accepted from anyone
-		-- Version checking for all alts
-		if existing and alt.version ~= nil and existing.version ~= nil and alt.version < existing.version then
-			return ADOPTION_STATUS.STALE
-		end
-
-		-- Accept incoming if newer version
-		-- If same version, accept the alt with more items
-		local function itemCount(a)
-			local c = 0
-				if a and a.items then
-					for _, v in pairs(a.items) do
-					if v and v.ID then
-						c = c + 1
-					end
+	-- Accept incoming if newer version
+	-- If same version, accept the alt with more items
+	local function itemCount(a)
+		local c = 0
+			if a and a.items then
+				for _, v in pairs(a.items) do
+				if v and v.ID then
+					c = c + 1
 				end
 			end
-			return c
 		end
+		return c
+	end
 
-		if existing and existing.version and alt.version and alt.version < existing.version then
-			-- Incoming is older; ignore
-			return ADOPTION_STATUS.STALE
-		elseif existing and existing.version and alt.version and alt.version == existing.version then
-			-- Tie-breaker: choose the one with more items
-			if itemCount(alt) <= itemCount(existing) then
-				return ADOPTION_STATUS.STALE
-			end
-		end
-
-		-- Check against existing alt data, but only if version exists
-		if self.Info.alts[name] and alt.version ~= nil and self.Info.alts[name].version ~= nil and alt.version < self.Info.alts[name].version then
+	if existing and existing.version and alt.version and alt.version < existing.version then
+		-- Incoming is older; ignore
+		return ADOPTION_STATUS.STALE
+	elseif existing and existing.version and alt.version and alt.version == existing.version then
+		-- Tie-breaker: choose the one with more items
+		if itemCount(alt) <= itemCount(existing) then
 			return ADOPTION_STATUS.STALE
 		end
-		if self.hasRequested then
-			if self.requestCount == nil then
-				self.requestCount = 0
-			else
-				self.requestCount = self.requestCount - 1
+	end
+
+	-- Check against existing alt data, but only if version exists
+	if self.Info.alts[name] and alt.version ~= nil and self.Info.alts[name].version ~= nil and alt.version < self.Info.alts[name].version then
+		return ADOPTION_STATUS.STALE
+	end
+	if self.hasRequested then
+		if self.requestCount == nil then
+			self.requestCount = 0
+		else
+			self.requestCount = self.requestCount - 1
+		end
+		if self.requestCount == 0 then
+			self.hasRequested = false
+			GBankClassic_Output:Info("Sync completed.")
+		end
+	end
+
+	if not self.Info.alts then
+		self.Info.alts = {}
+	end
+
+	-- Preserve mail field from existing data when incoming sync lacks it
+	-- Mail is now synced, but old clients don't include it in their syncs
+	-- Preserve locally-scanned mail data to maintain visibility for new clients
+	local existingMail = existing and existing.mail or nil
+	local incomingHasMail = alt.mail ~= nil
+
+	GBankClassic_Output:Debug("MAIL", "AdoptAltData for %s: existingMail=%s, incomingHasMail=%s", norm, existingMail and "YES" or "NO", tostring(incomingHasMail))
+	if existingMail then
+		GBankClassic_Output:Debug("MAIL", "  existingMail has %d items", existingMail.items and #existingMail.items or 0)
+	end
+	self.Info.alts[norm] = alt
+	GBankClassic_Output:Debug("MAIL", "Overwrote self.Info.alts[%s], mail field now: %s", norm, alt.mail and "EXISTS" or "GONE")
+
+	-- Restore preserved mail if we had it locally and incoming sync doesn't have it
+	-- This handles backward compatibility: new clients preserve mail when receiving from old clients
+	if existingMail and not incomingHasMail then
+		self.Info.alts[norm].mail = existingMail
+		local mailItemCount = existingMail.items and #existingMail.items or 0
+		GBankClassic_Output:Debug("MAIL", "Restored mail for %s (%d items) - incoming sync lacked mail", norm, mailItemCount)
+		GBankClassic_Output:Debug("MAIL", "Preserved mail data for %s (%d items, lastScan=%s) - backward compat", norm, mailItemCount, tostring(existingMail.lastScan))
+
+		-- Re-aggregate alt.items to include the restored mail
+		-- The incoming alt.items doesn't have mail, so we need to merge it back in
+		if existingMail.items and #existingMail.items > 0 then
+			GBankClassic_Output:Debug("MAIL", "Merging %d restored mail items into alt.items for %s", #existingMail.items, norm)
+			local aggregated = GBankClassic_Item:Aggregate(self.Info.alts[norm].items, existingMail.items)
+			self.Info.alts[norm].items = {}
+			for _, item in pairs(aggregated) do
+				table.insert(self.Info.alts[norm].items, item)
 			end
-			if self.requestCount == 0 then
-				self.hasRequested = false
-				GBankClassic_Output:Info("Sync completed.")
-			end
+			GBankClassic_Output:Debug("MAIL", "Re-aggregated alt.items for %s: %d items (including restored mail)", norm, #self.Info.alts[norm].items)
 		end
+	elseif incomingHasMail then
+		GBankClassic_Output:Debug("MAIL", "Using incoming mail data for %s (new client sync)", norm)
+	end
 
-		if not self.Info.alts then
-			self.Info.alts = {}
-		end
+	-- Reset search data flag so inventory UI rebuilds search index (UI-008 fix)
+	if GBankClassic_UI_Inventory then
+		GBankClassic_UI_Inventory.searchDataBuilt = false
+	end
 
-		-- Preserve mail field from existing data when incoming sync lacks it
-		-- Mail is now synced, but old clients don't include it in their syncs
-		-- Preserve locally-scanned mail data to maintain visibility for new clients
-		local existingMail = existing and existing.mail or nil
-		local incomingHasMail = alt.mail ~= nil
+	-- Reconstruct links for items (bandwidth optimization)
+	if alt.items then
+		self:ReconstructItemLinks(alt.bags.items)
+	end
 
-		GBankClassic_Output:Debug("MAIL", "AdoptAltData for %s: existingMail=%s, incomingHasMail=%s", norm, existingMail and "YES" or "NO", tostring(incomingHasMail))
-		if existingMail then
-			GBankClassic_Output:Debug("MAIL", "  existingMail has %d items", existingMail.items and #existingMail.items or 0)
-		end
-		self.Info.alts[norm] = alt
-		GBankClassic_Output:Debug("MAIL", "Overwrote self.Info.alts[%s], mail field now: %s", norm, alt.mail and "EXISTS" or "GONE")
+	-- Reset error count on successful full sync
+	self:ResetDeltaErrorCount(norm)
 
-		-- Restore preserved mail if we had it locally and incoming sync doesn't have it
-		-- This handles backward compatibility: new clients preserve mail when receiving from old clients
-		if existingMail and not incomingHasMail then
-			self.Info.alts[norm].mail = existingMail
-			local mailItemCount = existingMail.items and #existingMail.items or 0
-			GBankClassic_Output:Debug("MAIL", "Restored mail for %s (%d items) - incoming sync lacked mail", norm, mailItemCount)
-			GBankClassic_Output:Debug("MAIL", "Preserved mail data for %s (%d items, lastScan=%s) - backward compat", norm, mailItemCount, tostring(existingMail.lastScan))
-
-			-- Re-aggregate alt.items to include the restored mail
-			-- The incoming alt.items doesn't have mail, so we need to merge it back in
-			if existingMail.items and #existingMail.items > 0 then
-				GBankClassic_Output:Debug("MAIL", "Merging %d restored mail items into alt.items for %s", #existingMail.items, norm)
-				local aggregated = GBankClassic_Item:Aggregate(self.Info.alts[norm].items, existingMail.items)
-				self.Info.alts[norm].items = {}
-				for _, item in pairs(aggregated) do
-					table.insert(self.Info.alts[norm].items, item)
-				end
-				GBankClassic_Output:Debug("MAIL", "Re-aggregated alt.items for %s: %d items (including restored mail)", norm, #self.Info.alts[norm].items)
-			end
-		elseif incomingHasMail then
-			GBankClassic_Output:Debug("MAIL", "Using incoming mail data for %s (new client sync)", norm)
-		end
-
-		-- Reset search data flag so inventory UI rebuilds search index (UI-008 fix)
-		if GBankClassic_UI_Inventory then
-			GBankClassic_UI_Inventory.searchDataBuilt = false
-		end
-
-		-- Reconstruct links for items (bandwidth optimization)
-		if alt.items then
-			self:ReconstructItemLinks(alt.bags.items)
-		end
-
-		-- Reset error count on successful full sync
-		self:ResetDeltaErrorCount(norm)
-
-		return ADOPTION_STATUS.ADOPTED
-	end)
+	return ADOPTION_STATUS.ADOPTED
 end
 
 -- Protocol version helper functions

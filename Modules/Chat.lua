@@ -1109,14 +1109,6 @@ local COMMAND_REGISTRY = {
 			GBankClassic_Guild:Hello()
 		end,
 	},
-	{
-		name = "perfstats",
-		help = "show performance metrics for current session",
-		expert = true,
-		handler = function()
-			GBankClassic_Performance:PrintReport()
-		end,
-	},
 	-- {
 	-- 	name = "persistcheck",
 	-- 	help = "check current request persistence state",

@@ -236,7 +236,6 @@ function GBankClassic_Events:PLAYER_LOGOUT(_)
 end
 
 function GBankClassic_Events:PLAYER_ENTERING_WORLD(_)
-	GBankClassic_Performance:RecordEvent("PLAYER_ENTERING_WORLD")
     -- Request initial guild roster update on world enter
 	local GuildRoster = GuildRoster or C_GuildInfo.GuildRoster
     if GuildRoster then
@@ -274,7 +273,6 @@ function GBankClassic_Events:GUILD_RANKS_UPDATE(_)
 end
 
 function GBankClassic_Events:GUILD_ROSTER_UPDATE(_)
-	GBankClassic_Performance:RecordEvent("GUILD_ROSTER_UPDATE")
     -- Refresh online members cache when roster updates
 	GBankClassic_Guild:RefreshOnlineCache()
 	-- Invalidate banks cache when roster updates
