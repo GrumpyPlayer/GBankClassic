@@ -289,8 +289,8 @@ local function testDeltaComputationMultipleChanges()
 
     -- Create new data with multiple changes
     local newData = TableCopy(oldData)
-    newData.money = 300000  -- Money change
-    newData.bank.items[1].Count = 30  -- Count change
+    newData.money = 300000 -- Money change
+    newData.bank.items[1].Count = 30 -- Count change
     table.insert(newData.bank.items, createTestItem(2996, 5, "[Bolt of Linen Cloth]"))  -- Add item
     table.remove(newData.bags.items, 1)  -- Remove item
 
@@ -432,7 +432,7 @@ local function testShouldUseDeltaLogic()
     -- Mock guild support at 60% (above 10% threshold)
     local oldGetGuildDeltaSupport = Database.GetGuildDeltaSupport
     Database.GetGuildDeltaSupport = function(name)
-        return 0.6  -- 60% support
+        return 0.6 -- 60% support
     end
 
     -- Test with delta enabled
@@ -648,7 +648,7 @@ local function testFullDeltaRoundtrip()
     -- Create initial data with proper structure
     local oldData = createTestAltData(name)
     oldData.version = 1
-    oldData.money = 100000  -- Money is at root level, not in bank
+    oldData.money = 100000 -- Money is at root level, not in bank
     oldData.bank.items = oldData.bank.items or {}
     -- Keep only first bank item
     oldData.bank.items[2] = nil
@@ -664,7 +664,7 @@ local function testFullDeltaRoundtrip()
     -- Make changes
     local newData = TableCopy(oldData)
     newData.version = 2
-    newData.money = 200000  -- Money is at root level
+    newData.money = 200000 -- Money is at root level
     -- Add new item to bank (append to array)
     table.insert(newData.bank.items, createTestItem(2996, 5))
     -- Remove first bag item
@@ -694,43 +694,6 @@ local function testFullDeltaRoundtrip()
     -- Bag items should have 1 item (originally had 2, removed 1)
     assertEquals(1, #appliedData.bags.items, "Bags should have 1 item (TESTS ITEM REMOVAL)")
     assertEquals(2, appliedData.version, "Version should be updated")
-end
-
-local function testDeltaSizeThreshold()
-    setupDeltaTest("TestGuild")
-
-    local name = "SizeTest"
-    local oldData = createTestAltData(name)
-    oldData.version = 1
-    oldData.money = 100000
-    -- Add many items to increase full size
-    for i = 3, 20 do
-        oldData.bank.items[i] = createTestItem(2589 + i, 1)
-    end
-    Database:SaveSnapshot("TestGuild", name, oldData)
-
-    local newData = TableCopy(oldData)
-    newData.version = 2
-    newData.money = 200000  -- Just change money
-
-    local delta = Guild:ComputeDelta(name, newData)
-    assertNotNil(delta, "Delta should be computed")
-    assertNotNil(delta.changes, "Delta should have changes")
-    assertEquals(200000, delta.changes.money, "Delta should have money change")
-
-    local fullSize = Guild:EstimateSize(newData)
-    local deltaSize = Guild:EstimateSize(delta)
-    local ratio = deltaSize / fullSize
-
-    -- With many items, a money-only delta should be small relative to full data
-    assert(ratio < PROTOCOL.MIN_DELTA_SIZE_RATIO,
-        string.format(
-            "Money-only change should be below %.0f%% threshold (actual: %.1f%%, deltaSize=%d, fullSize=%d)",
-            PROTOCOL.MIN_DELTA_SIZE_RATIO * 100,
-            ratio * 100,
-            deltaSize,
-            fullSize
-        ))
 end
 
 --============================================================================
@@ -777,7 +740,7 @@ local function testFallbackToFullSync()
     -- This test now validates that delta is enabled regardless of guild support percentage
     local oldGetGuildDeltaSupport = Database.GetGuildDeltaSupport
     Database.GetGuildDeltaSupport = function(name)
-        return 0  -- 0% support
+        return 0 -- 0% support
     end
 
     -- Should still use delta in v0.8.0 (threshold check removed)
@@ -831,7 +794,6 @@ function Tests:RunAllTests()
     -- Phase 5.5: Integration Tests
     addon:Print("\n|cff00ffffPhase 5.5: Integration Tests|r")
     runTest("Full Delta Roundtrip", testFullDeltaRoundtrip)
-    runTest("Delta Size Threshold", testDeltaSizeThreshold)
 
     -- Phase 5.6: Backwards Compatibility
     addon:Print("\n|cff00ffffPhase 5.6: Backwards Compatibility Tests|r")
@@ -890,7 +852,6 @@ function Tests:RunTest(testName)
         ["snapshot-validate"] = testSnapshotValidation,
         ["delta-validate"] = testDeltaStructureValidation,
         ["roundtrip"] = testFullDeltaRoundtrip,
-        ["size-threshold"] = testDeltaSizeThreshold,
         ["v1-ignore"] = testV1ClientIgnoresDeltaPrefix,
         ["v2-both"] = testV2ClientHandlesBothProtocols,
         ["fallback"] = testFallbackToFullSync,

@@ -11,10 +11,14 @@ function GBankClassic_Database:Init()
 				CHUNK = false,
 				CACHE = false,
 				WHISPER = false,
+				-- REQUESTS = false,
 				UI = false,
 				PROTOCOL = false,
 				DATABASE = false,
 				EVENTS = false,
+				INVENTORY = false,
+				MAIL = false,
+				ITEM = false,
 			},
 		},
 	})
@@ -29,6 +33,12 @@ function GBankClassic_Database:Reset(name)
         name = name,
         roster = {},
         alts = {},
+		-- requests = {},
+		-- requestsVersion = 0,
+		-- requestsTombstones = {},
+		-- settings = {
+		-- 	maxRequestPercent = 100, -- Default to no limit
+		-- },
 		deltaSnapshots = {},
 		deltaHistory = {},
 		guildProtocolVersions = {},
@@ -62,7 +72,7 @@ function GBankClassic_Database:ResetPlayer(name, player)
 
     self.db.factionrealm[name].alts[player] = {}
 
-    GBankClassic_Core:Print("Reset player database")
+    GBankClassic_Core:Response("Reset player database")
 end
 
 function GBankClassic_Database:Load(name)
@@ -72,13 +82,33 @@ function GBankClassic_Database:Load(name)
 
     local db = self.db.factionrealm[name]
 
-    if db == nil or db.roster == nil then
+	-- Only reset if there's truly no data (nil). Otherwise initialize missing fields.
+	-- This prevents data loss when some fields are missing but others (like requests) exist.
+	if db == nil then
         GBankClassic_Database:Reset(name)
         db = self.db.factionrealm[name]
-    elseif db.name == nil then
-        db.name = name
+    else
+		-- Initialize missing fields without wiping existing data
+		if db.name == nil then
+			db.name = name
+		end
+		if db.roster == nil then
+			db.roster = {}
+		end
+		if db.alts == nil then
+			db.alts = {}
+		end
     end
 
+	-- if not db.requests then
+	-- 	db.requests = {}
+	-- end
+	-- if not db.requestsVersion then
+	-- 	db.requestsVersion = 0
+	-- end
+	-- if not db.requestsTombstones then
+	-- 	db.requestsTombstones = {}
+	-- end
 	if not db.deltaSnapshots then
 		db.deltaSnapshots = {}
 	end
@@ -283,12 +313,7 @@ function GBankClassic_Database:SaveDeltaHistory(name, altName, baseVersion, vers
 	end
 
 	-- Add delta to history
-	table.insert(db.deltaHistory[altName], {
-		baseVersion = baseVersion,
-		version = version,
-		delta = self:DeepCopy(delta), -- Deep copy to prevent mutation
-		timestamp = GetServerTime()
-	})
+	table.insert(db.deltaHistory[altName], { baseVersion = baseVersion, version = version, delta = self:DeepCopy(delta), timestamp = GetServerTime() })
 
 	-- Enforce max count limit (keep most recent)
 	local maxCount = PROTOCOL.DELTA_HISTORY_MAX_COUNT or 10
@@ -316,11 +341,7 @@ function GBankClassic_Database:GetDeltaHistory(name, altName, fromVersion, toVer
 
 	for _, deltaEntry in ipairs(db.deltaHistory[altName]) do
 		if deltaEntry.baseVersion == currentVersion and deltaEntry.version <= toVersion then
-			table.insert(chain, {
-				baseVersion = deltaEntry.baseVersion,
-				version = deltaEntry.version,
-				delta = deltaEntry.delta
-			})
+			table.insert(chain, { baseVersion = deltaEntry.baseVersion, version = deltaEntry.version, delta = deltaEntry.delta })
 			currentVersion = deltaEntry.version
 
 			-- Stop if we've reached the target

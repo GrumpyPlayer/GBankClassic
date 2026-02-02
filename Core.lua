@@ -51,10 +51,20 @@ function GBankClassic_Core:OnInitialize()
     GBankClassic_Options:Init()
     GBankClassic_UI:Init()
 
-    -- Initialize module for item highlights
-    if GBankClassic_ItemHighlight and GBankClassic_ItemHighlight.Initialize then
-        GBankClassic_ItemHighlight:Initialize()
-    end
+    -- -- Initialize module for item highlights
+    -- if GBankClassic_ItemHighlight and GBankClassic_ItemHighlight.Initialize then
+    --     GBankClassic_ItemHighlight:Initialize()
+    -- end
+
+    -- -- Setup periodic memory snapshots (every 5 minutes)
+    -- local memoryFrame = CreateFrame("Frame")
+    -- memoryFrame:SetScript("OnUpdate", function(self, elapsed)
+    --     self.elapsed = (self.elapsed or 0) + elapsed
+    --     if self.elapsed >= 300 then -- 5 minutes
+    --         self.elapsed = 0
+    --         GBankClassic_Performance:RecordMemory("periodic")
+    --     end
+    -- end)
 end
 
 function GBankClassic_Core:OnEnable()
@@ -85,6 +95,11 @@ local function ComputeChecksum(str)
     -- Include length to catch truncation
     sum = (sum * 31 + len) % 2147483647
     return sum
+end
+
+-- Expose as public method for DeltaComms
+function GBankClassic_Core:Checksum(str)
+    return ComputeChecksum(str)
 end
 
 -- Serialize data with appended checksum for integrity verification
@@ -143,6 +158,6 @@ function GBankClassic_Core:SanitizeItemDelta(itemDelta)
 	return GBankClassic_DeltaComms:SanitizeItemDelta(itemDelta)
 end
 
-function GBankClassic_Core:ComputeInventoryHash(bank, bags, money)
-	return GBankClassic_DeltaComms:ComputeInventoryHash(bank, bags, money)
+function GBankClassic_Core:ComputeInventoryHash(bank, bags, mail, money)
+	return GBankClassic_DeltaComms:ComputeInventoryHash(bank, bags, mail, money)
 end

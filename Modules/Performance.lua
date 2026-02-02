@@ -25,7 +25,7 @@ function Performance:GarbageCollectSessions()
 	end
 	
 	if removed > 0 and GBankClassic_Output then
-		GBankClassic_Output:Debug("SYSTEM", string.format("[PERF] Garbage collected %d old session(s)", removed))
+		GBankClassic_Output:Debug("SYSTEM", string.format("Garbage collected %d old session(s)", removed))
 	end
 end
 
@@ -67,7 +67,8 @@ function Performance:Initialize()
 			ComputeDelta = 0,
 			ApplyDelta = 0,
 			ReceiveAltData = 0,
-			NormalizeRequestList = 0,
+			-- ReceiveRequestsData = 0,
+			-- NormalizeRequestList = 0,
 			ItemHighlightUpdate = 0,
 		},
 		
@@ -77,7 +78,7 @@ function Performance:Initialize()
 			GetBanks = 0,
 			ComputeDelta = 0,
 			ApplyDelta = 0,
-			NormalizeRequestList = 0,
+			-- NormalizeRequestList = 0,
 			ItemHighlightUpdate = 0,
 		},
 		
@@ -144,11 +145,7 @@ function Performance:RecordMemory(label)
 	UpdateAddOnMemoryUsage()
 	local memory = GetAddOnMemoryUsage("GBankClassic")
 	
-	table.insert(self.currentSession.memory, {
-		timestamp = GetTime() - self.sessionStartTime,
-		label = label,
-		memoryKB = memory,
-	})
+	table.insert(self.currentSession.memory, { timestamp = GetTime() - self.sessionStartTime, label = label, memoryKB = memory })
 	
 	-- Keep only last 50 snapshots
 	while #self.currentSession.memory > 50 do

@@ -17,6 +17,7 @@ local function OnClose(_)
     GBankClassic_UI_Inventory.isOpen = false
     GBankClassic_UI_Inventory.Window:Hide()
     GBankClassic_UI_Donations:Close()
+    -- GBankClassic_UI_Requests:Close()
     GBankClassic_UI_Search:Close()
 end
 
@@ -72,6 +73,11 @@ function GBankClassic_UI_Inventory:DrawWindow()
     window:SetLayout("Flow")
     window:SetWidth(550)
 
+	-- Persist window position/size across reloads
+	if GBankClassic_Options and GBankClassic_Options.db then
+		window:SetStatusTable(GBankClassic_Options.db.char.framePositions)
+	end
+    
     window.frame:SetResizeBounds(500, 500)
     window.frame:EnableKeyboard(true)
     window.frame:SetPropagateKeyboardInput(true)
@@ -118,6 +124,15 @@ function GBankClassic_UI_Inventory:DrawWindow()
     scoreboardButton:SetHeight(24)
     buttonContainer:AddChild(scoreboardButton)
 
+	-- local requestsButton = GBankClassic_UI:Create("Button")
+	-- requestsButton:SetText("Requests")
+	-- requestsButton:SetCallback("OnClick", function(_)
+	-- 	GBankClassic_UI_Requests:Toggle()
+	-- end)
+	-- requestsButton:SetWidth(175)
+	-- requestsButton:SetHeight(24)
+	-- buttonContainer:AddChild(requestsButton)
+
     local tabGroup = GBankClassic_UI:Create("TabGroup")
     tabGroup:SetLayout("Flow")
     tabGroup:SetFullWidth(true)
@@ -136,7 +151,8 @@ function GBankClassic_UI_Inventory:DrawContent()
 		return
 	end
 
-    GBankClassic_UI_Search:BuildSearchData()
+    -- Rebuild search on next open
+	GBankClassic_UI_Search.searchDataBuilt = false
 
     local players = {}
     local n = 0
@@ -156,11 +172,11 @@ function GBankClassic_UI_Inventory:DrawContent()
     for _, player in pairs(players) do
 		local norm = GBankClassic_Guild:NormalizeName(player)
 		local alt = info.alts[norm]
-        if not first_tab then
-            first_tab = player
-        end
-        tabs[i] = { value = player, text = player }
         if alt and _G.type(alt) == "table" then
+            if not first_tab then
+                first_tab = player
+            end
+            tabs[i] = { value = player, text = player }
             if alt.money then
                 total_gold = total_gold + alt.money
             end
@@ -172,8 +188,8 @@ function GBankClassic_UI_Inventory:DrawContent()
                 slots = slots + alt.bags.slots.count
                 total_slots = total_slots + alt.bags.slots.total
             end
+            i = i + 1
         end
-        i = i + 1
     end
 
 	if #tabs == 0 then
@@ -211,13 +227,28 @@ function GBankClassic_UI_Inventory:DrawContent()
             slot_total = slot_total + alt.bags.slots.total
         end
 
+		-- Add mail item count if available
+		local mailCount = 0
+		if alt.mail and alt.mail.items then
+			for _ in pairs(alt.mail.items) do
+				mailCount = mailCount + 1
+			end
+		end
+
         local money = 0
         if alt.money then
             money = alt.money
         end
 
-        local color = GBankClassic_UI_Inventory:GetPercentColor(slot_count / slot_total)
-        local status = string.format("As of %s    %s    |c%s%d/%d|r", datetime, GetCoinTextureString(money), color, slot_count, slot_total)
+		local percent = slot_total > 0 and (slot_count / slot_total) or 0
+		local color = GBankClassic_UI_Inventory:GetPercentColor(percent)
+		local mailText = ""
+		if mailCount > 0 then
+			local age = GBankClassic_MailInventory:GetMailDataAge(alt)
+			local ageText = age and (" (" .. SecondsToTime(age) .. " ago)") or ""
+			mailText = string.format("    |cff87ceeb✉ %d item%s%s|r", mailCount, mailCount > 1 and "s" or "", ageText)
+		end
+        local status = string.format("As of %s    %s    |c%s%d/%d|r%s", datetime, GetCoinTextureString(money), color, slot_count, slot_total, mailText)
         self.Window:SetStatusText(status)
     end)
 
@@ -255,17 +286,86 @@ function GBankClassic_UI_Inventory:DrawContent()
             scroll:SetFullHeight(true)
             scroll:SetFullWidth(true)
             g:AddChild(scroll)
-
-            local bank = nil
-            if alt.bank then
-                bank = alt.bank.items
+            
+            local normTab = GBankClassic_Guild:NormalizeName(tab)
+            local alt = info.alts[normTab]
+            
+            -- Use alt.items if available
+            -- Otherwise compute from sources for backward compatibility
+            local items = {}
+            
+            if alt.items and next(alt.items) ~= nil then
+                -- alt.items exists - use it directly (may be array or key-value)
+                for _, item in pairs(alt.items) do
+                    table.insert(items, item)
+                end
+                GBankClassic_Output:Debug("INVENTORY", "Inventory tab %s: using alt.items (%d items)", tab, #items)
+            else
+                -- Fallback: compute from sources (backward compatibility for very old data)
+                local bankItems = (alt.bank and alt.bank.items) or {}
+                local bagItems = (alt.bags and alt.bags.items) or {}
+                local mailItems = (alt.mail and alt.mail.items) or {}
+                
+                GBankClassic_Output:Debug("INVENTORY", "Inventory tab %s: computing from sources bank=%d, bags=%d, mail=%d", tab, #bankItems, #bagItems, #mailItems)
+                
+                -- Aggregate all sources (all are now in array format), then convert the key-value result to array
+                local aggregated = GBankClassic_Item:Aggregate(bankItems, bagItems)
+                aggregated = GBankClassic_Item:Aggregate(aggregated, mailItems)
+                for _, item in pairs(aggregated) do
+                    table.insert(items, item)
+                end
             end
-            if alt.bags then
-                local items = GBankClassic_Item:Aggregate(bank, alt.bags.items)
-                GBankClassic_Item:GetItems(items, function(list)
+            
+            GBankClassic_Output:Debug("INVENTORY", "Inventory tab %s: aggregated to %d unique items", tab, #items)
+            
+            if items and #items > 0 then
+                -- Debug: Check for duplicate item IDs with different links
+                local itemsByID = {}
+                for _, item in pairs(items) do
+                    if item and item.ID then
+                        if not itemsByID[item.ID] then
+                            itemsByID[item.ID] = {}
+                        end
+                        table.insert(itemsByID[item.ID], { Count = item.Count, Link = item.Link })
+                    end
+                end
+                for itemID, entries in pairs(itemsByID) do
+                    if #entries > 1 then
+                        GBankClassic_Output:Debug("INVENTORY", "DUPLICATE ITEM ID %d found with %d different entries:", itemID, #entries)
+                        for i, entry in ipairs(entries) do
+                            GBankClassic_Output:Debug("INVENTORY", "  Entry %d: count=%d, link=%s", i, entry.Count, entry.Link or "nil")
+                        end
+                    end
+                end
+                
+                -- Validate and filter items before passing to GetItems
+                local validItems = {}
+                for i, item in ipairs(items) do
+                    if item and item.ID and item.ID > 0 then
+                        table.insert(validItems, item)
+                    else
+                        GBankClassic_Output:Debug("INVENTORY", "WARNING: Tab %s skipping invalid item at index %d (ID: %s, link: %s)", tab, i, tostring(item and item.ID or "nil item"), tostring(item and item.Link or "nil"))
+                    end
+                end
+                
+                GBankClassic_Item:GetItems(validItems, function(list)
+                    GBankClassic_Output:Debug("INVENTORY", "Inventory tab %s: GetItems callback received %d items", tab, list and #list or 0)
                     GBankClassic_Item:Sort(list)
+
                     for _, item in pairs(list) do
-                        GBankClassic_UI:DrawItem(item, scroll)
+                        if item and item.Info and item.Info.name then
+                            GBankClassic_Output:Debug("INVENTORY", "Inventory tab %s: displaying %s with count %d (ID: %d)", tab, item.Info.name, item.Count or 0, item.ID)
+                        end
+                        local itemWidget = GBankClassic_UI:DrawItem(item, scroll)
+                        if itemWidget then
+                            itemWidget:SetCallback("OnClick", function(widget, event)
+                                if IsShiftKeyDown() or IsControlKeyDown() then
+                                    GBankClassic_UI:EventHandler(widget, event)
+                                    return
+                                end
+                                -- GBankClassic_UI_Search:ShowRequestDialog(item, tab)
+                            end)
+                        end
                     end
                 end)
             end

@@ -51,10 +51,49 @@ function GBankClassic_Events:RegisterEvents()
     self:RegisterEvent("MERCHANT_CLOSED")
     self:RegisterEvent("BAG_UPDATE")
     self:RegisterEvent("PLAYER_REGEN_DISABLED")
+	-- self:RegisterEvent("MAIL_SEND_SUCCESS")
 
     hooksecurefunc("ChatEdit_InsertLink", function(link)
         GBankClassic_UI:OnInsertLink(link)
     end)
+
+	-- -- Hook MailFrame visibility changes directly for more reliable detection
+	-- if MailFrame and not MailFrame.bankHooked then
+	-- 	MailFrame.bankHooked = true
+	-- 	MailFrame:HookScript("OnShow", function()
+	-- 		GBankClassic_Mail.isOpen = true
+	-- 		C_Timer.After(0.1, function()
+	-- 			if GBankClassic_UI_Requests.isOpen then
+	-- 				GBankClassic_UI_Requests:DrawContent()
+	-- 			end
+	-- 		end)
+	-- 	end)
+	-- 	MailFrame:HookScript("OnHide", function()
+	-- 		GBankClassic_Mail.isOpen = false
+	-- 		C_Timer.After(0.1, function()
+	-- 			if GBankClassic_UI_Requests.isOpen then
+	-- 				GBankClassic_UI_Requests:DrawContent()
+	-- 			end
+	-- 		end)
+	-- 	end)
+	-- end
+
+	-- -- Hook Send Mail tab to auto-open Requests window for bank alts (like BulkMail)
+	-- if MailFrameTab2 and not MailFrameTab2.bankHooked then
+	-- 	MailFrameTab2.bankHooked = true
+	-- 	MailFrameTab2:HookScript("OnClick", function()
+	-- 		local player = GBankClassic_Guild:GetNormalizedPlayer()
+	-- 		if player and GBankClassic_Guild:IsBank(player) then
+	-- 			C_Timer.After(0.1, function()
+	-- 				if GBankClassic_UI_Requests.isOpen then
+	-- 					GBankClassic_UI_Requests:DrawContent()
+	-- 				else
+	-- 					GBankClassic_UI_Requests:Open()
+	-- 				end
+	-- 			end)
+	-- 		end
+	-- 	end)
+	-- end
 
 	self:SetTimer()
 	self:SetShareTimer()
@@ -87,6 +126,7 @@ function GBankClassic_Events:UnregisterEvents()
     self:UnregisterEvent("MERCHANT_CLOSED")
     self:UnregisterEvent("BAG_UPDATE")
     self:UnregisterEvent("PLAYER_REGEN_DISABLED")
+	-- self:UnregisterEvent("MAIL_SEND_SUCCESS")
 end
 
 function GBankClassic_Events:SetTimer()
@@ -107,7 +147,7 @@ function GBankClassic_Events:SetShareTimer()
 end
 
 function GBankClassic_Events:OnShareTimer()
-	GBankClassic_Guild:Share("reply")
+	GBankClassic_Guild:Share("reply", "version")
 	self:SetShareTimer()
 end
 
@@ -131,6 +171,7 @@ function GBankClassic_Events:Sync(priority)
 end
 
 -- Delta-specific version broadcast
+-- Guild bankt alts send BOTH gbank-dv (old) and gbank-dv2 (new) messages for compatibility
 function GBankClassic_Events:SyncDeltaVersion(priority)
 	local guild = GBankClassic_Guild:GetGuild()
 	if not guild then
@@ -150,13 +191,18 @@ function GBankClassic_Events:SyncDeltaVersion(priority)
 		return
 	end
 
-	-- Include banker status for pull-based protocol
+	-- Include guild bank alt status for pull-based protocol
 	local player = GBankClassic_Guild:GetNormalizedPlayer()
 	local isGuildBankAlt = player and GBankClassic_Guild:IsBank(player) or false
 	version.isGuildBankAlt = isGuildBankAlt
 
+	-- gbank-dv2 for new clients (with aggregated items hash)
 	local data = GBankClassic_Core:SerializeWithChecksum(version)
-	-- Use provided priority or default to NORMAL for automatic timer-based syncs
+	GBankClassic_Core:SendCommMessage("gbank-dv2", data, "Guild", nil, priority or "NORMAL")
+	
+	-- gbank-dv for older clients
+	-- Note: Old clients will compute hash from their legacy alt.bank/alt.bags structure
+	-- New clients ignore gbank-dv, so no conflict
 	GBankClassic_Core:SendCommMessage("gbank-dv", data, "Guild", nil, priority or "NORMAL")
 end
 
@@ -165,6 +211,34 @@ function GBankClassic_Events:PLAYER_LOGIN(_)
 end
 
 function GBankClassic_Events:PLAYER_LOGOUT(_)
+	-- Check if mail field exists before logout
+	local player = UnitName("player") .. "-" .. GetRealmName()
+	GBankClassic_Output:Debug("MAIL", "========================================")
+	GBankClassic_Output:Debug("MAIL", "Checking mail at logout for: %s", player)
+	if GBankClassic_Guild.Info and GBankClassic_Guild.Info.alts and GBankClassic_Guild.Info.alts[player] then
+		local alt = GBankClassic_Guild.Info.alts[player]
+		if alt.mail then
+			local mailCount = alt.mail.items and #alt.mail.items or 0
+			
+			GBankClassic_Output:Debug("MAIL", "Mail field exists with %d items", mailCount)
+			GBankClassic_Output:Debug("MAIL", "  version: %s (type: %s)", tostring(alt.mail.version), type(alt.mail.version))
+			GBankClassic_Output:Debug("MAIL", "  lastScan: %s (type: %s)", tostring(alt.mail.lastScan), type(alt.mail.lastScan))
+			GBankClassic_Output:Debug("MAIL", "  slots type: %s", type(alt.mail.slots))
+			if alt.mail.slots then
+				GBankClassic_Output:Debug("MAIL", "  slots.count: %s", tostring(alt.mail.slots.count))
+			end
+			-- Check for metatables or functions that would prevent serialization
+			if getmetatable(alt.mail) then
+				GBankClassic_Output:Debug("MAIL", "WARNING: alt.mail has a metatable!")
+			end
+		else
+			GBankClassic_Output:Debug("MAIL", "Mail field missing!")
+		end
+	else
+		GBankClassic_Output:Debug("MAIL", "Alt data not found")
+	end
+	GBankClassic_Output:Debug("MAIL", "========================================")
+
 	-- Save persistent debug log to SavedVariables
 	GBankClassic_Output:SavePersistentLog()
 end
@@ -217,6 +291,8 @@ function GBankClassic_Events:GUILD_ROSTER_UPDATE(_)
 	GBankClassic_Guild:RebuildGuildBankAltsRoster()
 	-- Clear delta error counters for offline players
 	GBankClassic_DeltaComms:ClearOfflineErrorCounters(GBankClassic_Guild.Info and GBankClassic_Guild.Info.name)
+	-- -- Refresh Requests UI to update guild bank alt controls (like highlight checkbox)
+	-- GBankClassic_Guild:RefreshRequestsUI()
 end
 
 function GBankClassic_Events:GUILD_RANKS_UPDATE(_)
@@ -254,9 +330,23 @@ function GBankClassic_Events:BANKFRAME_CLOSED(_)
 end
 
 function GBankClassic_Events:MAIL_SHOW(_)
+	GBankClassic_Output:Debug("MAIL", "MAIL_SHOW event fired")
     GBankClassic_Bank:OnUpdateStart()
+	GBankClassic_MailInventory.hasUpdated = true
+	GBankClassic_Output:Debug("MAIL", "Set MailInventory.hasUpdated = %s", tostring(GBankClassic_MailInventory.hasUpdated))
     GBankClassic_Mail.isOpen = true
+	-- GBankClassic_Mail:InitSendHook()
     GBankClassic_Mail:Check()
+	
+	-- Hook MailFrame OnHide to detect when mail closes (MAIL_CLOSED event may not fire reliably)
+	if not MailFrame.GBankHooked then
+		MailFrame:HookScript("OnHide", function()
+			GBankClassic_Output:Debug("MAIL", "MailFrame OnHide fired (mailbox closed)")
+			GBankClassic_Events:MAIL_CLOSED()
+		end)
+		MailFrame.GBankHooked = true
+		GBankClassic_Output:Debug("MAIL", "Hooked MailFrame OnHide")
+	end
 end
 
 function GBankClassic_Events:MAIL_INBOX_UPDATE(_)
@@ -264,11 +354,28 @@ function GBankClassic_Events:MAIL_INBOX_UPDATE(_)
 end
 
 function GBankClassic_Events:MAIL_CLOSED(_)
+	GBankClassic_Output:Debug("MAIL", "MAIL_CLOSED event fired")
     GBankClassic_Mail.isOpen = false
     GBankClassic_Mail.isScanning = false
+	GBankClassic_Output:Debug("MAIL", "Calling Bank:OnUpdateStop()")
     GBankClassic_Bank:OnUpdateStop()
+	GBankClassic_Output:Debug("MAIL", "Bank:OnUpdateStop() completed")
     GBankClassic_UI_Mail:Close()
+	-- -- Refresh requests UI to update fulfill button states
+	-- -- Delay slightly to ensure MailFrame state is updated
+	-- C_Timer.After(0.1, function()
+	-- 	if GBankClassic_UI_Requests.isOpen then
+	-- 		GBankClassic_UI_Requests:DrawContent()
+	-- 	end
+	-- end)
 end
+
+-- function GBankClassic_Events:MAIL_SEND_SUCCESS(_)
+-- 	GBankClassic_Output:Debug("MAIL", "MAIL_SEND_SUCCESS event fired")
+-- 	-- safety: ensure hook is registered when mail UI is opened
+-- 	GBankClassic_Mail:InitSendHook()
+-- 	GBankClassic_Mail:ApplyPendingSend()
+-- end
 
 function GBankClassic_Events:TRADE_SHOW(_)
     GBankClassic_Bank:OnUpdateStart()

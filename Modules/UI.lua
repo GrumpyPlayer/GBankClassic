@@ -4,6 +4,7 @@ function GBankClassic_UI:Init()
     GBankClassic_UI_Minimap:Init()
     GBankClassic_UI_Inventory:Init()
     GBankClassic_UI_Donations:Init()
+	-- GBankClassic_UI_Requests:Init()
     GBankClassic_UI_Search:Init()
     GBankClassic_UI_Mail:Init()
 end
@@ -79,7 +80,17 @@ function GBankClassic_UI:DrawItem(item, parent, size, height, imageSize, imageHe
     else
         slot:SetLabel(" ")
     end
-    slot:SetImage(item.Info.icon)
+	
+	-- Generate link on-demand if needed (synchronous from cache if available)
+	if item.ID and not item.Link then
+		GBankClassic_Guild:ReconstructItemLink(item)
+	end
+
+	-- Get icon if available, otherwise try to fetch from item ID
+	local icon = (item.Info and item.Info.icon) or select(10, GetItemInfo(item.ID or 0))
+	if icon then
+		slot:SetImage(icon)
+	end
     slot:SetImageSize(imageSize, imageHeight)
     slot:SetWidth(size)
     slot:SetHeight(height)
