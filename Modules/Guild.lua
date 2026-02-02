@@ -1346,8 +1346,8 @@ function GBankClassic_Guild:SendAltData(name, target)
 		-- Save delta to history for potential chain replay
 		if self.Info and self.Info.name and deltaData.version and deltaData.changes then
 			local previous = GBankClassic_Database:GetSnapshot(self.Info.name, norm)
-			local baseVer = previous and previous.version or 0
-			GBankClassic_Database:SaveDeltaHistory(self.Info.name, norm, baseVer, deltaData.version, deltaData)
+			local previousVersion = previous and previous.version or 0
+			GBankClassic_Database:SaveDeltaHistory(self.Info.name, norm, previousVersion, deltaData.version, deltaData)
 		end
 
 		-- Save snapshot for next delta
@@ -1366,8 +1366,8 @@ function GBankClassic_Guild:SendAltData(name, target)
 			-- This allows chain replay to work for offline players even when deltas were too large
 			if self.Info and self.Info.name and deltaData.version and deltaData.changes then
 				local previous = GBankClassic_Database:GetSnapshot(self.Info.name, norm)
-				local baseVer = previous and previous.version or 0
-				GBankClassic_Database:SaveDeltaHistory(self.Info.name, norm, baseVer, deltaData.version, deltaData)
+				local previousVersion = previous and previous.version or 0
+				GBankClassic_Database:SaveDeltaHistory(self.Info.name, norm, previousVersion, deltaData.version, deltaData)
 			end
 		end
 

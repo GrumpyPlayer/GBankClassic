@@ -296,8 +296,8 @@ end
 -- Delta history management
 
 -- Save a delta to history for potential chain replay
-function GBankClassic_Database:SaveDeltaHistory(name, altName, baseVersion, version, delta)
-	if not name or not altName or not baseVersion or not version or not delta then
+function GBankClassic_Database:SaveDeltaHistory(name, altName, previousVersion, version, delta)
+	if not name or not altName or not previousVersion or not version or not delta then
 		return false
 	end
 
@@ -315,7 +315,7 @@ function GBankClassic_Database:SaveDeltaHistory(name, altName, baseVersion, vers
 	end
 
 	-- Add delta to history
-	table.insert(db.deltaHistory[altName], { baseVersion = baseVersion, version = version, delta = self:DeepCopy(delta), timestamp = GetServerTime() })
+	table.insert(db.deltaHistory[altName], { previousVersion = previousVersion, version = version, delta = self:DeepCopy(delta), timestamp = GetServerTime() })
 
 	-- Enforce max count limit (keep most recent)
 	local maxCount = PROTOCOL.DELTA_HISTORY_MAX_COUNT or 10
@@ -342,8 +342,8 @@ function GBankClassic_Database:GetDeltaHistory(name, altName, fromVersion, toVer
 	local currentVersion = fromVersion
 
 	for _, deltaEntry in ipairs(db.deltaHistory[altName]) do
-		if deltaEntry.baseVersion == currentVersion and deltaEntry.version <= toVersion then
-			table.insert(chain, { baseVersion = deltaEntry.baseVersion, version = deltaEntry.version, delta = deltaEntry.delta })
+		if deltaEntry.previousVersion == currentVersion and deltaEntry.version <= toVersion then
+			table.insert(chain, { previousVersion = deltaEntry.previousVersion, version = deltaEntry.version, delta = deltaEntry.delta })
 			currentVersion = deltaEntry.version
 
 			-- Stop if we've reached the target

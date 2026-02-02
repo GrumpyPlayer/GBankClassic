@@ -1705,7 +1705,7 @@ function GBankClassic_Chat:PrintDeltaHistory()
 					if changes.money then changeCount = changeCount + 1 end
 				end
 
-				GBankClassic_Output:Response("  %d. v%d→v%d (%d change(s), %s)", i, delta.baseVersion or 0, delta.version or 0, changeCount, ageStr)
+				GBankClassic_Output:Response("  %d. v%d (%d change(s), %s)", i, delta.version or 0, changeCount, ageStr)
 			end
 		end
 	end
