@@ -1,5 +1,5 @@
--- GBankClassic_Guild = GBankClassic_Guild or {}
--- local Guild = GBankClassic_Guild
+GBankClassic_Guild = GBankClassic_Guild or {}
+local Guild = GBankClassic_Guild
 
 -- -- Throttle warnings to prevent spam (only warn once per session per type)
 -- local warnedAbout = {
@@ -404,7 +404,7 @@
 -- 	end
 
 -- 	local before = countRequests(self.Info.requests)
--- 	GBankClassic_Output:Debug(string.format("NormalizeRequestList: Starting with %d requests", before))
+-- 	GBankClassic_Output:Debug("REQUESTS", "NormalizeRequestList: Starting with %d requests", before)
 
 -- 	local normalized = {}
 -- 	local tombstones = self.Info.requestsTombstones or {}
@@ -416,7 +416,7 @@
 -- 			local tombstoneTs = tonumber(tombstones[clean.id] or 0) or 0
 -- 			if tombstoneTs > 0 and (tonumber(clean.updatedAt or 0) or 0) <= tombstoneTs then
 -- 				-- Skip entries that were deleted after their last update.
--- 				GBankClassic_Output:Debug(string.format("NormalizeRequestList: Skipping tombstoned request id=%s", clean.id))
+-- 				GBankClassic_Output:Debug("REQUESTS", "NormalizeRequestList: Skipping tombstoned request id=%s", clean.id)
 -- 			else
 -- 				local existing = normalized[clean.id]
 -- 				if existing then
@@ -424,7 +424,7 @@
 -- 					local incomingUpdated = tonumber(clean.updatedAt or clean.date or 0) or 0
 -- 					if incomingUpdated > existingUpdated then
 -- 						normalized[clean.id] = clean
--- 						GBankClassic_Output:Debug(string.format("NormalizeRequestList: Updated duplicate id=%s", clean.id))
+-- 						GBankClassic_Output:Debug("REQUESTS", "NormalizeRequestList: Updated duplicate id=%s", clean.id)
 -- 					end
 -- 				else
 -- 					normalized[clean.id] = clean
@@ -450,7 +450,7 @@
 -- 	self.Info.requestsVersion = latest
 
 -- 	local after = countRequests(normalized)
--- 	GBankClassic_Output:Debug(string.format("NormalizeRequestList: Finished with %d requests (calling PruneRequests)", after))
+-- 	GBankClassic_Output:Debug("REQUESTS", "NormalizeRequestList: Finished with %d requests (calling PruneRequests)", after)
 
 -- 	self:PruneRequests()
 -- end
@@ -570,7 +570,7 @@
 -- 	local prunedCount = 0
 -- 	local latest = tonumber(self.Info.requestsVersion or 0) or 0
 
--- 	GBankClassic_Output:Debug(string.format("PruneRequests: Starting with %d requests", before))
+-- 	GBankClassic_Output:Debug("REQUESTS", "PruneRequests: Starting with %d requests", before)
 
 -- 	for id, req in pairs(self.Info.requests) do
 -- 		local updated = tonumber(req.updatedAt or req.date or 0) or 0
@@ -581,7 +581,7 @@
 -- 		if tooOld then
 -- 			self.Info.requests[id] = nil
 -- 			prunedCount = prunedCount + 1
--- 			GBankClassic_Output:Debug(string.format("PruneRequests: Pruning request id=%s, status=%s, age=%d seconds", req.id or "nil", req.status or "nil", now - updated))
+-- 			GBankClassic_Output:Debug("REQUESTS", "PruneRequests: Pruning request id=%s, status=%s, age=%d seconds", req.id or "nil", req.status or "nil", now - updated)
 -- 		else
 -- 			if updated > latest then
 -- 				latest = updated
@@ -590,13 +590,13 @@
 -- 	end
 
 -- 	if prunedCount > 0 then
--- 		GBankClassic_Output:Debug(string.format("PruneRequests: Pruned %d old completed requests", prunedCount))
+-- 		GBankClassic_Output:Debug("REQUESTS", "PruneRequests: Pruned %d old completed requests", prunedCount)
 -- 	end
 
 -- 	self.Info.requestsVersion = latest
 -- 	local after = countRequests(self.Info.requests)
 
--- 	GBankClassic_Output:Debug(string.format("PruneRequests: Finished with %d requests (%d pruned)", after, prunedCount))
+-- 	GBankClassic_Output:Debug("REQUESTS", "PruneRequests: Finished with %d requests (%d pruned)", after, prunedCount)
 
 -- 	return prunedCount, before, after
 -- end
@@ -748,7 +748,7 @@
 -- end
 
 -- function Guild:RefreshRequestsUI()
--- 	GBankClassic_Output:Debug(string.format("RefreshRequestsUI called: isOpen=%s, requests=%d", tostring(GBankClassic_UI_Requests and GBankClassic_UI_Requests.isOpen), self.Info and self.Info.requests and countRequests(self.Info.requests) or 0))
+-- 	GBankClassic_Output:Debug("UI", "RefreshRequestsUI called: isOpen=%s, requests=%d", tostring(GBankClassic_UI_Requests and GBankClassic_UI_Requests.isOpen), self.Info and self.Info.requests and countRequests(self.Info.requests) or 0)
 
 -- 	if GBankClassic_UI_Requests and GBankClassic_UI_Requests.isOpen then
 -- 		-- Recreate filters (including banker checkbox) when roster updates
@@ -1122,12 +1122,12 @@
 -- -- Uses merge-based sync - always merges, ApplyRequestSnapshot handles conflict resolution.
 -- function Guild:ReceiveRequestsData(payload)
 -- 	if not payload or type(payload) ~= "table" then
--- 		GBankClassic_Output:Debug("[SYNC] ReceiveRequestsData: INVALID - payload not a table")
+-- 		GBankClassic_Output:Debug("SYNC", "ReceiveRequestsData: INVALID - payload not a table")
 
 -- 		return ADOPTION_STATUS.INVALID
 -- 	end
 -- 	if not self.Info then
--- 		GBankClassic_Output:Debug("[SYNC] ReceiveRequestsData: IGNORED - self.Info is nil")
+-- 		GBankClassic_Output:Debug("SYNC", "ReceiveRequestsData: IGNORED - self.Info is nil")
 
 -- 		return ADOPTION_STATUS.IGNORED
 -- 	end
@@ -1135,34 +1135,34 @@
 
 -- 	local incomingCount = (payload.requests and type(payload.requests) == "table") and #payload.requests or 0
 -- 	local localCountBefore = self.Info.requests and countRequests(self.Info.requests) or 0
--- 	GBankClassic_Output:Debug(string.format("[SYNC] ReceiveRequestsData: START - local=%d, incoming=%d", localCountBefore, incomingCount))
+-- 	GBankClassic_Output:Debug("SYNC", "ReceiveRequestsData: START - local=%d, incoming=%d", localCountBefore, incomingCount)
 
 -- 	-- Always merge - ApplyRequestSnapshot handles last-writer-wins per request
 -- 	if self:ApplyRequestSnapshot(payload) then
 -- 		local localCountAfter = self.Info.requests and countRequests(self.Info.requests) or 0
--- 		GBankClassic_Output:Debug(string.format("[SYNC] ReceiveRequestsData: ADOPTED - final=%d (was %d, incoming=%d)", localCountAfter, localCountBefore, incomingCount))
+-- 		GBankClassic_Output:Debug("SYNC", "ReceiveRequestsData: ADOPTED - final=%d (was %d, incoming=%d)", localCountAfter, localCountBefore, incomingCount)
 
 -- 		return ADOPTION_STATUS.ADOPTED
 -- 	end
 
--- 	GBankClassic_Output:Debug("[SYNC] ReceiveRequestsData: INVALID - ApplyRequestSnapshot returned false")
+-- 	GBankClassic_Output:Debug("SYNC", ReceiveRequestsData: INVALID - ApplyRequestSnapshot returned false")
 
 -- 	return ADOPTION_STATUS.INVALID
 -- end
 
--- function Guild:SendRequestsVersionPing()
--- 	if not self.Info then
--- 		return
--- 	end
--- 	local payload = {
--- 		requests = {
--- 			version = self:GetRequestsVersion(),
--- 			hash = self:GetRequestsHash(),
--- 		},
--- 	}
--- 	local data = GBankClassic_Core:SerializeWithChecksum(payload)
--- 	GBankClassic_Core:SendCommMessage("gbank-v", data, "Guild", nil, "BULK")
--- end
+function Guild:SendRequestsVersionPing()
+	if not self.Info then
+		return
+	end
+	local payload = {
+		requests = {
+			-- version = self:GetRequestsVersion(),
+			-- hash = self:GetRequestsHash(),
+		},
+	}
+	local data = GBankClassic_Core:SerializeWithChecksum(payload)
+	GBankClassic_Core:SendCommMessage("gbank-v", data, "Guild", nil, "BULK")
+end
 
 -- -- Receive mutation entries from another player and apply them.
 -- function Guild:ReceiveRequestMutations(payload, sender)
@@ -1246,7 +1246,7 @@
 -- 	self:BroadcastRequestMutation({ type = "add", requestId = clean.id, request = clean })
 -- 	self:FinalizeMutation(now)
 
--- 	GBankClassic_Output:Debug(string.format("AddRequest: id=%s, item=%s, qty=%d", clean.id, clean.item or "", clean.quantity or 0))
+-- 	GBankClassic_Output:Debug("REQUESTS", "AddRequest: id=%s, item=%s, qty=%d", clean.id, clean.item or "", clean.quantity or 0)
 
 -- 	return true
 -- end

@@ -301,6 +301,30 @@ function GBankClassic_Options:Init()
 							return GBankClassic_Output:IsCategoryEnabled("ITEM")
 						end,
 					},
+					-- ["fulfill"] = {
+					-- 	order = 25,
+					-- 	type = "toggle",
+					-- 	width = "full",
+					-- 	name = "FULFILL - Fulfilling requests",
+					-- 	set = function(_, v)
+					-- 		GBankClassic_Output:SetCategoryEnabled("FULFILL", v)
+					-- 	end,
+					-- 	get = function()
+					-- 		return GBankClassic_Output:IsCategoryEnabled("FULFILL")
+					-- 	end,
+					-- },
+					["search"] = {
+						order = 26,
+						type = "toggle",
+						width = "full",
+						name = "SEARCH - Search operations",
+						set = function(_, v)
+							GBankClassic_Output:SetCategoryEnabled("SEARCH", v)
+						end,
+						get = function()
+							return GBankClassic_Output:IsCategoryEnabled("SEARCH")
+						end,
+					},
 					["spacer"] = {
 						order = 30,
 						type = "description",

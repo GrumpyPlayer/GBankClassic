@@ -25,7 +25,7 @@ function Performance:GarbageCollectSessions()
 	end
 	
 	if removed > 0 and GBankClassic_Output then
-		GBankClassic_Output:Debug("SYSTEM", string.format("Garbage collected %d old session(s)", removed))
+		GBankClassic_Output:Debug("SYSTEM", "Garbage collected %d old session(s)", removed)
 	end
 end
 

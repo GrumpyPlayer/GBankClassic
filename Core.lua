@@ -44,7 +44,6 @@ end
 
 function GBankClassic_Core:OnInitialize()
     -- Called when the addon is loaded
-    GBankClassic_Output:Init()
     GBankClassic_Performance:Initialize()
     GBankClassic_Database:Init()
     GBankClassic_Chat:Init()

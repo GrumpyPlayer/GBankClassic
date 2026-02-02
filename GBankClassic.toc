@@ -3,7 +3,7 @@
 ## Notes: A simple way to aggregate and view the inventories of multiple guild bank alts.
 ## Author: Dominion-Myzrael, GrumpyPlayers (also known as <SG>Soul), Lothsahn, Huntmehuntme-Myzrael, Pimptasty
 ## Version: 2.6.0
-## SavedVariables: GBankClassicDB, GBankClassicIconDB, GBankClassicOptionDB, GBankClassicDebugLogEnabled, GBankClassicDebugLog, GBankClassicPerfMetricsEnabled, GBankClassicPerfMetrics
+## SavedVariables: GBankClassicDB, GBankClassicIconDB, GBankClassicOptionDB
 ## OptionalDeps: Ace3
 ## X-Embeds: Ace3
 ## X-Curse-Project-ID: 807339

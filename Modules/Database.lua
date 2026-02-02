@@ -19,6 +19,8 @@ function GBankClassic_Database:Init()
 				INVENTORY = false,
 				MAIL = false,
 				ITEM = false,
+				-- FULFILL = false,
+				SEARCH = false,
 			},
 		},
 	})

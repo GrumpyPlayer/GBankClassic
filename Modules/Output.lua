@@ -11,11 +11,6 @@ GBankClassic_Output.debugFrame = nil
 GBankClassic_Output.debugMessageBuffer = {}
 GBankClassic_Output.maxBufferSize = 1000
 
--- Persistent debug log configuration
-GBankClassic_Output.persistentLog = {}
-GBankClassic_Output.persistentLogMaxEntries = 50000 -- Keep last 50,000 entries
-GBankClassic_Output.persistentLogMaxAge = 86400 * 7 -- Keep logs for 7 days (in seconds)
-
 -- Category filtering helpers
 function GBankClassic_Output:IsCategoryEnabled(category)
 	if not GBankClassic_Database or not GBankClassic_Database.db then
@@ -46,24 +41,6 @@ function GBankClassic_Output:DisableAllCategories()
 	end
 	for category, _ in pairs(DEBUG_CATEGORY) do
 		GBankClassic_Database.db.global.debugCategories[category] = false
-	end
-end
-
-function GBankClassic_Output:Init()
-	-- Level will be set from Options after DB is loaded
-	-- Initialize debug log enabled state (default to false - users can enable in options)
-	if GBankClassicDebugLogEnabled == nil then
-		GBankClassicDebugLogEnabled = false
-	end
-	
-	-- Load persistent log from SavedVariables if it exists
-	if GBankClassicDebugLog then
-		self.persistentLog = GBankClassicDebugLog
-		GBankClassic_Output:Debug("SYSTEM", "Loaded %d persistent debug log entries from SavedVariables", #self.persistentLog)
-		-- Clean up old entries on load
-		self:GarbageCollectPersistentLog()
-	else
-		self.persistentLog = {}
 	end
 end
 
@@ -255,7 +232,7 @@ end
 -- If fmt contains %, uses string.format with varargs
 -- Otherwise concatenates all arguments with spaces
 local function Log(level, prefix, fmt, ...)
-	if level < GBankClassic_Output:GetLevel() and level ~= LOG_LEVEL.RESPONSE then
+	if level < GBankClassic_Output.level and level ~= LOG_LEVEL.RESPONSE then
 		return false
 	end
 
@@ -303,17 +280,6 @@ local function Log(level, prefix, fmt, ...)
 		GBankClassic_Core:Print(message)
 	end
 
-	-- Always store debug-level messages in persistent log (if debug logging enabled)
-	if level == LOG_LEVEL.DEBUG and GBankClassicDebugLogEnabled then
-		local fullMessage = "GBankClassic: "
-		if prefix then
-			fullMessage = fullMessage .. prefix .. " " .. message
-		else
-			fullMessage = fullMessage .. message
-		end
-		GBankClassic_Output:AddToPersistentLog(fullMessage)
-	end
-
 	return true
 end
 
@@ -329,6 +295,7 @@ function GBankClassic_Output:Debug(fmt, ...)
 		-- Shift parameters: first arg after category becomes the format string
 		local actualFmt = select(1, ...)
 		local args = {select(2, ...)}
+		
 		return Log(LOG_LEVEL.DEBUG, "|cff888888[DEBUG]|r", actualFmt, unpack(args))
 	end
 	
@@ -367,94 +334,4 @@ end
 -- Response: response to user commands (always shown)
 function GBankClassic_Output:Response(fmt, ...)
 	return Log(LOG_LEVEL.RESPONSE, nil, fmt, ...)
-end
-
--- Add entry to persistent debug log with timestamp
-function GBankClassic_Output:AddToPersistentLog(message)
-	local entry = {
-		timestamp = time(),
-		message = message
-	}
-	table.insert(self.persistentLog, entry)
-
-	-- Simple circular buffer: remove oldest if we exceed max entries
-	while #self.persistentLog > self.persistentLogMaxEntries do
-		table.remove(self.persistentLog, 1)
-	end
-end
-
--- Garbage collect old entries from persistent log
-function GBankClassic_Output:GarbageCollectPersistentLog()
-	local currentTime = time()
-	local cutoffTime = currentTime - self.persistentLogMaxAge
-	local removed = 0
-
-	-- Remove entries older than max age
-	local i = 1
-	while i <= #self.persistentLog do
-		if self.persistentLog[i].timestamp < cutoffTime then
-			table.remove(self.persistentLog, i)
-			removed = removed + 1
-		else
-			i = i + 1
-		end
-	end
-
-	if removed > 0 then
-		GBankClassic_Output:Debug("SYSTEM", "Garbage collected %d old debug log entries (older than %d days)", removed, self.persistentLogMaxAge / 86400)
-	end
-end
-
--- Save persistent log to SavedVariables
-function GBankClassic_Output:SavePersistentLog()
-	-- Run garbage collection before saving
-	self:GarbageCollectPersistentLog()
-
-	-- Write to global SavedVariable
-	GBankClassicDebugLog = self.persistentLog
-
-	GBankClassic_Output:Debug("SYSTEM", "Saved %d persistent debug log entries to SavedVariables", #self.persistentLog)
-end
-
--- Export persistent log to formatted string for viewing
-function GBankClassic_Output:ExportPersistentLog(maxEntries)
-	maxEntries = maxEntries or 100
-	local output = {}
-	local startIdx = math.max(1, #self.persistentLog - maxEntries + 1)
-
-	for i = startIdx, #self.persistentLog do
-		local entry = self.persistentLog[i]
-		local timeStr = date("%Y-%m-%d %H:%M:%S", entry.timestamp)
-		table.insert(output, string.format("[%s] %s", timeStr, entry.message))
-	end
-
-	return table.concat(output, "\n")
-end
-
--- Export persistent log in compact format (no formatting overhead)
-function GBankClassic_Output:ExportPersistentLogCompact(maxEntries, searchFilter)
-	maxEntries = maxEntries or 1000
-	local output = {}
-	local startIdx = math.max(1, #self.persistentLog - maxEntries + 1)
-	local count = 0
-
-	for i = startIdx, #self.persistentLog do
-		local entry = self.persistentLog[i]
-		-- Apply search filter if provided
-		if not searchFilter or string.find(entry.message:lower(), searchFilter:lower(), 1, true) then
-			local timeStr = date("%H:%M:%S", entry.timestamp)  -- Compact time format
-			table.insert(output, timeStr .. " " .. entry.message)
-			count = count + 1
-		end
-	end
-
-	return table.concat(output, "\n"), count
-end
-
--- Clear persistent log
-function GBankClassic_Output:ClearPersistentLog()
-	local count = #self.persistentLog
-	self.persistentLog = {}
-	GBankClassicDebugLog = {}
-	GBankClassic_Output:Response("Cleared %d persistent debug log entries", count)
 end

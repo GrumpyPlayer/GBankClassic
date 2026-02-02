@@ -39,6 +39,8 @@ DEBUG_CATEGORY = {
 	INVENTORY = "INVENTORY",	 -- Inventory (bags, bank, mail) scanning and tracking
 	MAIL = "MAIL",               -- Mail inventory scanning and tracking
 	ITEM = "ITEM",               -- Item loading, validation, and processing
+	-- FULFILL = "FULFILL",
+	SEARCH = "SEARCH",			-- Search operations
 }
 
 -- -- Request storage settings

@@ -1055,44 +1055,45 @@ local function ProcessItemQueue()
 		if item and item.ID and not item.Link then
 			-- If we have an ItemString, use it to reconstruct full link
 			if item.ItemString then
-			local itemName = GetItemInfo(item.ID)
-			if itemName then
-				item.Link = string.format("|cffffffff|Hitem:%s|h[%s]|h|r", item.ItemString, itemName)
-				loadedAnyInBatch = true
-			else
-				-- Item not in cache - only start async if under limit
-				if pendingAsyncLoads < MAX_CONCURRENT_ASYNC then
-					pendingAsyncLoads = pendingAsyncLoads + 1
-					local itemObj = Item:CreateFromItemID(item.ID)
+				local itemName = GetItemInfo(item.ID)
+				if itemName then
+					item.Link = string.format("|cffffffff|Hitem:%s|h[%s]|h|r", item.ItemString, itemName)
+					loadedAnyInBatch = true
+				else
+					-- Item not in cache - only start async if under limit
+					if pendingAsyncLoads < MAX_CONCURRENT_ASYNC then
+						pendingAsyncLoads = pendingAsyncLoads + 1
+						local itemObj = Item:CreateFromItemID(item.ID)
 
-					-- Debug: Check itemObj state
-					GBankClassic_Output:Debug("ITEM", "ItemString Item %d: itemObj=%s, itemObj.itemID=%s", item.ID or -1, tostring(itemObj), itemObj and tostring(itemObj.itemID) or "nil")
+						-- Debug: Check itemObj state
+						GBankClassic_Output:Debug("ITEM", "ItemString Item %d: itemObj=%s, itemObj.itemID=%s", item.ID or -1, tostring(itemObj), itemObj and tostring(itemObj.itemID) or "nil")
 
-					if itemObj and itemObj.itemID and itemObj.itemID == item.ID then
-						-- Item object is valid, try ContinueOnItemLoad with error protection
-						GBankClassic_Output:Debug("ITEM", "ItemString Item %d PASSED validation, calling ContinueOnItemLoad", item.ID)
-						local success, err = pcall(function()
-							itemObj:ContinueOnItemLoad(function()
-								pendingAsyncLoads = pendingAsyncLoads - 1
-								local name = itemObj:GetItemName()
-								if name then
-									item.Link = string.format("|cffffffff|Hitem:%s|h[%s]|h|r", item.ItemString, name)
-									ThrottledUIRefresh()
-								end
+						if itemObj and itemObj.itemID and itemObj.itemID == item.ID then
+							-- Item object is valid, try ContinueOnItemLoad with error protection
+							GBankClassic_Output:Debug("ITEM", "ItemString Item %d PASSED validation, calling ContinueOnItemLoad", item.ID)
+							local success, err = pcall(function()
+								itemObj:ContinueOnItemLoad(function()
+									pendingAsyncLoads = pendingAsyncLoads - 1
+									local name = itemObj:GetItemName()
+									if name then
+										item.Link = string.format("|cffffffff|Hitem:%s|h[%s]|h|r", item.ItemString, name)
+										ThrottledUIRefresh()
+									end
+								end)
 							end)
-						end)
-						if not success then
-							GBankClassic_Output:Debug("ITEM", "ContinueOnItemLoad crashed for ItemString item %d: %s", item.ID, tostring(err))
+							if not success then
+								GBankClassic_Output:Debug("ITEM", "ContinueOnItemLoad crashed for ItemString item %d: %s", item.ID, tostring(err))
+								pendingAsyncLoads = pendingAsyncLoads - 1
+							end
+						else
+							-- Item object is nil or corrupted, skip
+							GBankClassic_Output:Debug("ITEM", "ItemString Item %d FAILED validation, skipping", item.ID or -1)
 							pendingAsyncLoads = pendingAsyncLoads - 1
 						end
 					else
-						-- Item object is nil or corrupted, skip
-						GBankClassic_Output:Debug("ITEM", "ItemString Item %d FAILED validation, skipping", item.ID or -1)
-						pendingAsyncLoads = pendingAsyncLoads - 1
+						-- Too many pending, requeue for later
+						table.insert(itemReconstructQueue, item)
 					end
-				else
-					-- Too many pending, requeue for later
-					table.insert(itemReconstructQueue, item)
 				end
 			end
 		end
@@ -2056,7 +2057,7 @@ function GBankClassic_Guild:Share(type, requestsMode)
 
 	if mode == "snapshot" then
 		-- Share current requests state alongside bank data so everyone stays in sync
-		self:SendRequestsData()
+		-- self:SendRequestsData()
 	elseif mode == "version" then
 		-- Lightweight ping; snapshots are sent only when queried.
 		self:SendRequestsVersionPing()

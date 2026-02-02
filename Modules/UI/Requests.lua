@@ -851,7 +851,7 @@
 -- 		table.insert(list, req)
 -- 	end
 
--- 	GBankClassic_Output:Debug("REQUESTS", string.format("SortedRequests: Found %d requests in Guild.Info", #list))
+-- 	GBankClassic_Output:Debug("REQUESTS", "SortedRequests: Found %d requests in Guild.Info", #list)
 
 -- 	local column = self.sortColumn or "date"
 -- 	local direction = self.sortDirection or "desc"
@@ -1182,7 +1182,7 @@
 
 -- function GBankClassic_UI_Requests:ApplyFilters(requests)
 -- 	if not self.requesterFilter and not self.bankFilter then
--- 		GBankClassic_Output:Debug("REQUESTS", string.format("ApplyFilters: No filters, returning all %d requests", #(requests or {})))
+-- 		GBankClassic_Output:Debug("REQUESTS", "ApplyFilters: No filters, returning all %d requests", #(requests or {}))
 
 -- 		return requests
 -- 	end
@@ -1195,7 +1195,7 @@
 -- 		end
 -- 	end
 
--- 	GBankClassic_Output:Debug("REQUESTS", string.format("ApplyFilters: Filtered from %d to %d requests (requester=%s, bank=%s)", #(requests or {}), #filtered, tostring(self.requesterFilter), tostring(self.bankFilter)))
+-- 	GBankClassic_Output:Debug("REQUESTS", "ApplyFilters: Filtered from %d to %d requests (requester=%s, bank=%s)", #(requests or {}), #filtered, tostring(self.requesterFilter), tostring(self.bankFilter))
 
 -- 	return filtered
 -- end
@@ -1232,7 +1232,7 @@
 -- 	sorted = self:ApplyFilters(sorted)
 -- 	local count = #sorted
 	
--- 	GBankClassic_Output:Debug("REQUESTS", string.format("DrawContent: Displaying %d requests", count))
+-- 	GBankClassic_Output:Debug("REQUESTS", "DrawContent: Displaying %d requests", count)
 	
 -- 	if count == 0 then
 -- 		local empty = self:EnsureEmptyLabel()

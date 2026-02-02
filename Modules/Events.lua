@@ -238,9 +238,6 @@ function GBankClassic_Events:PLAYER_LOGOUT(_)
 		GBankClassic_Output:Debug("MAIL", "Alt data not found")
 	end
 	GBankClassic_Output:Debug("MAIL", "========================================")
-
-	-- Save persistent debug log to SavedVariables
-	GBankClassic_Output:SavePersistentLog()
 end
 
 function GBankClassic_Events:PLAYER_ENTERING_WORLD(_)
