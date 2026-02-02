@@ -419,66 +419,6 @@ local function testProtocolVersionDetection()
     assertNil(unknownProtocol, "Unknown user should have nil protocol")
 end
 
-local function testShouldUseDeltaLogic()
-    local guildName = setupDeltaTest()
-    if not guildName then
-        error("Test setup failed - database not initialized")
-    end
-
-    -- Setup Guild.Info
-    Guild.Info = Guild.Info or {}
-    Guild.Info.name = guildName
-
-    -- Mock guild support at 60% (above 10% threshold)
-    local oldGetGuildDeltaSupport = Database.GetGuildDeltaSupport
-    Database.GetGuildDeltaSupport = function(name)
-        return 0.6 -- 60% support
-    end
-
-    -- Test with delta enabled
-    local oldEnabled = FEATURES.DELTA_ENABLED
-    local oldForce = FEATURES.FORCE_FULL_SYNC
-    FEATURES.DELTA_ENABLED = true
-    FEATURES.FORCE_FULL_SYNC = false
-
-    -- ShouldUseDelta takes no parameters
-    local shouldUse = Guild:ShouldUseDelta()
-    assert(shouldUse, "Should use delta when conditions are met")
-
-    -- Test with delta disabled
-    FEATURES.DELTA_ENABLED = false
-    shouldUse = Guild:ShouldUseDelta()
-    assert(not shouldUse, "Should not use delta when disabled")
-
-    -- Test with force full sync
-    FEATURES.DELTA_ENABLED = true
-    FEATURES.FORCE_FULL_SYNC = true
-    shouldUse = Guild:ShouldUseDelta()
-    assert(not shouldUse, "Should not use delta when forced full sync")
-
-    -- Restore
-    FEATURES.DELTA_ENABLED = oldEnabled
-    FEATURES.FORCE_FULL_SYNC = oldForce
-    Database.GetGuildDeltaSupport = oldGetGuildDeltaSupport
-end
-
-local function testDeltaSupportThreshold()
-    -- Test threshold comparison logic
-    -- PROTOCOL.DELTA_SUPPORT_THRESHOLD is 0.05 (5%)
-
-    -- Test below threshold (3%)
-    local support = 0.03
-    assert(support < PROTOCOL.DELTA_SUPPORT_THRESHOLD, "3% should be below 5% threshold")
-
-    -- Test above threshold (10%)
-    support = 0.10
-    assert(support >= PROTOCOL.DELTA_SUPPORT_THRESHOLD, "10% should be above 5% threshold")
-
-    -- Test exact threshold (5%)
-    support = 0.05
-    assert(support >= PROTOCOL.DELTA_SUPPORT_THRESHOLD, "5% should meet 5% threshold")
-end
-
 --============================================================================
 -- Phase 5.4: Error Handling Tests
 --============================================================================
@@ -729,28 +669,6 @@ local function testV2ClientHandlesBothProtocols()
     assert(PROTOCOL.SUPPORTS_DELTA, "Current protocol should support delta")
 end
 
-local function testFallbackToFullSync()
-    setupDeltaTest("TestGuild")
-
-    -- Setup Guild.Info
-    Guild.Info = Guild.Info or {}
-    Guild.Info.name = "TestGuild"
-
-    -- v0.8.0: Guild support threshold removed - delta always enabled if feature flag is on
-    -- This test now validates that delta is enabled regardless of guild support percentage
-    local oldGetGuildDeltaSupport = Database.GetGuildDeltaSupport
-    Database.GetGuildDeltaSupport = function(name)
-        return 0 -- 0% support
-    end
-
-    -- Should still use delta in v0.8.0 (threshold check removed)
-    local shouldUse = Guild:ShouldUseDelta()
-    assert(shouldUse, "v0.8.0: Should use delta even with 0% guild support (threshold removed)")
-
-    -- Restore
-    Database.GetGuildDeltaSupport = oldGetGuildDeltaSupport
-end
-
 --============================================================================
 -- Test Runner
 --============================================================================
@@ -780,8 +698,6 @@ function Tests:RunAllTests()
     -- Phase 5.3: Protocol Negotiation
     addon:Print("\n|cff00ffffPhase 5.3: Protocol Negotiation Tests|r")
     runTest("Protocol Version Detection", testProtocolVersionDetection)
-    runTest("Should Use Delta Logic", testShouldUseDeltaLogic)
-    runTest("Delta Support Threshold", testDeltaSupportThreshold)
 
     -- Phase 5.4: Error Handling
     addon:Print("\n|cff00ffffPhase 5.4: Error Handling Tests|r")
@@ -799,7 +715,6 @@ function Tests:RunAllTests()
     addon:Print("\n|cff00ffffPhase 5.6: Backwards Compatibility Tests|r")
     runTest("V1 Client Ignores Delta Prefix", testV1ClientIgnoresDeltaPrefix)
     runTest("V2 Client Handles Both Protocols", testV2ClientHandlesBothProtocols)
-    runTest("Fallback to Full Sync", testFallbackToFullSync)
 
     -- Summary
     local passed = 0
@@ -844,8 +759,6 @@ function Tests:RunTest(testName)
         ["size-large"] = testSizeEstimationLargeDelta,
         ["size-compare"] = testSizeEstimationComparison,
         ["protocol-detect"] = testProtocolVersionDetection,
-        ["should-delta"] = testShouldUseDeltaLogic,
-        ["support-threshold"] = testDeltaSupportThreshold,
         ["error-no-data"] = testApplyDeltaNoExistingData,
         ["error-version"] = testApplyDeltaVersionMismatch,
         ["error-tracking"] = testDeltaErrorTracking,
@@ -854,7 +767,6 @@ function Tests:RunTest(testName)
         ["roundtrip"] = testFullDeltaRoundtrip,
         ["v1-ignore"] = testV1ClientIgnoresDeltaPrefix,
         ["v2-both"] = testV2ClientHandlesBothProtocols,
-        ["fallback"] = testFallbackToFullSync,
     }
 
     local testFunc = tests[testName]

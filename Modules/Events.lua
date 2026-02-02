@@ -178,11 +178,6 @@ function GBankClassic_Events:SyncDeltaVersion(priority)
 		return
 	end
 
-	-- Only broadcast delta version if we support delta
-	if not GBankClassic_Guild:ShouldUseDelta() then
-		return
-	end
-
 	local version = GBankClassic_Guild:GetVersion()
 	if version == nil then
 		return

@@ -898,7 +898,7 @@ function GBankClassic_Guild:RespondToStateSummary(name, summary, requester)
 	-- Track last sent hash per guild+alt+requester
 	self._lastSentState = self._lastSentState or {}
 	local key = norm .. ":" .. requester
-	local hashOrVersion = self:ShouldUseDelta() and (currentHash or 0) or currentVersion
+	local hashOrVersion = currentHash or 0
 	if self._lastSentState[key] == hashOrVersion then
 		GBankClassic_Output:DebugComm("RespondToStateSummary: already sent data to %s for %s (hash/version unchanged), skipping", requester, norm)
 		GBankClassic_Output:Debug("SYNC", "RespondToStateSummary: already sent data to %s for %s (hash/version unchanged), skipping", requester, norm)
@@ -907,53 +907,51 @@ function GBankClassic_Guild:RespondToStateSummary(name, summary, requester)
 	end
 
 	-- Delta mode - ONLY use hashes, no version fallback
-	if self:ShouldUseDelta() then
-		-- If current alt doesn't have a hash, send full data (might be from pre-hash version)
-		if not currentHash then
-			GBankClassic_Output:DebugComm("DELTA MODE: Current alt missing hash - sending full data for %s", norm)
-			GBankClassic_Output:Debug("SYNC", "Sending full data to %s for %s (responder has no hash)", requester, norm)
-			self:SendAltData(norm, requester)
-			self._lastSentState[key] = hashOrVersion
+	-- If current alt doesn't have a hash, send full data (might be from pre-hash version)
+	if not currentHash then
+		GBankClassic_Output:DebugComm("DELTA MODE: Current alt missing hash - sending full data for %s", norm)
+		GBankClassic_Output:Debug("SYNC", "Sending full data to %s for %s (responder has no hash)", requester, norm)
+		self:SendAltData(norm, requester)
+		self._lastSentState[key] = hashOrVersion
 
+		return
+	end
+
+	-- If requester has no hash (nil), they have no data - send everything
+	if not requesterHash then
+		GBankClassic_Output:DebugComm("DELTA MODE: REQUESTER HAS NO DATA (hash=nil) - sending full data for %s", norm)
+		GBankClassic_Output:Debug("SYNC", "Sending full data to %s for %s (requester has no data)", requester, norm)
+		self:SendAltData(norm, requester)
+		self._lastSentState[key] = hashOrVersion
+
+		return
+	end
+
+	if requesterHash == currentHash then
+		-- Hashes match - no changes needed
+		local noChangeMsg = {
+			type = "no-change",
+			name = norm,
+			version = currentVersion,
+			hash = currentHash,
+		}
+		local data = GBankClassic_Core:SerializeWithChecksum(noChangeMsg)
+		GBankClassic_Output:DebugComm("DELTA MODE: SENDING NO-CHANGE to %s for %s (hash match: %d)", requester, norm, currentHash)
+		if not GBankClassic_Core:SendWhisper("gbank-nochange", data, requester, "NORMAL") then
 			return
 		end
+		GBankClassic_Output:Debug("SYNC", "Sent no-change reply to %s for %s (hash=%d)", requester, norm, currentHash)
+		self._lastSentState[key] = hashOrVersion
 
-		-- If requester has no hash (nil), they have no data - send everything
-		if not requesterHash then
-			GBankClassic_Output:DebugComm("DELTA MODE: REQUESTER HAS NO DATA (hash=nil) - sending full data for %s", norm)
-			GBankClassic_Output:Debug("SYNC", "Sending full data to %s for %s (requester has no data)", requester, norm)
-			self:SendAltData(norm, requester)
-			self._lastSentState[key] = hashOrVersion
+		return
+	else
+		-- Hashes differ - send data
+		GBankClassic_Output:DebugComm("DELTA MODE: HASH MISMATCH - calling SendAltData for %s (requester=%d, current=%d)", norm, requesterHash, currentHash)
+		GBankClassic_Output:Debug("SYNC", "Sending data to %s for %s (hash mismatch: requester=%d, current=%d)", requester, norm, requesterHash, currentHash)
+		self:SendAltData(norm, requester)
+		self._lastSentState[key] = hashOrVersion
 
-			return
-		end
-
-		if requesterHash == currentHash then
-			-- Hashes match - no changes needed
-			local noChangeMsg = {
-				type = "no-change",
-				name = norm,
-				version = currentVersion,
-				hash = currentHash,
-			}
-			local data = GBankClassic_Core:SerializeWithChecksum(noChangeMsg)
-			GBankClassic_Output:DebugComm("DELTA MODE: SENDING NO-CHANGE to %s for %s (hash match: %d)", requester, norm, currentHash)
-			if not GBankClassic_Core:SendWhisper("gbank-nochange", data, requester, "NORMAL") then
-				return
-			end
-			GBankClassic_Output:Debug("SYNC", "Sent no-change reply to %s for %s (hash=%d)", requester, norm, currentHash)
-			self._lastSentState[key] = hashOrVersion
-
-			return
-		else
-			-- Hashes differ - send data
-			GBankClassic_Output:DebugComm("DELTA MODE: HASH MISMATCH - calling SendAltData for %s (requester=%d, current=%d)", norm, requesterHash, currentHash)
-			GBankClassic_Output:Debug("SYNC", "Sending data to %s for %s (hash mismatch: requester=%d, current=%d)", requester, norm, requesterHash, currentHash)
-			self:SendAltData(norm, requester)
-			self._lastSentState[key] = hashOrVersion
-
-			return
-		end
+		return
 	end
 
 	-- Legacy mode: compare versions only
@@ -1295,25 +1293,23 @@ function GBankClassic_Guild:SendAltData(name, target)
 
 	-- Check if delta sync should be used
 	-- No longer skip delta based on force flag (removed)
-	if self:ShouldUseDelta() then
-		deltaData = self:ComputeDelta(norm, currentAlt)
-		if deltaData and self:DeltaHasChanges(deltaData) then
-			local deltaSize = self:EstimateSize(deltaData)
-			local fullSize = self:EstimateSize({ type = "alt", name = norm, alt = currentAlt })
+	deltaData = self:ComputeDelta(norm, currentAlt)
+	if deltaData and self:DeltaHasChanges(deltaData) then
+		local deltaSize = self:EstimateSize(deltaData)
+		local fullSize = self:EstimateSize({ type = "alt", name = norm, alt = currentAlt })
 
-			-- Always use delta if smaller
-			if deltaSize < fullSize then
-				useDelta = true
-				GBankClassic_Output:Debug("DELTA", "✓ Delta selected for %s: %d bytes vs %d bytes full (%.1f%% size, %.0f bytes saved)", norm, deltaSize, fullSize, (deltaSize / fullSize) * 100, fullSize - deltaSize)
-			else
-				GBankClassic_Output:Debug("DELTA", "✗ Delta larger than full for %s: %d bytes vs %d bytes full (%.1f%%), using full sync", norm, deltaSize, fullSize, (deltaSize / fullSize) * 100)
-			end
+		-- Always use delta if smaller
+		if deltaSize < fullSize then
+			useDelta = true
+			GBankClassic_Output:Debug("DELTA", "✓ Delta selected for %s: %d bytes vs %d bytes full (%.1f%% size, %.0f bytes saved)", norm, deltaSize, fullSize, (deltaSize / fullSize) * 100, fullSize - deltaSize)
 		else
-			if deltaData then
-				GBankClassic_Output:Debug("DELTA", "No changes detected for %s (delta would be empty)", norm)
-			else
-				GBankClassic_Output:Debug("DELTA", "No previous snapshot for %s (first sync)", norm)
-			end
+			GBankClassic_Output:Debug("DELTA", "✗ Delta larger than full for %s: %d bytes vs %d bytes full (%.1f%%), using full sync", norm, deltaSize, fullSize, (deltaSize / fullSize) * 100)
+		end
+	else
+		if deltaData then
+			GBankClassic_Output:Debug("DELTA", "No changes detected for %s (delta would be empty)", norm)
+		else
+			GBankClassic_Output:Debug("DELTA", "No previous snapshot for %s (first sync)", norm)
 		end
 	end
 
@@ -1830,11 +1826,6 @@ function GBankClassic_Guild:ReceiveAltData(name, alt, sender)
 end
 
 -- Protocol version helper functions
-
--- Check if delta sync should be used
-function GBankClassic_Guild:ShouldUseDelta()
-	return GBankClassic_DeltaComms:ShouldUseDelta()
-end
 
 -- Check if this client uses the aggregated items format
 function GBankClassic_Guild:UsesAggregatedItemsFormat()

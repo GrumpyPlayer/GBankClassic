@@ -367,24 +367,21 @@ function GBankClassic_Chat:ProcessVersionBroadcast(prefix, data, sender, message
 					-- For legacy version broadcasts, query as normal
 					local shouldQuery = false
 					if isDeltaVersion then
-						-- Delta version: check hash first (most accurate), then version
-						if GBankClassic_Guild:ShouldUseDelta() then
-							-- Hash-based comparison (most accurate)
-							if theirHash then
-								if not ourHash then
-									-- They have data, we don't - query
-									shouldQuery = true
-									self:Debug("SYNC", ">", ColorPlayerName(sender), "has bank data for", ColorPlayerName(kNorm) .. " (we have none), querying.")
-								elseif theirHash ~= ourHash then
-									-- Hashes differ - we need an update
-									shouldQuery = true
-									self:Debug("SYNC", ">", ColorPlayerName(sender), "has different inventory for", ColorPlayerName(kNorm) .. " (hash mismatch), querying.")
-								end
-							elseif not ourVersion or theirVersion > ourVersion then
-								-- No hash available, fall back to version comparison
+						-- Hash-based comparison (most accurate)
+						if theirHash then
+							if not ourHash then
+								-- They have data, we don't - query
 								shouldQuery = true
-								self:Debug("SYNC", ">", ColorPlayerName(sender), "has fresher bank data about", ColorPlayerName(kNorm) .. ", querying (delta).")
+								self:Debug("SYNC", ">", ColorPlayerName(sender), "has bank data for", ColorPlayerName(kNorm) .. " (we have none), querying.")
+							elseif theirHash ~= ourHash then
+								-- Hashes differ - we need an update
+								shouldQuery = true
+								self:Debug("SYNC", ">", ColorPlayerName(sender), "has different inventory for", ColorPlayerName(kNorm) .. " (hash mismatch), querying.")
 							end
+						elseif not ourVersion or theirVersion > ourVersion then
+							-- No hash available, fall back to version comparison
+							shouldQuery = true
+							self:Debug("SYNC", ">", ColorPlayerName(sender), "has fresher bank data about", ColorPlayerName(kNorm) .. ", querying (delta).")
 						end
 					else
 						-- Legacy version: query as usual
@@ -461,8 +458,7 @@ function GBankClassic_Chat:OnCommReceived(prefix, message, distribution, sender)
 		local isDV2 = (prefix == "gbank-dv2")
 
 		-- Delta clients ignore legacy version broadcasts
-		local weUseDelta = GBankClassic_Guild:ShouldUseDelta()
-		if weUseDelta and prefix == "gbank-v" then
+		if prefix == "gbank-v" then
 			-- Silently ignore - delta clients only listen to gbank-dv
 			return
 		end
@@ -1103,44 +1099,6 @@ local COMMAND_REGISTRY = {
 		expert = true,
 		handler = function()
 			GBankClassic_Output:RemoveDebugTab()
-		end,
-	},
-	{
-		name = "forcedelta",
-		help = "force delta sync mode (on|off) - bypass thresholds for testing",
-		expert = true,
-		handler = function(arg)
-			if arg == "on" then
-				FEATURES.FORCE_DELTA_SYNC = true
-				FEATURES.FORCE_FULL_SYNC = false
-				GBankClassic_Output:Response("Force delta sync: ENABLED (will always use delta)")
-			elseif arg == "off" then
-				FEATURES.FORCE_DELTA_SYNC = false
-				GBankClassic_Output:Response("Force delta sync: DISABLED (normal behavior)")
-			else
-				local status = FEATURES.FORCE_DELTA_SYNC and "ON" or "OFF"
-				GBankClassic_Output:Response("Force delta sync: %s", status)
-				GBankClassic_Output:Response("Usage: /bank forcedelta [on|off]")
-			end
-		end,
-	},
-	{
-		name = "forcefull",
-		help = "force full sync mode (on|off) - disable delta for testing",
-		expert = true,
-		handler = function(arg)
-			if arg == "on" then
-				FEATURES.FORCE_FULL_SYNC = true
-				FEATURES.FORCE_DELTA_SYNC = false
-				GBankClassic_Output:Response("Force full sync: ENABLED (will never use delta)")
-			elseif arg == "off" then
-				FEATURES.FORCE_FULL_SYNC = false
-				GBankClassic_Output:Response("Force full sync: DISABLED (normal behavior)")
-			else
-				local status = FEATURES.FORCE_FULL_SYNC and "ON" or "OFF"
-				GBankClassic_Output:Response("Force full sync: %s", status)
-				GBankClassic_Output:Response("Usage: /bank forcefull [on|off]")
-			end
 		end,
 	},
 	{

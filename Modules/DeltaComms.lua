@@ -284,26 +284,6 @@ end
 
 -- DELTA PROTOCOL FUNCTIONS --
 
--- Check if delta sync should be used
-function GBankClassic_DeltaComms:ShouldUseDelta()
-	-- Check force flags first (for testing)
-	if FEATURES and FEATURES.FORCE_DELTA_SYNC then
-		return true
-	end
-
-	-- Check feature flags
-	if not FEATURES or not FEATURES.DELTA_ENABLED then
-		return false
-	end
-	if FEATURES.FORCE_FULL_SYNC then
-		return false
-	end
-
-	-- Delta protocol always enabled if feature flag is on
-	-- No guild support threshold - clients will use delta if both sides support it
-	return PROTOCOL.SUPPORTS_DELTA
-end
-
 -- Get peer protocol capabilities
 function GBankClassic_DeltaComms:GetPeerCapabilities(guildName, sender)
 	if not guildName or not sender then

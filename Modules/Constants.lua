@@ -90,10 +90,3 @@ PROTOCOL = {
 	DELTA_CHAIN_MAX_HOPS = 30,      -- Max deltas in one chain request (increased for testing)
 	DELTA_CHAIN_MAX_SIZE = 5000,    -- If chain >5KB, fall back to full sync
 }
-
--- Feature flags (for easy enable/disable during development/testing)
-FEATURES = {
-	DELTA_ENABLED = true,           -- Enable delta sync protocol
-	FORCE_DELTA_SYNC = false,       -- Force delta sync (bypass thresholds) for testing
-	FORCE_FULL_SYNC = false,        -- Force full sync (disable delta) for testing
-}
