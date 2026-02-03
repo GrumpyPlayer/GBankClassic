@@ -1,25 +1,30 @@
-GBankClassic_Item = {}
+GBankClassic_Item = GBankClassic_Item or {}
+
+local Items = GBankClassic_Item
 
 -- Item classes that require link to be preserved (for suffix differentiation)
 local ITEM_CLASSES_NEEDING_LINK = {
-	[2] = true,  -- Weapon
-	[4] = true,  -- Armor (chest, legs, trinkets, rings, necks, etc)
+	[2] = true, -- Weapon
+	[4] = true, -- Armor (chest, legs, trinkets, rings, necks, etc)
 }
 
--- Helper to count items in aggregated table
-function GBankClassic_Item:CountItems(items)
-	local count = 0
-	for _ in pairs(items) do
-		count = count + 1
-	end
-
-	return count
-end
+local Globals = GBankClassic_Globals
+local upvalues = Globals.GetUpvalues("GetItemInfo", "GetTime", "GetItemInventoryTypeByID", "CreateFrame")
+local GetItemInfo = upvalues.GetItemInfo
+local GetTime = upvalues.GetTime
+local GetItemInventoryTypeByID = upvalues.GetItemInventoryTypeByID
+local CreateFrame = upvalues.CreateFrame
+local upvalues = Globals.GetUpvalues("Item")
+local Item = upvalues.Item
+local upvalues = Globals.GetUpvalues("UIParent")
+local UIParent = upvalues.UIParent
+local upvalues = Globals.GetUpvalues("ITEM_UNIQUE")
+local ITEM_UNIQUE = upvalues.ITEM_UNIQUE
 
 -- Check if an item needs its link preserved based on item class
 -- Gear (weapons/armor) can have random suffixes, so link is required
 -- Consumables and trade goods don't vary, so link can be stripped
-function GBankClassic_Item:NeedsLink(itemLink)
+function Items:NeedsLink(itemLink)
 	if not itemLink then
         return false
     end
@@ -29,34 +34,10 @@ function GBankClassic_Item:NeedsLink(itemLink)
 	return ITEM_CLASSES_NEEDING_LINK[itemClass] == true
 end
 
--- Extract ItemString from item link (full, unmodified)
--- Example: "[Revenant Helmet of the Bear]" -> "item:10132:0:0:0:0:0:0:0:863"
--- If link is nil/empty, returns empty string
-function GBankClassic_Item:GetItemString(link)
-	if not link or link == "" then
-		return ""
-	end
-	
-	-- Extract ItemString from link format: |cFFFFFFFF|Hitem:...|h[Name]|h|r
-	local itemString = link:match("|Hitem:([^|]+)|h")
-	if itemString then
-		return "item:" .. itemString
-	end
-	
-	-- Fallback: try to extract just the numeric part
-	local numericPart = link:match("item:([%d:]+)")
-	if numericPart then
-		return "item:" .. numericPart
-	end
-	
-	-- Last resort: return the whole link
-	return link
-end
-
 -- Get normalized item key for deduplication (strips unique instance ID)
 -- Items with same ID+suffix but different instance IDs will have same key
 -- Format: itemID:enchant:gem1:gem2:gem3:gem4:suffixID (7 parts)
-function GBankClassic_Item:GetItemKey(link)
+function Items:GetItemKey(link)
 	if not link or link == "" then
 		return ""
 	end
@@ -84,7 +65,7 @@ function GBankClassic_Item:GetItemKey(link)
 	return link
 end
 
-function GBankClassic_Item:GetItems(items, callback)
+function Items:GetItems(items, callback)
 	if not items or type(items) ~= "table" then
 		callback({})
 
@@ -124,11 +105,31 @@ function GBankClassic_Item:GetItems(items, callback)
 
         return
     end
+
+	-- Throttle UI refreshes to prevent stuttering when many items load async
+	local lastUIRefresh = 0
+	local function throttledUIRefresh()
+		local now = GetTime()
+		if now - lastUIRefresh < 0.5 then -- Throttle to max once per 0.5 seconds
+			return
+		end
+		lastUIRefresh = now
+
+		-- Only refresh if UI is actually open
+		if GBankClassic_UI_Inventory and GBankClassic_UI_Inventory.isOpen then
+			GBankClassic_UI_Inventory:DrawContent()
+		end
+		if GBankClassic_UI_Search and GBankClassic_UI_Search.isOpen then
+			GBankClassic_UI_Search:DrawContent()
+		end
+	end
 	
 	local function checkComplete()
 		if not callbackFired and processed >= total then
 			callbackFired = true
 			callback(list)
+		elseif processed == total then
+			throttledUIRefresh()
 		end
 	end
 
@@ -137,12 +138,12 @@ function GBankClassic_Item:GetItems(items, callback)
 		local itemLink = wrapper.link
 		local item = wrapper.original
 		
-		-- Debug: Log what we're about to process
+		-- Log what we're about to process
 		GBankClassic_Output:Debug("ITEM", "Processing wrapper: id=%s, link=%s, original.ID=%s", tostring(itemID), tostring(itemLink), tostring(item and item.ID or "nil item"))
 		
-		-- Final safety check before calling Blizzard API
+		-- Final safety check before calling WoW API
 		if not itemID or type(itemID) ~= "number" or itemID <= 0 then
-			GBankClassic_Output:Debug("ITEM", "SKIPPING INVALID: itemID=%s (type=%s)", tostring(itemID), type(itemID))
+			GBankClassic_Output:Debug("ITEM", "Skipping invalid: itemID=%s (type=%s)", tostring(itemID), type(itemID))
 			processed = processed + 1
 			checkComplete()
 		else
@@ -153,7 +154,7 @@ function GBankClassic_Item:GetItems(items, callback)
 			
 			-- Double-check captured values
 			if not capturedItemID or type(capturedItemID) ~= "number" or capturedItemID <= 0 then
-				GBankClassic_Output:Debug("ITEM", "CRITICAL: itemID validation failed after capture!")
+				GBankClassic_Output:Debug("ITEM", "ERROR: itemID validation failed after capture!")
 				processed = processed + 1
 				checkComplete()
 			else
@@ -187,8 +188,8 @@ function GBankClassic_Item:GetItems(items, callback)
 						processed = processed + 1
 						checkComplete()
 					else
-						-- Got an Item object, now inspect its internal state
-						GBankClassic_Output:Debug("ITEM", "Inspecting Item object for ID %d", capturedItemID)
+						-- Got an item object, now inspect its internal state
+						GBankClassic_Output:Debug("ITEM", "Inspecting item object for ID %d", capturedItemID)
 						
 						-- Try to access internal fields safely
 						local objectItemID = nil
@@ -203,7 +204,7 @@ function GBankClassic_Item:GetItems(items, callback)
 							processed = processed + 1
 							checkComplete()
 						elseif objectItemID == nil then
-							GBankClassic_Output:Debug("ITEM", "FOUND CORRUPTION: itemData.itemID is nil for requested ID %d - THIS IS THE BUG!", capturedItemID)
+							GBankClassic_Output:Debug("ITEM", "ERROR: itemData.itemID is nil for requested ID %d", capturedItemID)
 							processed = processed + 1
 							checkComplete()
 						elseif type(objectItemID) ~= "number" then
@@ -232,7 +233,7 @@ function GBankClassic_Item:GetItems(items, callback)
 							processed = processed + 1
 							
 							if not callbackSuccess then
-								GBankClassic_Output:Debug("ITEM", "ContinueOnItemLoad pcall FAILED for ID %d: %s", capturedItemID, tostring(callbackError))
+								GBankClassic_Output:Debug("ITEM", "ContinueOnItemLoad pcall failed for ID %d: %s", capturedItemID, tostring(callbackError))
 								checkComplete()
 							end
 						end
@@ -243,7 +244,7 @@ function GBankClassic_Item:GetItems(items, callback)
 	end
 end
 
-function GBankClassic_Item:GetInfo(id, link)
+function Items:GetInfo(id, link)
 	local name, _, rarity, level, _, _, _, _, _, icon, price, itemClassId, itemSubClassId
 	
 	-- Try link first if available
@@ -256,36 +257,17 @@ function GBankClassic_Item:GetInfo(id, link)
 		name, _, rarity, level, _, _, _, _, _, icon, price, itemClassId, itemSubClassId = GetItemInfo(id)
 	end
 	
-	-- If still no data, return basic info with ID only
+	-- If still no data, return basic info with ID only and the default grey question mark icon
 	if not name then
-		return {
-			class = 0,
-			subClass = 0,
-			equipId = 0,
-			rarity = 1,
-			name = "Item " .. tostring(id or "?"),
-			level = 1,
-			price = 0,
-			icon = 134400, -- Default grey question mark icon
-		}
+		return { class = 0, subClass = 0, equipId = 0, rarity = 1, name = "Item " .. tostring(id or "?"), level = 1, price = 0, icon = 134400 }
 	end
 
-    local equip = C_Item.GetItemInventoryTypeByID(id)
+    local equip = GetItemInventoryTypeByID(id)
 
-	return {
-		class = itemClassId,
-		subClass = itemSubClassId,
-		equipId = equip,
-		rarity = rarity,
-		name = name,
-		level = level,
-		price = price,
-		icon = icon,
-	}
+	return { class = itemClassId, subClass = itemSubClassId, equipId = equip, rarity = rarity, name = name, level = level, price = price, icon = icon }
 end
 
--- NOTE: Sort was adapted from ElvUI
-local function BasicSort(a, b)
+local function basicSort(a, b)
     if a.Info.level ~= b.Info.level and a.Info.level and b.Info.level then
         return a.Info.level < b.Info.level
     end
@@ -297,8 +279,7 @@ local function BasicSort(a, b)
     end
 end
 
--- NOTE: Sort was adapted from ElvUI
-function GBankClassic_Item:Sort(items)
+function Items:Sort(items)
     table.sort(items, function(a, b)
         if a.Info.rarity ~= b.Info.rarity and a.Info.rarity and b.Info.rarity then
             return a.Info.rarity < b.Info.rarity
@@ -308,21 +289,21 @@ function GBankClassic_Item:Sort(items)
         end
         if a.Info.equipId > 0 then
             if a.Info.equipId == b.Info.equipId then
-                return BasicSort(a, b)
+                return basicSort(a, b)
             end
-
             if a.Info.equip and b.Info.equip then
                 return a.Info.equip < b.Info.equip
             end
         end
         if a.Info.class == b.Info.class and a.Info.subClass == b.Info.subClass then
-            return BasicSort(a, b)
+            return basicSort(a, b)
         end
+		
         return (a.Info.subClass or 99) < (b.Info.subClass or 99)
     end)
 end
 
-function GBankClassic_Item:Aggregate(a, b)
+function Items:Aggregate(a, b)
     local items = {}
 	-- Build ID index to avoid O(n²) lookups for linkless deduplication
 	local itemsByID = {}
@@ -331,10 +312,11 @@ function GBankClassic_Item:Aggregate(a, b)
 			if not v or not v.ID then
 				-- Skip malformed entries (missing required ID field)
             else
-				-- Use NORMALIZED key (strips unique instance ID) for deduplication
+				-- Use normalized key (strips unique instance ID) for deduplication
 				-- This allows identical items with different instance IDs to merge
 				local itemKey = self:GetItemKey(v.Link)
-				local key = tostring(v.ID) .. itemKey
+				local key
+				key = tostring(v.ID) .. itemKey
 				
 				-- If no link, also check if there's an existing entry with same ID but with link
 				-- This handles deduplication between linked (bank/bags) and linkless (mail) items
@@ -357,12 +339,12 @@ function GBankClassic_Item:Aggregate(a, b)
 				if key then
 					if items[key] then
 						local item = items[key]
-						-- Defensive: use default value if Count is missing
+						-- Defensive: use default value if count is missing
 						local itemCount = item.Count or 1
 						local vCount = v.Count or 1
 						items[key] = { ID = item.ID, Count = itemCount + vCount, Link = item.Link or v.Link }
 					else
-						-- Ensure stored item has Count field
+						-- Ensure stored item has count field
 						items[key] = { ID = v.ID, Count = v.Count or 1, Link = v.Link }
 						-- Add to ID index
 						local idStr = tostring(v.ID)
@@ -381,10 +363,11 @@ function GBankClassic_Item:Aggregate(a, b)
 			if not v or not v.ID then
 				-- Skip malformed entries (missing required ID field)
             else
-				-- Use NORMALIZED key (strips unique instance ID) for deduplication
+				-- Use normalized key (strips unique instance ID) for deduplication
 				-- This allows identical items with different instance IDs to merge
 				local itemKey = self:GetItemKey(v.Link)
-				local key = tostring(v.ID) .. itemKey
+				local key
+				key = tostring(v.ID) .. itemKey
 				
 				-- If no link, also check if there's an existing entry with same ID but with link
 				-- This handles deduplication between linked (bank/bags) and linkless (mail) items
@@ -407,12 +390,12 @@ function GBankClassic_Item:Aggregate(a, b)
 				if key then
 					if items[key] then
 						local item = items[key]
-						-- Defensive: use default value if Count is missing
+						-- Defensive: use default value if count is missing
 						local itemCount = item.Count or 1
 						local vCount = v.Count or 1
 						items[key] = { ID = item.ID, Count = itemCount + vCount, Link = item.Link or v.Link }
 					else
-						-- Ensure stored item has Count field
+						-- Ensure stored item has count field
 						items[key] = { ID = v.ID, Count = v.Count or 1, Link = v.Link }
 						-- Add to ID index
 						local idStr = tostring(v.ID)
@@ -429,7 +412,7 @@ function GBankClassic_Item:Aggregate(a, b)
     return items
 end
 
-function GBankClassic_Item:IsUnique(link)
+function Items:IsUnique(link)
 	if not link then
 		return false
 	end

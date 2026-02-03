@@ -1,6 +1,17 @@
-GBankClassic_UI_Minimap = {}
+GBankClassic_UI_Minimap = GBankClassic_UI_Minimap or {}
 
-function GBankClassic_UI_Minimap:Init()
+local UI_Minimap = GBankClassic_UI_Minimap
+
+local Globals = GBankClassic_Globals
+local upvalues = Globals.GetUpvalues("LibStub")
+local LibStub = upvalues.LibStub
+local upvalues = Globals.GetUpvalues("IsShiftKeyDown")
+local IsShiftKeyDown = upvalues.IsShiftKeyDown
+local upvalues = Globals.GetUpvalues("GameTooltip", "WorldFrame")
+local GameTooltip = upvalues.GameTooltip
+local WorldFrame = upvalues.WorldFrame
+
+function UI_Minimap:Init()
     self.icon = LibStub("LibDBIcon-1.0")
     local iconDB = LibStub("LibDataBroker-1.1"):NewDataObject("GBankClassicIcon", {
         type = "data source",
@@ -30,7 +41,7 @@ function GBankClassic_UI_Minimap:Init()
     self.icon:Register("GBankClassic", iconDB, self.db.profile.minimap)
 end
 
-function GBankClassic_UI_Minimap:Toggle()
+function UI_Minimap:Toggle()
     if not GBankClassic_Options:GetMinimapEnabled() then
         self.icon:Hide("GBankClassic")
     else
@@ -38,7 +49,7 @@ function GBankClassic_UI_Minimap:Toggle()
     end
 end
 
-function GBankClassic_UI_Minimap:ShowTooltip()
+function UI_Minimap:ShowTooltip()
     GameTooltip:SetOwner(WorldFrame, "ANCHOR_CURSOR")
     GameTooltip:AddLine("GBankClassic")
     GameTooltip:AddDoubleLine("Click", "Inventory", 1, 1, 1)

@@ -1,7 +1,16 @@
-GBankClassic_Core = LibStub("AceAddon-3.0"):NewAddon("GBankClassic", "AceComm-3.0", "AceConsole-3.0", "AceEvent-3.0", "AceSerializer-3.0", "AceTimer-3.0")
-local AceComm_SendCommMessage = GBankClassic_Core.SendCommMessage
+local Globals = GBankClassic_Globals
+local upvalues = Globals.GetUpvalues("LibStub", "IsInRaid")
+local LibStub = upvalues.LibStub
+local IsInRaid = upvalues.IsInRaid
 
-function GBankClassic_Core:SendCommMessage(prefix, text, distribution, target, prio, callbackFn, callbackArg)
+GBankClassic_Core = LibStub("AceAddon-3.0"):NewAddon("GBankClassic", "AceComm-3.0", "AceConsole-3.0", "AceEvent-3.0", "AceSerializer-3.0", "AceTimer-3.0")
+
+local Core = GBankClassic_Core
+local AceComm_SendCommMessage = Core.SendCommMessage
+
+local CHECKSUM_SEPARATOR = "\030" -- ASCII record separator, not used by AceSerializer
+
+function Core:SendCommMessage(prefix, text, distribution, target, prio, callbackFn, callbackArg)
     local prefixDesc = COMM_PREFIX_DESCRIPTIONS[prefix] or "(Unknown)"
     if IsInRaid() then
         GBankClassic_Output:Debug("COMMS", "< (suppressing) %s %s (in raid)", prefix, prefixDesc)
@@ -19,18 +28,18 @@ function GBankClassic_Core:SendCommMessage(prefix, text, distribution, target, p
     return AceComm_SendCommMessage(self, prefix, text, distribution, target, prio, callbackFn, callbackArg)
 end
 
--- Centralized WHISPER send with automatic online check
+-- Centralized whisper send with automatic online check
 -- Returns true if sent, false if target offline or send failed
-function GBankClassic_Core:SendWhisper(prefix, text, target, prio, callbackFn, callbackArg)
+function Core:SendWhisper(prefix, text, target, prio, callbackFn, callbackArg)
     -- Check if target is online
     if not GBankClassic_Guild:IsPlayerOnline(target) then
-        GBankClassic_Output:Debug("WHISPER", "Cannot send %s WHISPER to %s - player is offline", prefix, target)
+        GBankClassic_Output:Debug("WHISPER", "Cannot send %s whisper to %s - player is offline", prefix, target)
 
         return false
     end
 
-    -- Strip realm suffix for WHISPER (WoW requires name-only)
-    -- Target may be "Name-Realm" format, but WHISPER needs just "Name"
+    -- Strip realm suffix for whisper (WoW requires name-only)
+    -- Target may be "Name-Realm" format, but whisper needs just "Name"
     local nameOnly = target
     if target and string.find(target, "-") then
         nameOnly = string.match(target, "^(.-)%-")
@@ -42,7 +51,7 @@ function GBankClassic_Core:SendWhisper(prefix, text, target, prio, callbackFn, c
     return true
 end
 
-function GBankClassic_Core:OnInitialize()
+function Core:OnInitialize()
     -- Called when the addon is loaded
     GBankClassic_Database:Init()
     GBankClassic_Chat:Init()
@@ -55,24 +64,23 @@ function GBankClassic_Core:OnInitialize()
     -- end
 end
 
-function GBankClassic_Core:OnEnable()
+function Core:OnEnable()
     -- Called when the addon is enabled
     GBankClassic_Events:RegisterEvents()
 end
 
-function GBankClassic_Core:OnDisable()
+function Core:OnDisable()
     -- Called when the addon is disabled
     GBankClassic_Events:UnregisterEvents()
 end
 
 -- Checksum implementation for message integrity
 -- Uses a simple but effective hash that detects corruption
-local CHECKSUM_SEPARATOR = "\030" -- ASCII record separator, not used by AceSerializer
-
-local function ComputeChecksum(str)
+local function computeChecksum(str)
     if not str or type(str) ~= "string" then
         return 0
     end
+
     -- Simple additive checksum with bit mixing for better distribution
     local sum = 0
     local len = #str
@@ -82,26 +90,29 @@ local function ComputeChecksum(str)
     end
     -- Include length to catch truncation
     sum = (sum * 31 + len) % 2147483647
+
     return sum
 end
 
 -- Expose as public method for DeltaComms
-function GBankClassic_Core:Checksum(str)
-    return ComputeChecksum(str)
+function Core:Checksum(str)
+    return computeChecksum(str)
 end
 
 -- Serialize data with appended checksum for integrity verification
-function GBankClassic_Core:SerializeWithChecksum(data)
+function Core:SerializeWithChecksum(data)
     local serialized = self:Serialize(data)
     if not serialized then
         return nil
     end
-    local checksum = ComputeChecksum(serialized)
+
+    local checksum = computeChecksum(serialized)
+    
     return serialized .. CHECKSUM_SEPARATOR .. tostring(checksum)
 end
 
 -- Deserialize data and verify checksum; returns success, data (or nil, error)
-function GBankClassic_Core:DeserializeWithChecksum(message)
+function Core:DeserializeWithChecksum(message)
     if not message or type(message) ~= "string" then
         return false, "invalid message"
     end
@@ -121,31 +132,10 @@ function GBankClassic_Core:DeserializeWithChecksum(message)
         return false, "invalid checksum format"
     end
 
-    local actualChecksum = ComputeChecksum(serialized)
+    local actualChecksum = computeChecksum(serialized)
     if actualChecksum ~= expectedChecksum then
         return false, "checksum mismatch (expected " .. expectedChecksum .. ", got " .. actualChecksum .. ")"
     end
 
     return self:Deserialize(serialized)
-end
-
--- Delta functions
-function GBankClassic_Core:ValidateDeltaStructure(delta)
-	return GBankClassic_DeltaComms:ValidateDeltaStructure(delta)
-end
-
-function GBankClassic_Core:ValidateItemDelta(itemDelta)
-	return GBankClassic_DeltaComms:ValidateItemDelta(itemDelta)
-end
-
-function GBankClassic_Core:SanitizeDelta(delta)
-	return GBankClassic_DeltaComms:SanitizeDelta(delta)
-end
-
-function GBankClassic_Core:SanitizeItemDelta(itemDelta)
-	return GBankClassic_DeltaComms:SanitizeItemDelta(itemDelta)
-end
-
-function GBankClassic_Core:ComputeInventoryHash(bank, bags, mail, money)
-	return GBankClassic_DeltaComms:ComputeInventoryHash(bank, bags, mail, money)
 end

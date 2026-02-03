@@ -1,19 +1,25 @@
-GBankClassic_Tests = {}
+GBankClassic_Tests = GBankClassic_Tests or {}
+
 local Tests = GBankClassic_Tests
 
--- Proxy to access addon after it loads (Core loads after Tests in TOC)
+local Globals = GBankClassic_Globals
+local upvalues = Globals.GetUpvalues("GetServerTime")
+local GetServerTime = upvalues.GetServerTime
+
+-- Proxy to access addon after it loads (core loads after tests)
 local addon = setmetatable({}, {
     __index = function(_, key)
         return GBankClassic_Core and GBankClassic_Core[key]
     end
 })
 
--- Direct module references (these exist before Core)
+-- Direct module references (these exist before core)
 local Guild = GBankClassic_Guild
 local Database = GBankClassic_Database
+local DeltaComms = GBankClassic_DeltaComms
 
 -- Helper function for deep table copy
-local function TableCopy(src, dest)
+local function copyTable(src, dest)
     if type(src) ~= "table" then
         return src
     end
@@ -21,17 +27,18 @@ local function TableCopy(src, dest)
     dest = dest or {}
     for k, v in pairs(src) do
         if type(v) == "table" then
-            dest[k] = TableCopy(v)
+            dest[k] = copyTable(v)
         else
             dest[k] = v
         end
     end
+
     return dest
 end
 
 -- Test framework
+local saved = {}
 local testResults = {}
-local currentTest = nil
 
 local function assert(condition, message)
     if not condition then
@@ -59,7 +66,6 @@ local function assertNil(value, message)
 end
 
 local function runTest(testName, testFunc)
-    currentTest = testName
     local success, err = pcall(testFunc)
 
     if success then
@@ -69,17 +75,11 @@ local function runTest(testName, testFunc)
         table.insert(testResults, {name = testName, passed = false, error = err})
         addon:Print("|cffff0000✗|r " .. testName .. ": " .. tostring(err))
     end
-
-    currentTest = nil
 end
 
--- Helper function to create test data (matches actual Bank.lua structure)
+-- Helper function to create test data
 local function createTestItem(id, count, link)
-    return {
-        ID = id,
-        Count = count or 1,
-        Link = link or ("[Item " .. id .. "]")
-    }
+    return { ID = id, Count = count or 1, Link = link or ("[Item " .. id .. "]") }
 end
 
 local function createTestAltData(name)
@@ -103,19 +103,19 @@ local function createTestAltData(name)
 end
 
 --============================================================================
--- Phase 5.1: Delta Computation Tests
+-- Phase 5.1: Delta computation tests
 --============================================================================
 
 -- Test setup: Initialize guild context for delta tests
 local function setupDeltaTest(guildName)
     guildName = guildName or "TestGuild"
 
-    -- Ensure Guild.Info is initialized with the guild name
+    -- Ensure GBankClassic_Guild.Info is initialized with the guild name
     if not Guild.Info or Guild.Info.name ~= guildName then
         Guild.Info = { name = guildName }
     end
 
-    -- Mock Events:TriggerCallback if it doesn't exist (for ApplyDelta)
+    -- Mock events:TriggerCallback if it doesn't exist (for ApplyDelta)
     if GBankClassic_Events and not GBankClassic_Events.TriggerCallback then
         GBankClassic_Events.TriggerCallback = function() end
     end
@@ -123,6 +123,7 @@ local function setupDeltaTest(guildName)
     -- Database should already be initialized by addon, but ensure structure exists
     if not Database.db then
         addon:Print("|cffff0000ERROR: Database not initialized! Tests require addon to be loaded.|r")
+
         return nil
     end
 
@@ -131,7 +132,7 @@ local function setupDeltaTest(guildName)
         Database.db.factionrealm = {}
     end
 
-    -- Ensure guild entry exists (use Database:Reset to create proper structure)
+    -- Ensure guild entry exists (use GBankClassic_Database:Reset to create proper structure)
     if not Database.db.factionrealm[guildName] then
         Database:Reset(guildName)
     end
@@ -159,7 +160,7 @@ local function testDeltaComputationNoChanges()
     assertNotNil(retrieved, "Snapshot should be retrievable after save")
 
     -- Create identical "new" data
-    local newData = TableCopy(oldData)
+    local newData = copyTable(oldData)
 
     -- Compute delta
     local delta = Guild:ComputeDelta("TestAlt1", newData)
@@ -168,7 +169,6 @@ local function testDeltaComputationNoChanges()
     assertEquals("alt-delta", delta.type, "Delta type should be alt-delta")
     assertEquals("TestAlt1", delta.name, "Delta name should match")
     assertNotNil(delta.version, "Delta should have version")
-    -- baseVersion is optional in v0.8.0 (removed for bandwidth savings)
     assert(not Guild:DeltaHasChanges(delta), "Delta should have no changes")
 end
 
@@ -185,7 +185,7 @@ local function testDeltaComputationMoneyChange()
     assert(saved, "Failed to save snapshot")
 
     -- Create new data with money change
-    local newData = TableCopy(oldData)
+    local newData = copyTable(oldData)
     newData.money = 200000
 
     -- Compute delta
@@ -209,7 +209,7 @@ local function testDeltaComputationItemAdded()
     assert(saved, "Failed to save snapshot")
 
     -- Create new data with added item
-    local newData = TableCopy(oldData)
+    local newData = copyTable(oldData)
     table.insert(newData.bank.items, createTestItem(2996, 5, "[Bolt of Linen Cloth]"))
 
     -- Compute delta
@@ -235,7 +235,7 @@ local function testDeltaComputationItemRemoved()
     assert(saved, "Failed to save snapshot")
 
     -- Create new data with removed item
-    local newData = TableCopy(oldData)
+    local newData = copyTable(oldData)
     table.remove(newData.bank.items, 1) -- Remove first item
 
     -- Compute delta
@@ -261,7 +261,7 @@ local function testDeltaComputationItemCountChanged()
     assert(saved, "Failed to save snapshot")
 
     -- Create new data with changed item count
-    local newData = TableCopy(oldData)
+    local newData = copyTable(oldData)
     newData.bank.items[1].Count = 25 -- Change from 20 to 25
 
     -- Compute delta
@@ -288,7 +288,7 @@ local function testDeltaComputationMultipleChanges()
     assert(saved, "Failed to save snapshot")
 
     -- Create new data with multiple changes
-    local newData = TableCopy(oldData)
+    local newData = copyTable(oldData)
     newData.money = 300000 -- Money change
     newData.bank.items[1].Count = 30 -- Count change
     table.insert(newData.bank.items, createTestItem(2996, 5, "[Bolt of Linen Cloth]"))  -- Add item
@@ -320,7 +320,7 @@ end
 
 local function testGetChangedFields()
     local oldItem = createTestItem(2589, 20, "[Linen Cloth]")
-    local newItem = TableCopy(oldItem)
+    local newItem = copyTable(oldItem)
     newItem.Count = 25
 
     local changes = Guild:GetChangedFields(oldItem, newItem)
@@ -332,7 +332,7 @@ local function testGetChangedFields()
 end
 
 --============================================================================
--- Phase 5.2: Size Estimation Tests
+-- Phase 5.2: Size estimation tests
 --============================================================================
 
 local function testSizeEstimationEmpty()
@@ -394,7 +394,7 @@ local function testSizeEstimationComparison()
 end
 
 --============================================================================
--- Phase 5.3: Protocol Negotiation Tests
+-- Phase 5.3: Protocol negotiation tests
 --============================================================================
 
 local function testProtocolVersionDetection()
@@ -420,7 +420,7 @@ local function testProtocolVersionDetection()
 end
 
 --============================================================================
--- Phase 5.4: Error Handling Tests
+-- Phase 5.4: Error handling tests
 --============================================================================
 
 local function testApplyDeltaNoExistingData()
@@ -429,7 +429,7 @@ local function testApplyDeltaNoExistingData()
         error("Test setup failed - database not initialized")
     end
 
-    -- Ensure Guild.Info.alts exists but is empty
+    -- Ensure GBankClassic_Guild.Info.alts exists but is empty
     if not Guild.Info.alts then
         Guild.Info.alts = {}
     end
@@ -442,7 +442,7 @@ local function testApplyDeltaNoExistingData()
         changes = {}
     }
 
-    -- Should fail because no existing data in Info.alts
+    -- Should fail because no existing data in GBankClassic_Guild.alts
     local result = Guild:ApplyDelta("NonExistent-TestRealm", delta, "Sender-TestRealm")
     assert(result ~= "APPLIED", "Should not apply when no existing data")
 end
@@ -457,7 +457,7 @@ local function testApplyDeltaVersionMismatch()
     local existingData = createTestAltData("TestAlt")
     existingData.version = 5
 
-    -- Set up Guild.Info.alts with the existing data
+    -- Set up GBankClassic_Guild.Info.alts with the existing data
     if not Guild.Info.alts then
         Guild.Info.alts = {}
     end
@@ -501,12 +501,12 @@ local function testSnapshotValidation()
     assert(Database:ValidateSnapshot(validSnapshot), "Valid snapshot should pass")
 
     -- Invalid: missing version
-    local invalidSnapshot1 = TableCopy(validSnapshot)
+    local invalidSnapshot1 = copyTable(validSnapshot)
     invalidSnapshot1.version = nil
     assert(not Database:ValidateSnapshot(invalidSnapshot1), "Missing version should fail")
 
     -- Invalid: version not a number
-    local invalidSnapshot2 = TableCopy(validSnapshot)
+    local invalidSnapshot2 = copyTable(validSnapshot)
     invalidSnapshot2.version = "not a number"
     assert(not Database:ValidateSnapshot(invalidSnapshot2), "Non-numeric version should fail")
 
@@ -529,7 +529,7 @@ local function testDeltaStructureValidation()
             money = 100000
         }
     }
-    local valid, err = addon:ValidateDeltaStructure(validDelta)
+    local valid, err = DeltaComms:ValidateDeltaStructure(validDelta)
     assert(valid, "Valid delta should pass: " .. tostring(err))
 
     -- Invalid: missing type
@@ -539,7 +539,7 @@ local function testDeltaStructureValidation()
         baseVersion = 1,
         changes = {}
     }
-    valid, err = addon:ValidateDeltaStructure(invalidDelta1)
+    valid, err = DeltaComms:ValidateDeltaStructure(invalidDelta1)
     assert(not valid, "Missing type should fail")
 
     -- Invalid: wrong type
@@ -550,7 +550,7 @@ local function testDeltaStructureValidation()
         baseVersion = 1,
         changes = {}
     }
-    valid, err = addon:ValidateDeltaStructure(invalidDelta2)
+    valid, err = DeltaComms:ValidateDeltaStructure(invalidDelta2)
     assert(not valid, "Wrong type should fail")
 
     -- Invalid: missing name
@@ -560,7 +560,7 @@ local function testDeltaStructureValidation()
         baseVersion = 1,
         changes = {}
     }
-    valid, err = addon:ValidateDeltaStructure(invalidDelta3)
+    valid, err = DeltaComms:ValidateDeltaStructure(invalidDelta3)
     assert(not valid, "Missing name should fail")
 
     -- Invalid: non-numeric version
@@ -571,19 +571,19 @@ local function testDeltaStructureValidation()
         baseVersion = 1,
         changes = {}
     }
-    valid, err = addon:ValidateDeltaStructure(invalidDelta4)
+    valid, err = DeltaComms:ValidateDeltaStructure(invalidDelta4)
     assert(not valid, "Non-numeric version should fail")
 end
 
 --============================================================================
--- Phase 5.5: Integration Tests
+-- Phase 5.5: Integration tests
 --============================================================================
 
 local function testFullDeltaRoundtrip()
     setupDeltaTest("TestGuild")
 
     local name = "IntegrationTest"
-    local norm = Guild:NormalizeName(name)  -- Use Guild's NormalizeName which adds realm suffix
+    local norm = Guild:NormalizeName(name) -- Adds realm suffix
 
     -- Create initial data with proper structure
     local oldData = createTestAltData(name)
@@ -596,13 +596,13 @@ local function testFullDeltaRoundtrip()
     -- Keep both bag items (from createTestAltData)
     Database:SaveSnapshot("TestGuild", name, oldData)
 
-    -- Setup Guild.Info for ApplyDelta with a deep copy
+    -- Setup GBankClassic_Guild.Info for ApplyDelta with a deep copy
     Guild.Info.name = "TestGuild"
     Guild.Info.alts = Guild.Info.alts or {}
-    Guild.Info.alts[norm] = TableCopy(oldData)
+    Guild.Info.alts[norm] = copyTable(oldData)
 
     -- Make changes
-    local newData = TableCopy(oldData)
+    local newData = copyTable(oldData)
     newData.version = 2
     newData.money = 200000 -- Money is at root level
     -- Add new item to bank (append to array)
@@ -620,30 +620,30 @@ local function testFullDeltaRoundtrip()
     assertNotNil(delta.changes, "Delta should have changes")
     assertEquals(200000, delta.changes.money, "Delta should contain money change")
 
-    -- Apply delta (modifies Guild.Info.alts[norm] in place)
+    -- Apply delta (modifies GBankClassic_Guild.Info.alts[norm] in place)
     local status = Guild:ApplyDelta(name, delta, "sender")
     -- ApplyDelta returns ADOPTION_STATUS values, not boolean
-    -- Just check it didn't return INVALID
+    -- Just check it didn't return invalid
 
-    -- Verify changes through Guild.Info.alts
+    -- Verify changes through GBankClassic_Guild.Info.alts
     local appliedData = Guild.Info.alts[norm]
-    assertNotNil(appliedData, "Data should be in Guild.Info.alts")
+    assertNotNil(appliedData, "Data should be in GBankClassic_Guild.Info.alts")
     assertEquals(200000, appliedData.money, "Money should be updated")
     -- Bank should now have 2 items (originally had 1, added 1)
     assertEquals(2, #appliedData.bank.items, "Bank should have 2 items")
     -- Bag items should have 1 item (originally had 2, removed 1)
-    assertEquals(1, #appliedData.bags.items, "Bags should have 1 item (TESTS ITEM REMOVAL)")
+    assertEquals(1, #appliedData.bags.items, "Bags should have 1 item (tests item removal)")
     assertEquals(2, appliedData.version, "Version should be updated")
 end
 
 --============================================================================
--- Phase 5.6: Backwards Compatibility Tests
+-- Phase 5.6: Backwards compatibility tests
 --============================================================================
 
 local function testV1ClientIgnoresDeltaPrefix()
     setupDeltaTest("TestGuild")
 
-    -- Setup Guild.Info
+    -- Setup GBankClassic_Guild.Info
     Guild.Info = Guild.Info or {}
     Guild.Info.name = "TestGuild"
 
@@ -670,76 +670,108 @@ local function testV2ClientHandlesBothProtocols()
 end
 
 --============================================================================
--- Test Runner
+-- Test runner
 --============================================================================
 
 function Tests:RunAllTests()
-    testResults = {}
-    addon:Print("=== Running GBank Delta Sync Tests ===")
+    -- Snapshot key global state so tests don't pollute the addon runtime
+    saved.GuildInfo = copyTable(GBankClassic_Guild and GBankClassic_Guild.Info or {})
+    saved.DatabaseDb = copyTable(GBankClassic_Database and GBankClassic_Database.db or {})
+    saved.TriggerCallback = (GBankClassic_Events and GBankClassic_Events.TriggerCallback) or nil
 
-    -- Phase 5.1: Delta Computation
-    addon:Print("\n|cff00ffffPhase 5.1: Delta Computation Tests|r")
-    runTest("Delta Computation - No Changes", testDeltaComputationNoChanges)
-    runTest("Delta Computation - Money Change", testDeltaComputationMoneyChange)
-    runTest("Delta Computation - Item Added", testDeltaComputationItemAdded)
-    runTest("Delta Computation - Item Removed", testDeltaComputationItemRemoved)
-    runTest("Delta Computation - Item Count Changed", testDeltaComputationItemCountChanged)
-    runTest("Delta Computation - Multiple Changes", testDeltaComputationMultipleChanges)
-    runTest("Items Equal - Comparison", testItemsEqual)
-    runTest("Get Changed Fields", testGetChangedFields)
+    -- Run the tests (wrapped in pcall to ensure cleanup happens)
+    local ok, res = pcall(function()
+        testResults = {}
+        addon:Print("=== Running GBankClassic tests for delta sync ===")
 
-    -- Phase 5.2: Size Estimation
-    addon:Print("\n|cff00ffffPhase 5.2: Size Estimation Tests|r")
-    runTest("Size Estimation - Empty", testSizeEstimationEmpty)
-    runTest("Size Estimation - Small Delta", testSizeEstimationSmallDelta)
-    runTest("Size Estimation - Large Delta", testSizeEstimationLargeDelta)
-    runTest("Size Estimation - Comparison", testSizeEstimationComparison)
+        -- Phase 5.1: Delta computation
+        addon:Print("\n|cff00ffffPhase 5.1: Delta computation tests|r")
+        runTest("Delta computation - No changes", testDeltaComputationNoChanges)
+        runTest("Delta computation - Money change", testDeltaComputationMoneyChange)
+        runTest("Delta computation - Item added", testDeltaComputationItemAdded)
+        runTest("Delta computation - Item removed", testDeltaComputationItemRemoved)
+        runTest("Delta computation - Item count changed", testDeltaComputationItemCountChanged)
+        runTest("Delta computation - Multiple changes", testDeltaComputationMultipleChanges)
+        runTest("Items equal - Comparison", testItemsEqual)
+        runTest("Get changed fields", testGetChangedFields)
 
-    -- Phase 5.3: Protocol Negotiation
-    addon:Print("\n|cff00ffffPhase 5.3: Protocol Negotiation Tests|r")
-    runTest("Protocol Version Detection", testProtocolVersionDetection)
+        -- Phase 5.2: Size estimation
+        addon:Print("\n|cff00ffffPhase 5.2: Size estimation tests|r")
+        runTest("Size estimation - Empty", testSizeEstimationEmpty)
+        runTest("Size estimation - Small delta", testSizeEstimationSmallDelta)
+        runTest("Size estimation - Large delta", testSizeEstimationLargeDelta)
+        runTest("Size estimation - Comparison", testSizeEstimationComparison)
 
-    -- Phase 5.4: Error Handling
-    addon:Print("\n|cff00ffffPhase 5.4: Error Handling Tests|r")
-    runTest("Apply Delta - No Existing Data", testApplyDeltaNoExistingData)
-    runTest("Apply Delta - Version Mismatch", testApplyDeltaVersionMismatch)
-    runTest("Delta Error Tracking", testDeltaErrorTracking)
-    runTest("Snapshot Validation", testSnapshotValidation)
-    runTest("Delta Structure Validation", testDeltaStructureValidation)
+        -- Phase 5.3: Protocol negotiation
+        addon:Print("\n|cff00ffffPhase 5.3: Protocol negotiation tests|r")
+        runTest("Protocol version detection", testProtocolVersionDetection)
 
-    -- Phase 5.5: Integration Tests
-    addon:Print("\n|cff00ffffPhase 5.5: Integration Tests|r")
-    runTest("Full Delta Roundtrip", testFullDeltaRoundtrip)
+        -- Phase 5.4: Error handling
+        addon:Print("\n|cff00ffffPhase 5.4: Error handling tests|r")
+        runTest("Apply delta - No existing data", testApplyDeltaNoExistingData)
+        runTest("Apply delta - Version mismatch", testApplyDeltaVersionMismatch)
+        runTest("Delta error tracking", testDeltaErrorTracking)
+        runTest("Snapshot validation", testSnapshotValidation)
+        runTest("Delta structure validation", testDeltaStructureValidation)
 
-    -- Phase 5.6: Backwards Compatibility
-    addon:Print("\n|cff00ffffPhase 5.6: Backwards Compatibility Tests|r")
-    runTest("V1 Client Ignores Delta Prefix", testV1ClientIgnoresDeltaPrefix)
-    runTest("V2 Client Handles Both Protocols", testV2ClientHandlesBothProtocols)
+        -- Phase 5.5: Integration tests
+        addon:Print("\n|cff00ffffPhase 5.5: Integration tests|r")
+        runTest("Full delta roundtrip", testFullDeltaRoundtrip)
 
-    -- Summary
-    local passed = 0
-    local failed = 0
-    for _, result in ipairs(testResults) do
-        if result.passed then
-            passed = passed + 1
+        -- Phase 5.6: Backwards compatibility
+        addon:Print("\n|cff00ffffPhase 5.6: Backwards compatibility tests|r")
+        runTest("V1 Client ignores delta prefix", testV1ClientIgnoresDeltaPrefix)
+        runTest("V2 Client handles both protocols", testV2ClientHandlesBothProtocols)
+
+        -- Summary
+        local passed = 0
+        local failed = 0
+        for _, result in ipairs(testResults) do
+            if result.passed then
+                passed = passed + 1
+            else
+                failed = failed + 1
+            end
+        end
+
+        addon:Print(string.format("\n|cff00ffff=== Test summary ===|r\nTotal: %d | |cff00ff00Passed: %d|r | |cffff0000Failed: %d|r",
+            passed + failed, passed, failed))
+
+        if failed > 0 then
+            addon:Print("|cffff0000Some tests failed. See output above for details.|r")
         else
-            failed = failed + 1
+            addon:Print("|cff00ff00All tests passed!|r")
+        end
+
+        return failed == 0
+    end)
+
+    -- Always restore globals, even if tests errored
+    if saved then
+        if saved.GuildInfo then
+            if not GBankClassic_Guild then
+                GBankClassic_Guild = {}
+            end
+            GBankClassic_Guild.Info = copyTable(saved.GuildInfo)
+        end
+
+        if saved.DatabaseDb then
+            if not GBankClassic_Database then
+                GBankClassic_Database = {}
+            end
+            GBankClassic_Database.db = copyTable(saved.DatabaseDb)
+        end
+
+        if GBankClassic_Events and saved.TriggerCallback ~= nil then
+            GBankClassic_Events.TriggerCallback = saved.TriggerCallback
         end
     end
 
-    addon:Print(string.format("\n|cff00ffff=== Test Summary ===|r\nTotal: %d | |cff00ff00Passed: %d|r | |cffff0000Failed: %d|r",
-        passed + failed, passed, failed))
-
-    if failed > 0 then
-        addon:Print("|cffff0000Some tests failed. See output above for details.|r")
+    if ok then
+        return res
     else
-        addon:Print("|cff00ff00All tests passed!|r")
+        error(res)
     end
-
-    addon:Print("\nBe sure to /reload before proceeding!\n")
-    -- TODO: reset data to avoid UI errors when opening /bank after running /bank test
-
-    return failed == 0
 end
 
 function Tests:RunTest(testName)

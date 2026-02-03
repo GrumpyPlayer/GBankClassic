@@ -1,15 +1,21 @@
-GBankClassic_UI_Donations = {}
+GBankClassic_UI_Donations = GBankClassic_UI_Donations or {}
 
-function GBankClassic_UI_Donations:Init()
+local UI_Donations = GBankClassic_UI_Donations
+
+local Globals = GBankClassic_Globals
+local upvalues = Globals.GetUpvalues("GetClassColor")
+local GetClassColor = upvalues.GetClassColor
+
+function UI_Donations:Init()
     self:DrawWindow()
 end
 
-local function OnClose(_)
-    GBankClassic_UI_Donations.isOpen = false
-    GBankClassic_UI_Donations.Window:Hide()
+local function onClose(_)
+    UI_Donations.isOpen = false
+    UI_Donations.Window:Hide()
 end
 
-function GBankClassic_UI_Donations:Toggle()
+function UI_Donations:Toggle()
     if self.isOpen then
         self:Close()
     else
@@ -17,7 +23,7 @@ function GBankClassic_UI_Donations:Toggle()
     end
 end
 
-function GBankClassic_UI_Donations:Open()
+function UI_Donations:Open()
 	if self.isOpen then
 		return
 	end
@@ -43,26 +49,25 @@ function GBankClassic_UI_Donations:Open()
     end
 end
 
-function GBankClassic_UI_Donations:Close()
+function UI_Donations:Close()
 	if not self.isOpen then
 		return
 	end
-
 	if not self.Window then
 		return
 	end
 
-    OnClose(self.Window)
+    onClose(self.Window)
 
     if GBankClassic_UI_Inventory.isOpen == false then
         _G["GBankClassic"]:Hide()
     end
 end
 
-function GBankClassic_UI_Donations:DrawWindow()
+function UI_Donations:DrawWindow()
     local donations = GBankClassic_UI:Create("Frame")
     donations:Hide()
-    donations:SetCallback("OnClose", OnClose)
+    donations:SetCallback("OnClose", onClose)
     donations:SetTitle("Donations")
     donations:SetLayout("Flow")
     donations:SetWidth(350)
@@ -106,7 +111,7 @@ function GBankClassic_UI_Donations:DrawWindow()
     self.Content = content
 end
 
-function GBankClassic_UI_Donations:DrawContent()
+function UI_Donations:DrawContent()
     self.Window:SetStatusText("")
     self.Content:ReleaseChildren()
 

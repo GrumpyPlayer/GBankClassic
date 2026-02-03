@@ -1,6 +1,13 @@
-GBankClassic_Database = {}
+GBankClassic_Database = GBankClassic_Database or {}
 
-function GBankClassic_Database:Init()
+local Database = GBankClassic_Database
+
+local Globals = GBankClassic_Globals
+local upvalues = Globals.GetUpvalues("LibStub", "GetServerTime")
+local LibStub = upvalues.LibStub
+local GetServerTime = upvalues.GetServerTime
+
+function Database:Init()
     self.db = LibStub("AceDB-3.0"):New("GBankClassicDB", {
 		global = {
 			debugCategories = {
@@ -26,7 +33,7 @@ function GBankClassic_Database:Init()
 	})
 end
 
-function GBankClassic_Database:Reset(name)
+function Database:Reset(name)
 	if not name then
 		return
 	end
@@ -61,7 +68,7 @@ function GBankClassic_Database:Reset(name)
 	GBankClassic_Output:Response("Reset database")
 end
 
-function GBankClassic_Database:ResetPlayer(name, player)
+function Database:ResetPlayer(name, player)
 	if not name then
 		return
 	end
@@ -77,7 +84,7 @@ function GBankClassic_Database:ResetPlayer(name, player)
     GBankClassic_Core:Response("Reset player database")
 end
 
-function GBankClassic_Database:Load(name)
+function Database:Load(name)
 	if not name then
 		return
 	end
@@ -87,7 +94,7 @@ function GBankClassic_Database:Load(name)
 	-- Only reset if there's truly no data (nil). Otherwise initialize missing fields.
 	-- This prevents data loss when some fields are missing but others (like requests) exist.
 	if db == nil then
-        GBankClassic_Database:Reset(name)
+        self:Reset(name)
         db = self.db.factionrealm[name]
     else
 		-- Initialize missing fields without wiping existing data
@@ -102,6 +109,73 @@ function GBankClassic_Database:Load(name)
 		end
     end
 
+	-- Migrate old alt data to ensure slots fields exist
+	-- Characters may have bank/bags without slots
+	if db.alts then
+		for name, alt in pairs(db.alts) do
+			if type(alt) == "table" then
+				if alt.bank and not alt.bank.slots then
+					alt.bank.slots = { count = 0, total = 0 }
+					GBankClassic_Output:Debug("DATABASE", "Migrated alt data: initialized bank.slots for %s", name)
+				end
+				if alt.bags and not alt.bags.slots then
+					alt.bags.slots = { count = 0, total = 0 }
+					GBankClassic_Output:Debug("DATABASE", "Migrated alt data: initialized bags.slots for %s", name)
+				end
+				-- Compute inventory hash for alts that don't have one
+				-- This enables pull-based protocol for existing alt data
+				if not alt.inventoryHash and alt.bank and alt.bags then
+					local money = alt.money or 0
+					alt.inventoryHash = GBankClassic_DeltaComms:ComputeInventoryHash(alt.bank, alt.bags, money)
+				GBankClassic_Output:Debug("DATABASE", "Migrated alt data: computed inventory hash for %s (hash=%d)", name, alt.inventoryHash)
+				end
+				-- Recalculate aggregated items from bank/bags/mail with corrected aggregate function
+				-- This fixes item count duplication without requiring a full scan
+				-- Clear and rebuild alt.items on every load to prevent accumulation
+				if (alt.bank and alt.bank.items) or (alt.bags and alt.bags.items) or (alt.mail and alt.mail.items) then
+					-- Guild bank alt with bank/bags - force reconstruct from sources
+					-- Log sample counts before clearing
+					if alt.items and #alt.items > 0 then
+						local beforeSample = {}
+						for i = 1, math.min(5, #alt.items) do
+							local item = alt.items[i]
+							if item then
+								table.insert(beforeSample, string.format("%s:%d", item.ID or "?", item.Count or 0))
+							end
+						end
+						GBankClassic_Output:Debug("DATABASE", "Before clear - guild bank alt %s alt.items: %s", name, table.concat(beforeSample, ", "))
+					end
+
+					alt.items = nil -- Clear corrupted data
+					GBankClassic_Bank:RecalculateAggregatedItems(alt)
+
+					-- Log sample counts after recalculation
+					if alt.items and #alt.items > 0 then
+						local afterSample = {}
+						for i = 1, math.min(5, #alt.items) do
+							local item = alt.items[i]
+							if item then
+								table.insert(afterSample, string.format("%s:%d", item.ID or "?", item.Count or 0))
+							end
+						end
+						GBankClassic_Output:Debug("DATABASE", "After recalc - guild bank alt %s alt.items: %s", name, table.concat(afterSample, ", "))
+					end
+
+					GBankClassic_Output:Debug("DATABASE", "Forced recalculation for guild bank alt %s from bank/bags/mail", name)
+				elseif alt.items then
+					-- Synced alt - force deduplicate
+					-- Do not merge mail here - alt.items from sync already includes mail from sender's scan
+					local aggregated = GBankClassic_Item:Aggregate(alt.items, nil)
+					alt.items = {}
+					for _, item in pairs(aggregated) do
+						table.insert(alt.items, item)
+					end
+					GBankClassic_Output:Debug("DATABASE", "Forced deduplication for synced guild bank alt %s: %d items", name, #alt.items)
+				end
+			end
+		end
+	end
+
 	-- if not db.requests then
 	-- 	db.requests = {}
 	-- end
@@ -111,6 +185,7 @@ function GBankClassic_Database:Load(name)
 	-- if not db.requestsTombstones then
 	-- 	db.requestsTombstones = {}
 	-- end
+
 	if not db.deltaSnapshots then
 		db.deltaSnapshots = {}
 	end
@@ -143,7 +218,7 @@ end
 -- Snapshot management functions
 
 -- Save a snapshot of alt data for future delta computation
-function GBankClassic_Database:SaveSnapshot(name, altName, altData)
+function Database:SaveSnapshot(name, altName, altData)
 	if not name or not altName or not altData then
 		return false
 	end
@@ -155,7 +230,7 @@ function GBankClassic_Database:SaveSnapshot(name, altName, altData)
 
 	-- Create a deep copy with timestamp
 	db.deltaSnapshots[altName] = {
-		data = GBankClassic_Database:DeepCopy(altData),
+		data = self:DeepCopy(altData),
 		timestamp = GetServerTime(),
 	}
 
@@ -163,7 +238,7 @@ function GBankClassic_Database:SaveSnapshot(name, altName, altData)
 end
 
 -- Retrieve a snapshot of alt data for delta computation
-function GBankClassic_Database:GetSnapshot(name, altName)
+function Database:GetSnapshot(name, altName)
 	if not name or not altName then
 		return nil
 	end
@@ -183,6 +258,7 @@ function GBankClassic_Database:GetSnapshot(name, altName)
 	if age > PROTOCOL.DELTA_SNAPSHOT_MAX_AGE then
 		-- Snapshot expired, remove it
 		db.deltaSnapshots[altName] = nil
+
 		return nil
 	end
 
@@ -190,6 +266,7 @@ function GBankClassic_Database:GetSnapshot(name, altName)
 	if not self:ValidateSnapshot(snapshot.data) then
 		-- Corrupted snapshot, remove it
 		db.deltaSnapshots[altName] = nil
+		
 		return nil
 	end
 
@@ -197,7 +274,7 @@ function GBankClassic_Database:GetSnapshot(name, altName)
 end
 
 -- Validate snapshot structure
-function GBankClassic_Database:ValidateSnapshot(snapshot)
+function Database:ValidateSnapshot(snapshot)
 	if not snapshot or type(snapshot) ~= "table" then
 		return false
 	end
@@ -230,57 +307,8 @@ function GBankClassic_Database:ValidateSnapshot(snapshot)
 	return true
 end
 
--- Get the age of a snapshot in seconds
-function GBankClassic_Database:GetSnapshotAge(name, altName)
-	if not name or not altName then
-		return nil
-	end
-
-	local db = self.db.factionrealm[name]
-	if not db or not db.deltaSnapshots then
-		return nil
-	end
-
-	local snapshot = db.deltaSnapshots[altName]
-	if not snapshot or not snapshot.timestamp then
-		return nil
-	end
-
-	return GetServerTime() - snapshot.timestamp
-end
-
--- Clean up old snapshots (older than DELTA_SNAPSHOT_MAX_AGE)
-function GBankClassic_Database:CleanupOldSnapshots(name)
-	if not name then
-		return 0
-	end
-
-	local db = self.db.factionrealm[name]
-	if not db or not db.deltaSnapshots then
-		return 0
-	end
-
-	local currentTime = GetServerTime()
-	local removed = 0
-	for altName, snapshot in pairs(db.deltaSnapshots) do
-		if snapshot and snapshot.timestamp then
-			local age = currentTime - snapshot.timestamp
-			if age > PROTOCOL.DELTA_SNAPSHOT_MAX_AGE then
-				db.deltaSnapshots[altName] = nil
-				removed = removed + 1
-			end
-		else
-			-- Malformed snapshot, remove it
-			db.deltaSnapshots[altName] = nil
-			removed = removed + 1
-		end
-	end
-
-	return removed
-end
-
 -- Deep copy function for snapshot creation
-function GBankClassic_Database:DeepCopy(obj)
+function Database:DeepCopy(obj)
 	if type(obj) ~= "table" then
 		return obj
 	end
@@ -296,7 +324,7 @@ end
 -- Delta history management
 
 -- Save a delta to history for potential chain replay
-function GBankClassic_Database:SaveDeltaHistory(name, altName, previousVersion, version, delta)
+function Database:SaveDeltaHistory(name, altName, previousVersion, version, delta)
 	if not name or not altName or not previousVersion or not version or not delta then
 		return false
 	end
@@ -327,7 +355,7 @@ function GBankClassic_Database:SaveDeltaHistory(name, altName, previousVersion, 
 end
 
 -- Get delta history for an alt within a version range
-function GBankClassic_Database:GetDeltaHistory(name, altName, fromVersion, toVersion)
+function Database:GetDeltaHistory(name, altName, fromVersion, toVersion)
 	if not name or not altName then
 		return nil
 	end
@@ -361,54 +389,10 @@ function GBankClassic_Database:GetDeltaHistory(name, altName, fromVersion, toVer
 	return chain
 end
 
--- Clean up old delta history (older than DELTA_HISTORY_MAX_AGE)
-function GBankClassic_Database:CleanupDeltaHistory(name)
-	if not name then
-		return 0
-	end
-
-	local db = self.db.factionrealm[name]
-	if not db or not db.deltaHistory then
-		return 0
-	end
-
-	local currentTime = GetServerTime()
-	local maxAge = PROTOCOL.DELTA_HISTORY_MAX_AGE or 3600
-	local totalRemoved = 0
-	for altName, history in pairs(db.deltaHistory) do
-		if type(history) == "table" then
-			-- Remove old entries
-			local i = 1
-			while i <= #history do
-				if history[i] and history[i].timestamp then
-					local age = currentTime - history[i].timestamp
-					if age > maxAge then
-						table.remove(history, i)
-						totalRemoved = totalRemoved + 1
-					else
-						i = i + 1
-					end
-				else
-					-- Malformed entry
-					table.remove(history, i)
-					totalRemoved = totalRemoved + 1
-				end
-			end
-
-			-- Remove empty histories
-			if #history == 0 then
-				db.deltaHistory[altName] = nil
-			end
-		end
-	end
-
-	return totalRemoved
-end
-
 -- Protocol version tracking
 
 -- Update protocol version for a guild member
-function GBankClassic_Database:UpdatePeerProtocol(name, sender, protocolVersion, supportsDelta)
+function Database:UpdatePeerProtocol(name, sender, protocolVersion, supportsDelta)
 	if not name or not sender then
 		return false
 	end
@@ -428,7 +412,7 @@ function GBankClassic_Database:UpdatePeerProtocol(name, sender, protocolVersion,
 end
 
 -- Get protocol version for a guild member
-function GBankClassic_Database:GetPeerProtocol(name, sender)
+function Database:GetPeerProtocol(name, sender)
 	if not name or not sender then
 		return nil
 	end
@@ -441,42 +425,10 @@ function GBankClassic_Database:GetPeerProtocol(name, sender)
 	return db.guildProtocolVersions[sender]
 end
 
--- Calculate percentage of online guild members supporting delta
-function GBankClassic_Database:GetGuildDeltaSupport(name)
-	if not name then
-		return 0
-	end
-
-	local db = self.db.factionrealm[name]
-	if not db or not db.guildProtocolVersions then
-		return 0
-	end
-
-	local total = 0
-	local supporting = 0
-	local currentTime = GetServerTime()
-
-	-- Only count members seen in last 10 minutes (considered online)
-	for _, info in pairs(db.guildProtocolVersions) do
-		if info and info.lastSeen and (currentTime - info.lastSeen) < 600 then
-			total = total + 1
-			if info.supportsDelta then
-				supporting = supporting + 1
-			end
-		end
-	end
-
-	if total == 0 then
-		return 0
-	end
-
-	return supporting / total
-end
-
 -- Delta metrics
 
 -- Record bytes sent via delta protocol
-function GBankClassic_Database:RecordDeltaSent(name, bytes)
+function Database:RecordDeltaSent(name, bytes)
 	if not name or not bytes then
 		return
 	end
@@ -488,7 +440,7 @@ function GBankClassic_Database:RecordDeltaSent(name, bytes)
 end
 
 -- Record bytes sent via full sync protocol
-function GBankClassic_Database:RecordFullSyncSent(name, bytes)
+function Database:RecordFullSyncSent(name, bytes)
 	if not name or not bytes then
 		return
 	end
@@ -500,7 +452,7 @@ function GBankClassic_Database:RecordFullSyncSent(name, bytes)
 end
 
 -- Record successful delta application
-function GBankClassic_Database:RecordDeltaApplied(name)
+function Database:RecordDeltaApplied(name)
 	if not name then
 		return
 	end
@@ -512,7 +464,7 @@ function GBankClassic_Database:RecordDeltaApplied(name)
 end
 
 -- Record failed delta application
-function GBankClassic_Database:RecordDeltaFailed(name)
+function Database:RecordDeltaFailed(name)
 	if not name then
 		return
 	end
@@ -524,7 +476,7 @@ function GBankClassic_Database:RecordDeltaFailed(name)
 end
 
 -- Record delta computation time
-function GBankClassic_Database:RecordDeltaComputeTime(name, milliseconds)
+function Database:RecordDeltaComputeTime(name, milliseconds)
 	if not name or not milliseconds then
 		return
 	end
@@ -537,7 +489,7 @@ function GBankClassic_Database:RecordDeltaComputeTime(name, milliseconds)
 end
 
 -- Record delta application time
-function GBankClassic_Database:RecordDeltaApplyTime(name, milliseconds)
+function Database:RecordDeltaApplyTime(name, milliseconds)
 	if not name or not milliseconds then
 		return
 	end
@@ -550,7 +502,7 @@ function GBankClassic_Database:RecordDeltaApplyTime(name, milliseconds)
 end
 
 -- Reset delta metrics (for testing or cleanup)
-function GBankClassic_Database:ResetDeltaMetrics(name)
+function Database:ResetDeltaMetrics(name)
 	if not name then
 		return false
 	end
@@ -576,7 +528,7 @@ function GBankClassic_Database:ResetDeltaMetrics(name)
 end
 
 -- Record fallback to full sync
-function GBankClassic_Database:RecordFullSyncFallback(name)
+function Database:RecordFullSyncFallback(name)
 	if not name then
 		return
 	end
@@ -588,7 +540,7 @@ function GBankClassic_Database:RecordFullSyncFallback(name)
 end
 
 -- Get delta metrics
-function GBankClassic_Database:GetDeltaMetrics(name)
+function Database:GetDeltaMetrics(name)
 	if not name then
 		return nil
 	end

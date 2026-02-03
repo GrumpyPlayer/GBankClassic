@@ -1,15 +1,29 @@
-GBankClassic_UI_Mail = {}
+GBankClassic_UI_Mail = GBankClassic_UI_Mail or {}
 
-function GBankClassic_UI_Mail:Init()
+local UI_Mail = GBankClassic_UI_Mail
+
+local Globals = GBankClassic_Globals
+local upvalues = Globals.GetUpvalues("GetInboxHeaderInfo", "GetClassColor", "GetInboxText", "GetCoinTextureString", "GetInboxItem", "GetInboxItemLink", "GetItemInfoInstant")
+local GetInboxHeaderInfo = upvalues.GetInboxHeaderInfo
+local GetClassColor = upvalues.GetClassColor
+local GetInboxText = upvalues.GetInboxText
+local GetCoinTextureString = upvalues.GetCoinTextureString
+local GetInboxItem = upvalues.GetInboxItem
+local GetInboxItemLink = upvalues.GetInboxItemLink
+local GetItemInfoInstant = upvalues.GetItemInfoInstant
+local upvalues = Globals.GetUpvalues("ATTACHMENTS_MAX_RECEIVE")
+local ATTACHMENTS_MAX_RECEIVE = upvalues.ATTACHMENTS_MAX_RECEIVE
+
+function UI_Mail:Init()
     self:DrawWindow()
 end
 
-local function OnClose(_)
-    GBankClassic_UI_Mail.isOpen = false
-    GBankClassic_UI_Mail.Window:Hide()
+local function onClose(_)
+    UI_Mail.isOpen = false
+    UI_Mail.Window:Hide()
 end
 
-function GBankClassic_UI_Mail:Open()
+function UI_Mail:Open()
 	if self.isOpen then
 		return
 	end
@@ -27,26 +41,25 @@ function GBankClassic_UI_Mail:Open()
     self:RedrawContent()
 end
 
-function GBankClassic_UI_Mail:Close()
+function UI_Mail:Close()
 	if not self.isOpen then
 		return
 	end
-
 	if not self.Window then
 		return
 	end
 
-    OnClose(self.Window)
+    onClose(self.Window)
 end
 
-function GBankClassic_UI_Mail:SetMailId(id)
+function UI_Mail:SetMailId(id)
     self.MailId = id
 end
 
-function GBankClassic_UI_Mail:DrawWindow()
+function UI_Mail:DrawWindow()
     local window = GBankClassic_UI:Create("Frame")
     window:Hide()
-    window:SetCallback("OnClose", OnClose)
+    window:SetCallback("OnClose", onClose)
     window:SetTitle("Donation")
     window:SetLayout("Flow")
     window:SetWidth(440)
@@ -80,13 +93,13 @@ function GBankClassic_UI_Mail:DrawWindow()
     self.Content = content
 end
 
-function GBankClassic_UI_Mail:DrawContent()
+function UI_Mail:DrawContent()
     self.Content:ReleaseChildren()
     self.Content:ResumeLayout()
 
     local _, _, sender, subject, money = GetInboxHeaderInfo(self.MailId)
     if not sender then
-        GBankClassic_UI_Mail:RedrawContent()
+        self:RedrawContent()
 
         return
     end
@@ -210,12 +223,12 @@ function GBankClassic_UI_Mail:DrawContent()
     self.OpenButton:SetDisabled(false)
 end
 
-function GBankClassic_UI_Mail:RedrawContent()
+function UI_Mail:RedrawContent()
     GBankClassic_Core:ScheduleTimer(function(...)
-        GBankClassic_UI_Mail:OnTimer()
+        self:OnTimer()
     end, 0.25)
 end
 
-function GBankClassic_UI_Mail:OnTimer()
-    GBankClassic_UI_Mail:DrawContent()
+function UI_Mail:OnTimer()
+    self:DrawContent()
 end

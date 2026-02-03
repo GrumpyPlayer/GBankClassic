@@ -1,7 +1,5 @@
--- -- Highlight items needed for pending orders
--- -- Greys out all items except those needed to fulfill active requests
+-- GBankClassic_ItemHighlight = GBankClassic_ItemHighlight or {}
 
--- GBankClassic_ItemHighlight = {}
 -- local ItemHighlight = GBankClassic_ItemHighlight
 
 -- -- State
@@ -9,24 +7,20 @@
 -- ItemHighlight.neededItems = {} -- {itemName: quantityNeeded}
 -- ItemHighlight.overlays = {} -- Texture overlays for dimming items
 
--- -- Settings
--- local OVERLAY_ALPHA = 0.7 -- Alpha for grey overlay (0=transparent, 1=opaque)
--- local OVERLAY_COLOR = {0.2, 0.2, 0.2} -- RGB grey color
-
 -- -- Initialize the module
 -- function ItemHighlight:Initialize()
 -- 	-- Don't auto-enable from saved settings - let the checkbox control it
 -- 	self.enabled = false
 
 -- 	-- Register events
--- 	local frame = CreateFrame("Frame")
+-- 	local frame = CreateFrame("GBankClassicItemHighlightFrame")
 -- 	frame:RegisterEvent("BAG_UPDATE")
 -- 	frame:RegisterEvent("PLAYERBANKSLOTS_CHANGED")
 -- 	frame:RegisterEvent("BANKFRAME_OPENED")
 -- 	frame:RegisterEvent("BANKFRAME_CLOSED")
 -- 	frame:SetScript("OnEvent", function(_, event, ...)
 -- 		if self.enabled then
--- 			ItemHighlight:RefreshHighlighting()
+-- 			self:RefreshHighlighting()
 -- 		end
 -- 	end)
 
@@ -35,7 +29,7 @@
 
 -- -- Enable/disable highlighting
 -- function ItemHighlight:SetEnabled(enabled)
--- 	-- Only allow bankers to use highlighting
+-- 	-- Only allow guild bank alts to use highlighting
 -- 	local banks = GBankClassic_Guild:GetBanks()
 -- 	if not banks then
 -- 		GBankClassic_Output:Debug("REQUESTS", "Highlighting disabled: no banks found")
@@ -91,23 +85,23 @@
 -- 	-- Clear and rebuild
 -- 	self.neededItems = {}
 
--- 	-- Get current banker from Requests UI filter
--- 	local currentBanker = GBankClassic_UI_Requests.bankFilter
+-- 	-- Get current guild bank alts from the requests UI filter
+-- 	local currentGuildBankAlt = GBankClassic_UI_Requests.bankFilter
 -- 	local currentPlayer = GBankClassic_Guild:GetNormalizedPlayer()
 
--- 	-- If no filter set, default to current player if they're a banker
--- 	if not currentBanker or currentBanker == "__gbank_any__" then
+-- 	-- If no filter set, default to current player if they're a guild bank alt
+-- 	if not currentGuildBankAlt or currentGuildBankAlt == "__gbank_any__" then
 -- 		if currentPlayer and GBankClassic_Guild:IsBank(currentPlayer) then
--- 			currentBanker = currentPlayer
+-- 			currentGuildBankAlt = currentPlayer
 -- 		else
 -- 			return false
 -- 		end
 -- 	end
 
--- 	-- Aggregate quantities from all pending requests for this banker
+-- 	-- Aggregate quantities from all pending requests for this guild bank alt
 -- 	-- Use pairs() since requests is now a map keyed by ID, not an array
 -- 	for _, request in pairs(info.requests or {}) do
--- 		if request.bank == currentBanker and request.status ~= "complete" and request.status ~= "fulfilled" and request.status ~= "cancelled" then
+-- 		if request.bank == currentGuildBankAlt and request.status ~= "complete" and request.status ~= "fulfilled" and request.status ~= "cancelled" then
 
 -- 			local itemName = request.item
 -- 			local qtyNeeded = (request.quantity or 0) - (request.quantityFulfilled or 0)
@@ -118,10 +112,7 @@
 -- 		end
 -- 	end
 
--- 	local uniqueCount = 0
--- 	for _ in pairs(self.neededItems) do
--- 		uniqueCount = uniqueCount + 1
--- 	end
+-- 	local uniqueCount = GBankClassic_Globals:Count(self.neededItems)
 -- 	GBankClassic_Output:Debug("REQUESTS", "Built needed items list: %d unique items", uniqueCount)
 
 -- 	return true
@@ -141,6 +132,7 @@
 -- 	if not button or not button:IsVisible() then
 -- 		return
 -- 	end
+
 -- 	-- Get the icon texture (works for both default and Bagnon buttons)
 -- 	local icon = button.icon or button.Icon or _G[button:GetName().."IconTexture"]
 -- 	if icon then
@@ -152,7 +144,10 @@
 
 -- -- Remove grey desaturation from a button
 -- function ItemHighlight:RemoveOverlay(button)
--- 	if not button then return end
+-- 	if not button then
+--        return
+--    end
+   
 -- 	local buttonName = button:GetName()
 -- 	-- Reset texture color to normal (FULL COLOR)
 -- 	local icon = button.icon or button.Icon or _G[buttonName.."IconTexture"]
@@ -183,7 +178,8 @@
 
 -- 		return
 -- 	end
--- 	-- Fall back to default bags ONLY if Bagnon didn't work
+
+-- 	-- Fall back to default bags only if Bagnon didn't work
 -- 	GBankClassic_Output:Debug("REQUESTS", "Falling back to default bag highlighting")
 -- 	self:UpdateDefaultBagHighlighting()
 -- end
@@ -234,7 +230,7 @@
 -- 		searchTerms = limited
 -- 	end
 
--- 	-- Join with | (OR operator) so Bagnon matches items containing ANY of these names
+-- 	-- Join with | (OR operator) so Bagnon matches items containing any of these names
 -- 	local searchString = table.concat(searchTerms, "|")
 -- 	GBankClassic_Output:Debug("REQUESTS", "Setting Bagnon search (%d items): %s", #searchTerms, searchString)
 
@@ -258,19 +254,19 @@
 -- 	-- Iterate through all bags
 -- 	for bag = 0, 4 do
 -- 		local containerID = (bag == 0) and 1 or (bag + 1)
--- 		local numSlots = C_Container.GetContainerNumSlots(bag)
+-- 		local numSlots = GetContainerNumSlots(bag)
 
 -- 		-- Iterate through API slot numbers (1 to numSlots)
 -- 		for apiSlot = 1, numSlots do
--- 			-- WoW bag buttons are ordered OPPOSITE of API slots
+-- 			-- WoW bag buttons are ordered opposite of API slots
 -- 			-- API slot 1 = button slot numSlots, API slot 2 = button slot numSlots-1, etc.
 -- 			local buttonSlot = numSlots - apiSlot + 1
 -- 			local buttonName = string.format("ContainerFrame%dItem%d", containerID, buttonSlot)
 -- 			local button = _G[buttonName]
 -- 			if button then
--- 				local itemInfo = C_Container.GetContainerItemInfo(bag, apiSlot)
+-- 				local itemInfo = GetContainerItemInfo(bag, apiSlot)
 -- 				if itemInfo then
--- 					local itemName = C_Item.GetItemNameByID(itemInfo.itemID)
+-- 					local itemName = GetItemNameByID(itemInfo.itemID)
 -- 					if not self:IsItemNeeded(itemName) then
 -- 						-- Item not needed - grey it out
 -- 						self:ApplyOverlay(button)
@@ -283,13 +279,15 @@
 
 -- -- Update highlighting for bank slots
 -- function ItemHighlight:UpdateBankHighlighting()
--- 	if not BankFrame or not BankFrame:IsVisible() then return end
+-- 	if not BankFrame or not BankFrame:IsVisible() then
+--         return
+--     end
 
 -- 	-- Bank slots (1-28)
 -- 	for slot = 1, 28 do
--- 		local itemInfo = C_Container.GetContainerItemInfo(-1, slot)
+-- 		local itemInfo = GetContainerItemInfo(-1, slot)
 -- 		if itemInfo then
--- 			local itemName = C_Item.GetItemNameByID(itemInfo.itemID)
+-- 			local itemName = GetItemNameByID(itemInfo.itemID)
 -- 			local button = self:GetBankSlotButton(slot)
 -- 			if button then
 -- 				if self:IsItemNeeded(itemName) then
@@ -302,11 +300,11 @@
 -- 	end
 -- 	-- Bank bag slots (5-11)
 -- 	for bag = 5, 11 do
--- 		local numSlots = C_Container.GetContainerNumSlots(bag)
+-- 		local numSlots = GetContainerNumSlots(bag)
 -- 		for slot = 1, numSlots do
--- 			local itemInfo = C_Container.GetContainerItemInfo(bag, slot)
+-- 			local itemInfo = GetContainerItemInfo(bag, slot)
 -- 			if itemInfo then
--- 				local itemName = C_Item.GetItemNameByID(itemInfo.itemID)
+-- 				local itemName = GetItemNameByID(itemInfo.itemID)
 -- 				local button = self:GetBagSlotButton(bag, slot)
 -- 				if button then
 -- 					if self:IsItemNeeded(itemName) then

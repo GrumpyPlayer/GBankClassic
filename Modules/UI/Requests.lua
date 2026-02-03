@@ -1,4 +1,6 @@
--- GBankClassic_UI_Requests = {}
+-- GBankClassic_UI_Requests = GBankClassic_UI_Requests or {}
+
+-- local UI_Requests = GBankClassic_UI_Requests
 
 -- local COLUMN_SPACING_H = 5
 -- local COLUMN_SPACING_V = 2
@@ -34,7 +36,6 @@
 -- local DELETE_ICON = "|TInterface\\Buttons\\UI-GroupLoot-Pass-Up:18:18:0:0|t"
 -- local FULFILL_ICON = "|TInterface\\Icons\\INV_Letter_15:18:18:0:0|t"
 
--- -- Contextual fulfill button icons based on state
 -- local FULFILL_ICON_READY = "|TInterface\\Icons\\INV_Letter_15:18:18:0:0|t" -- Envelope: ready to send
 -- local FULFILL_ICON_NO_MAILBOX = "|TInterface\\Icons\\INV_Letter_02:18:18:0:0|t" -- Sealed letter: need mailbox
 -- local FULFILL_ICON_NOT_IN_BAGS = "|TInterface\\Icons\\INV_Misc_Bag_07:18:18:0:0|t" -- Bag: pick up from bank
@@ -90,7 +91,7 @@
 -- 	self:DrawContent()
 -- end
 
--- local function ColumnLayout(contentWidth)
+-- local function columnLayout(contentWidth)
 -- 	local cols = {}
 -- 	local widths = {}
 -- 	local baseTotal = 0
@@ -149,10 +150,10 @@
 -- 	return "LEFT"
 -- end
 
--- local function OnClose(_)
--- 	GBankClassic_UI_Requests.isOpen = false
--- 	if GBankClassic_UI_Requests.Window then
--- 		GBankClassic_UI_Requests.Window:Hide()
+-- local function onClose(_)
+-- 	UI_Requests.isOpen = false
+-- 	if UI_Requests.Window then
+-- 		UI_Requests.Window:Hide()
 -- 	end
 -- end
 
@@ -207,6 +208,7 @@
 -- 		if not button.frame then
 -- 			return
 -- 		end
+
 -- 		GameTooltip:SetOwner(button.frame, "ANCHOR_RIGHT")
 -- 		GameTooltip:ClearLines()
 -- 		GameTooltip:AddLine(title or "")
@@ -231,6 +233,7 @@
 -- 	if frame.gbankFulfillTooltipHooked then
 -- 		return
 -- 	end
+
 -- 	frame.gbankFulfillTooltipHooked = true
 
 -- 	frame.gbankTooltipTitle = "Fulfill request"
@@ -279,6 +282,7 @@
 -- 			if not data or not data.requestId then
 -- 				return
 -- 			end
+
 -- 			if not GBankClassic_Guild:DeleteRequest(data.requestId, data.actor) then
 -- 				if data.ui and data.ui.Window then
 -- 					data.ui.Window:SetStatusText("Unable to delete request.")
@@ -299,18 +303,12 @@
 -- 	local item = request.item or "Unknown"
 -- 	local requester = request.requester or "Unknown"
 -- 	local bank = request.bank or "Unknown"
--- 	local message = string.format(
--- 		"Are you sure you want to permanently delete the request for %dx %s from %s to %s?",
--- 		qty,
--- 		item,
--- 		requester,
--- 		bank
--- 	)
+-- 	local message = string.format("Are you sure you want to permanently delete the request for %dx %s from %s to %s?", qty, item, requester, bank)
 
 -- 	StaticPopup_Show(DELETE_REQUEST_DIALOG, message, nil, {
 -- 		requestId = request.id,
 -- 		actor = actor,
--- 		ui = GBankClassic_UI_Requests,
+-- 		ui = UI_Requests,
 -- 	})
 -- end
 
@@ -321,6 +319,7 @@
 -- 			return width
 -- 		end
 -- 	end
+
 -- 	if self.Window and self.Window.frame and self.Window.frame.GetWidth then
 -- 		local width = self.Window.frame:GetWidth()
 -- 		if width and width > 0 then
@@ -332,13 +331,13 @@
 -- end
 
 -- -- Throttled bag update handling - only active when window is open
--- local BAG_UPDATE_THROTTLE = 0.5 -- seconds
+-- local BAG_UPDATE_THROTTLE = 0.5 -- Seconds
 -- local bagUpdateFrame = nil
 -- local lastBagUpdate = 0
 -- local pendingBagUpdate = false
 
--- local function OnBagUpdate()
--- 	if not GBankClassic_UI_Requests.isOpen then
+-- local function onBagUpdate()
+-- 	if not UI_Requests.isOpen then
 -- 		return
 -- 	end
 
@@ -347,11 +346,11 @@
 -- 		-- Throttled - schedule a delayed refresh if not already pending
 -- 		if not pendingBagUpdate then
 -- 			pendingBagUpdate = true
--- 			C_Timer.After(BAG_UPDATE_THROTTLE, function()
+-- 			After(BAG_UPDATE_THROTTLE, function()
 -- 				pendingBagUpdate = false
--- 				if GBankClassic_UI_Requests.isOpen then
+-- 				if UI_Requests.isOpen then
 -- 					lastBagUpdate = GetTime()
--- 					GBankClassic_UI_Requests:DrawContent()
+-- 					UI_Requests:DrawContent()
 -- 				end
 -- 			end)
 -- 		end
@@ -360,25 +359,25 @@
 -- 	end
 
 -- 	lastBagUpdate = now
--- 	GBankClassic_UI_Requests:DrawContent()
+-- 	UI_Requests:DrawContent()
 -- end
 
--- local function RegisterBagEvents()
+-- local function registerBagEvents()
 -- 	if not bagUpdateFrame then
 -- 		bagUpdateFrame = CreateFrame("Frame")
--- 		bagUpdateFrame:SetScript("OnEvent", OnBagUpdate)
+-- 		bagUpdateFrame:SetScript("OnEvent", onBagUpdate)
 -- 	end
 -- 	-- BAG_UPDATE_DELAYED fires once after all bag changes from a single action
 -- 	bagUpdateFrame:RegisterEvent("BAG_UPDATE_DELAYED")
 -- end
 
--- local function UnregisterBagEvents()
+-- local function unregisterBagEvents()
 -- 	if bagUpdateFrame then
 -- 		bagUpdateFrame:UnregisterAllEvents()
 -- 	end
 -- end
 
--- function GBankClassic_UI_Requests:Init()
+-- function UI_Requests:Init()
 -- 	self.sortColumn = "date"
 -- 	self.sortDirection = "desc"
 -- 	self.requesterFilter = nil
@@ -387,7 +386,7 @@
 -- 	self:DrawWindow()
 -- end
 
--- function GBankClassic_UI_Requests:Toggle()
+-- function UI_Requests:Toggle()
 -- 	if self.isOpen then
 -- 		self:Close()
 -- 	else
@@ -395,16 +394,17 @@
 -- 	end
 -- end
 
--- function GBankClassic_UI_Requests:Open()
+-- function UI_Requests:Open()
 -- 	if self.isOpen then
 -- 		return
 -- 	end
+
 -- 	self.isOpen = true
 
 -- 	-- Check if guild bank alt status has changed since window was created
 -- 	local currentPlayer = GBankClassic_Guild:GetNormalizedPlayer()
--- 	local isCurrentlyBanker = currentPlayer and GBankClassic_Guild:IsBank(currentPlayer) or false
--- 	local guildBankAltStatusChanged = (self.wasBank ~= nil) and (self.wasBank ~= isCurrentlyBanker)
+-- 	local isCurrentlyGuildBankAlt = currentPlayer and GBankClassic_Guild:IsBank(currentPlayer) or false
+-- 	local guildBankAltStatusChanged = (self.wasBank ~= nil) and (self.wasBank ~= isCurrentlyGuildBankAlt)
 	
 -- 	-- Recreate window if guild bank alt status changed (to add/remove highlight checkbox)
 -- 	if guildBankAltStatusChanged and self.Window then
@@ -414,7 +414,7 @@
 
 -- 	if not self.Window then
 -- 		self:DrawWindow()
--- 		self.wasBank = isCurrentlyBanker
+-- 		self.wasBank = isCurrentlyGuildBankAlt
 -- 	end
 
 -- 	if GBankClassic_UI_Inventory and GBankClassic_UI_Inventory.isOpen and GBankClassic_UI_Inventory.Window then
@@ -427,13 +427,13 @@
 -- 	-- Force layout update before showing to ensure proper sizing
 -- 	self.Window:DoLayout()
 	
--- 	-- Show window AFTER content is drawn and laid out to prevent initial sizing issue
+-- 	-- Show window after content is drawn and laid out to prevent initial sizing issue
 -- 	self.Window:Show()
 
 -- 	-- Start listening for bag changes to update fulfill button states (bank alts only)
 -- 	local player = GBankClassic_Guild:GetNormalizedPlayer()
 -- 	if player and GBankClassic_Guild:IsBank(player) then
--- 		RegisterBagEvents()
+-- 		registerBagEvents()
 -- 	end
 
 -- 	if _G["GBankClassic"] then
@@ -443,7 +443,7 @@
 -- 	end
 -- end
 
--- function GBankClassic_UI_Requests:Close()
+-- function UI_Requests:Close()
 -- 	if not self.isOpen then
 -- 		return
 -- 	end
@@ -452,21 +452,21 @@
 -- 	end
 
 -- 	-- Stop listening for bag changes
--- 	UnregisterBagEvents()
+-- 	unregisterBagEvents()
 
 -- 	-- Clear item highlighting
 -- 	if GBankClassic_ItemHighlight then
 -- 		GBankClassic_ItemHighlight:ClearAllOverlays()
 -- 	end
 
--- 	OnClose(self.Window)
+-- 	onClose(self.Window)
 
 -- 	if GBankClassic_UI_Inventory.isOpen == false then
 -- 		_G["GBankClassic"]:Hide()
 -- 	end
 -- end
 
--- function GBankClassic_UI_Requests:ApplyColumnWidths()
+-- function UI_Requests:ApplyColumnWidths()
 -- 	if not self.Content or not self.ColumnWidths then
 -- 		return
 -- 	end
@@ -476,6 +476,7 @@
 -- 		if not children then
 -- 			return
 -- 		end
+
 -- 		for _, child in ipairs(children) do
 -- 			if child and child.SetWidth then
 -- 				local colIndex = child:GetUserData("gbankRequestsColIndex")
@@ -492,17 +493,18 @@
 -- 	end
 -- end
 
--- function GBankClassic_UI_Requests:UpdateColumnLayout()
+-- function UI_Requests:UpdateColumnLayout()
 -- 	if not self.Content then
 -- 		return
 -- 	end
 
 -- 	local width = currentContentWidth(self)
--- 	local columns, widths = ColumnLayout(width)
+-- 	local columns, widths = columnLayout(width)
 -- 	local function applyTable(group)
 -- 		if not group then
 -- 			return
 -- 		end
+
 -- 		local tableData = group:GetUserData("table") or {}
 -- 		tableData.columns = columns
 -- 		tableData.spaceH = COLUMN_SPACING_H
@@ -516,7 +518,7 @@
 -- 	self.lastLayoutWidth = math.floor((width or 0) + 0.5)
 -- end
 
--- function GBankClassic_UI_Requests:HandleResize()
+-- function UI_Requests:HandleResize()
 -- 	if not self.isOpen or not self.Content then
 -- 		return
 -- 	end
@@ -546,7 +548,7 @@
 -- 	self.Content:DoLayout()
 -- end
 
--- function GBankClassic_UI_Requests:AdjustTableHeight()
+-- function UI_Requests:AdjustTableHeight()
 -- 	if not self.Window or not self.Window.content or not self.Content then
 -- 		return
 -- 	end
@@ -570,10 +572,10 @@
 -- 	self.Content:SetHeight(height)
 -- end
 
--- function GBankClassic_UI_Requests:DrawWindow()
+-- function UI_Requests:DrawWindow()
 -- 	local window = GBankClassic_UI:Create("Frame")
 -- 	window:Hide()
--- 	window:SetCallback("OnClose", OnClose)
+-- 	window:SetCallback("OnClose", onClose)
 -- 	window:SetTitle("Requests")
 -- 	window:SetLayout("Flow")
 -- 	window:EnableResize(true)
@@ -581,7 +583,7 @@
 -- 	if GBankClassic_Options and GBankClassic_Options.db then
 -- 		window:SetStatusTable(GBankClassic_Options.db.char.framePositions)
 -- 	end
--- 	-- Set width AFTER SetStatusTable to ensure minimum size is enforced
+-- 	-- Set width after SetStatusTable to ensure minimum size is enforced
 -- 	window:SetWidth(MIN_WIDTH)
 -- 	if window.frame.SetResizeBounds then
 -- 		window.frame:SetResizeBounds(MIN_WIDTH, 200)
@@ -591,12 +593,9 @@
 -- 	if not window.frame.gbankRequestsResizeHooked then
 -- 		window.frame.gbankRequestsResizeHooked = true
 -- 		window.frame:HookScript("OnSizeChanged", function()
--- 			GBankClassic_UI_Requests:HandleResize()
+-- 			self:HandleResize()
 -- 		end)
 -- 	end
-	
--- 	-- Register frame for ESC key handling
--- 	-- AceGUI frames handle ESC automatically, no manual registration needed
 	
 -- 	self.Window = window
 	
@@ -669,7 +668,7 @@
 -- 	local headerGroup = GBankClassic_UI:Create("SimpleGroup")
 -- 	headerGroup:SetLayout("Table")
 -- 	headerGroup:SetUserData("table", {
--- 		columns = ColumnLayout(MIN_WIDTH - CONTENT_WIDTH_PADDING),
+-- 		columns = columnLayout(MIN_WIDTH - CONTENT_WIDTH_PADDING),
 -- 		spaceH = COLUMN_SPACING_H,
 -- 		spaceV = COLUMN_SPACING_V,
 -- 	})
@@ -685,7 +684,7 @@
 -- 	local tableFrame = GBankClassic_UI:Create("ScrollFrame")
 -- 	tableFrame:SetLayout("Table")
 -- 	tableFrame:SetUserData("table", {
--- 		columns = ColumnLayout(MIN_WIDTH - CONTENT_WIDTH_PADDING),
+-- 		columns = columnLayout(MIN_WIDTH - CONTENT_WIDTH_PADDING),
 -- 		spaceH = COLUMN_SPACING_H,
 -- 		spaceV = COLUMN_SPACING_V,
 -- 	})
@@ -769,7 +768,7 @@
 -- 		list[FILTER_SEPARATOR_ME_ANY] = FILTER_SEPARATOR_LABEL
 -- 		table.insert(order, FILTER_SEPARATOR_ME_ANY)
 -- 	end
--- 	list[FILTER_ANY] = "Any Requester"
+-- 	list[FILTER_ANY] = "Any requester"
 -- 	table.insert(order, FILTER_ANY)
 
 -- 	local names = {}
@@ -808,7 +807,7 @@
 -- 		list[FILTER_SEPARATOR_ME_ANY] = FILTER_SEPARATOR_LABEL
 -- 		table.insert(order, FILTER_SEPARATOR_ME_ANY)
 -- 	end
--- 	list[FILTER_ANY] = "Any Bank"
+-- 	list[FILTER_ANY] = "Any bank"
 -- 	table.insert(order, FILTER_ANY)
 
 -- 	local names = {}
@@ -838,10 +837,11 @@
 -- 	return list, order
 -- end
 
--- function GBankClassic_UI_Requests:SortedRequests()
+-- function UI_Requests:SortedRequests()
 -- 	local info = GBankClassic_Guild.Info
 -- 	if not info or not info.requests then
 -- 		GBankClassic_Output:Debug("REQUESTS", "SortedRequests: No guild info or requests")
+
 -- 		return {}
 -- 	end
 
@@ -851,7 +851,7 @@
 -- 		table.insert(list, req)
 -- 	end
 
--- 	GBankClassic_Output:Debug("REQUESTS", "SortedRequests: Found %d requests in Guild.Info", #list)
+-- 	GBankClassic_Output:Debug("REQUESTS", "SortedRequests: Found %d requests in GBankClassic_Guild.Info", #list)
 
 -- 	local column = self.sortColumn or "date"
 -- 	local direction = self.sortDirection or "desc"
@@ -872,7 +872,7 @@
 -- 	return list
 -- end
 
--- function GBankClassic_UI_Requests:EnsureRow(index)
+-- function UI_Requests:EnsureRow(index)
 -- 	if not self.Content then
 -- 		return nil
 -- 	end
@@ -969,16 +969,17 @@
 -- 	return row
 -- end
 
--- function GBankClassic_UI_Requests:SetRowVisible(row, visible)
+-- function UI_Requests:SetRowVisible(row, visible)
 -- 	if not row or not row.cells then
 -- 		return
 -- 	end
+
 -- 	for _, cell in ipairs(row.cells) do
 -- 		setWidgetShown(cell, visible)
 -- 	end
 -- end
 
--- function GBankClassic_UI_Requests:EnsureEmptyLabel()
+-- function UI_Requests:EnsureEmptyLabel()
 -- 	if not self.Content then
 -- 		return nil
 -- 	end
@@ -1002,7 +1003,7 @@
 -- 	return string.format("|c%s%s|r", color, text)
 -- end
 
--- function GBankClassic_UI_Requests:EnsureHeaderRows()
+-- function UI_Requests:EnsureHeaderRows()
 -- 	if not self.HeaderGroup then
 -- 		return
 -- 	end
@@ -1067,7 +1068,7 @@
 -- 	end
 -- end
 
--- function GBankClassic_UI_Requests:DrawHeader()
+-- function UI_Requests:DrawHeader()
 -- 	local ArrowUpIcon = " |TInterface\\Buttons\\Arrow-Up-Up:0|t"
 -- 	local ArrowDownIcon = " |TInterface\\Buttons\\Arrow-Down-Up:0|t"
 -- 	if not self.HeaderGroup then
@@ -1099,7 +1100,7 @@
 -- 	end
 -- end
 
--- function GBankClassic_UI_Requests:UpdateFilters()
+-- function UI_Requests:UpdateFilters()
 -- 	if not self.FilterRequester or not self.FilterBank then
 -- 		return
 -- 	end
@@ -1180,7 +1181,7 @@
 -- 	self.FilterBank:SetValue(bankValue)
 -- end
 
--- function GBankClassic_UI_Requests:ApplyFilters(requests)
+-- function UI_Requests:ApplyFilters(requests)
 -- 	if not self.requesterFilter and not self.bankFilter then
 -- 		GBankClassic_Output:Debug("REQUESTS", "ApplyFilters: No filters, returning all %d requests", #(requests or {}))
 
@@ -1200,7 +1201,7 @@
 -- 	return filtered
 -- end
 
--- function GBankClassic_UI_Requests:DrawContent()
+-- function UI_Requests:DrawContent()
 -- 	if not self.Content or not self.Window then
 -- 		GBankClassic_Output:Debug("REQUESTS", "DrawContent: No content or window")
 
@@ -1394,6 +1395,7 @@
 -- 							if not requestId then
 -- 								return
 -- 							end
+
 -- 							if not GBankClassic_Guild:CompleteRequest(requestId, actor) then
 -- 								self.Window:SetStatusText("Unable to complete request.")
 -- 							end
@@ -1405,6 +1407,7 @@
 -- 							if not requestId then
 -- 								return
 -- 							end
+
 -- 							if not GBankClassic_Guild:CancelRequest(requestId, actor) then
 -- 								self.Window:SetStatusText("Unable to cancel request.")
 -- 							end
@@ -1413,9 +1416,10 @@
 
 -- 					if row and row.deleteButton then
 -- 						row.deleteButton:SetCallback("OnClick", function()
--- 						if not requestId then
--- 							return
--- 						end
+-- 						    if not requestId then
+-- 							    return
+-- 						    end
+
 -- 							confirmDeleteRequest(req, actor)
 -- 						end)
 -- 					end
@@ -1429,6 +1433,7 @@
 -- 							if row.fulfillButton and row.fulfillButton.frame and row.fulfillButton.frame.gbankDisabled then
 -- 								return
 -- 							end
+
 -- 							local success, message = GBankClassic_Mail:PrepareFulfillMail(req)
 -- 							self.Window:SetStatusText(message or "")
 -- 						end)
@@ -1455,7 +1460,7 @@
 -- 		end
 -- 	end
 
--- 	local status = string.format("%d Request%s", count, count == 1 and "" or "s")
+-- 	local status = string.format("%d request%s", count, count == 1 and "" or "s")
 -- 	self.Window:SetStatusText(status)
 
 -- 	content:ResumeLayout()

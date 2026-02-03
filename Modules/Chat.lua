@@ -1,12 +1,23 @@
-GBankClassic_Chat = {}
+GBankClassic_Chat = GBankClassic_Chat or {}
 
--- Store pre-debug log level for restoration
+local Chat = GBankClassic_Chat
 local preDebugLogLevel = nil
 
-function GBankClassic_Chat:Init()
+local Globals = GBankClassic_Globals
+local upvalues = Globals.GetUpvalues("time", "date")
+local time = upvalues.time
+local date = upvalues.date
+local upvalues = Globals.GetUpvalues("GetClassColor", "IsInRaid", "After", "GetServerTime", "GetAddOnMetadata")
+local GetClassColor = upvalues.GetClassColor
+local IsInRaid = upvalues.IsInRaid
+local After = upvalues.After
+local GetServerTime = upvalues.GetServerTime
+local GetAddOnMetadata = upvalues.GetAddOnMetadata
+
+function Chat:Init()
 	GBankClassic_Output:Debug("PROTOCOL", "GBankClassic_Chat:Init() starting")
     GBankClassic_Core:RegisterChatCommand("bank", function(input)
-        return GBankClassic_Chat:ChatCommand(input)
+        return self:ChatCommand(input)
     end)
 
     self.addon_outdated = false
@@ -21,110 +32,107 @@ function GBankClassic_Chat:Init()
 	
 	-- Protocol prioritization: delay legacy dv processing to allow dv2 to arrive first
 	self.pending_dv_messages = {} -- {sender = {altName = {timer, data, ...}}}
-	self.DV_DELAY = 5 -- seconds to wait before processing legacy dv messages
+	self.DV_DELAY = 5 -- Seconds to wait before processing legacy dv messages
 
-    -- Data (no links)
+	-- Unused: togbank-d
+	-- Unused: togbank-d2
+    -- Data (no links): togbank-d3 -> gbank-d
 	GBankClassic_Core:RegisterComm("gbank-d", function(prefix, message, distribution, sender)
-		GBankClassic_Chat:OnCommReceived(prefix, message, distribution, sender)
+		self:OnCommReceived(prefix, message, distribution, sender)
 	end)
-    -- Delta data (no links)
+    -- Delta data (no links): togbank-d4 -> gbank-dd
 	GBankClassic_Core:RegisterComm("gbank-dd", function(prefix, message, distribution, sender)
-		GBankClassic_Chat:OnCommReceived(prefix, message, distribution, sender)
+		self:OnCommReceived(prefix, message, distribution, sender)
 	end)
 
 	-- -- Request mutations (add/cancel/complete)
-	-- -- Uses separate throttle bucket from gbank-d to prevent BULK messages from blocking ALERT mutations
+	-- -- Uses separate throttle bucket to prevent BULK messages from blocking ALERT mutations
 	-- GBankClassic_Core:RegisterComm("gbank-rm", function(prefix, message, distribution, sender)
-	-- 	GBankClassic_Chat:OnCommReceived(prefix, message, distribution, sender)
+	-- 	self:OnCommReceived(prefix, message, distribution, sender)
 	-- end)
 
     -- -- Delta range request
 	-- GBankClassic_Core:RegisterComm("gbank-dr", function(prefix, message, distribution, sender)
-	-- 	GBankClassic_Chat:OnCommReceived(prefix, message, distribution, sender)
+	-- 	self:OnCommReceived(prefix, message, distribution, sender)
 	-- end)
     -- -- Delta chain
 	-- GBankClassic_Core:RegisterComm("gbank-dc", function(prefix, message, distribution, sender)
-	-- 	GBankClassic_Chat:OnCommReceived(prefix, message, distribution, sender)
+	-- 	self:OnCommReceived(prefix, message, distribution, sender)
 	-- end)
 
     -- Version
     GBankClassic_Core:RegisterComm("gbank-v", function(prefix, message, distribution, sender)
-        GBankClassic_Chat:OnCommReceived(prefix, message, distribution, sender)
+        self:OnCommReceived(prefix, message, distribution, sender)
     end)
     -- Delta version (legacy)
 	GBankClassic_Output:Debug("PROTOCOL", "Registering gbank-dv handler")
 	GBankClassic_Core:RegisterComm("gbank-dv", function(prefix, message, distribution, sender)
 		GBankClassic_Output:Debug("PROTOCOL", "gbank-dv called: %s from %s (%d bytes)", prefix, sender, #message)
-		GBankClassic_Chat:OnCommReceived(prefix, message, distribution, sender)
+		self:OnCommReceived(prefix, message, distribution, sender)
 	end)
 	-- Delta version (new protocol for aggregated items structure)
 	GBankClassic_Output:Debug("PROTOCOL", "Registering gbank-dv2 handler")
 	GBankClassic_Core:RegisterComm("gbank-dv2", function(prefix, message, distribution, sender)
 		GBankClassic_Output:Debug("PROTOCOL", "gbank-dv2 called: %s from %s (%d bytes)", prefix, sender, #message)
-		GBankClassic_Chat:OnCommReceived(prefix, message, distribution, sender)
+		self:OnCommReceived(prefix, message, distribution, sender)
 	end)
 
     -- Query
     GBankClassic_Core:RegisterComm("gbank-r", function(prefix, message, distribution, sender)
-        GBankClassic_Chat:OnCommReceived(prefix, message, distribution, sender)
+        self:OnCommReceived(prefix, message, distribution, sender)
     end)
     -- Query reply
 	GBankClassic_Core:RegisterComm("gbank-rr", function(prefix, message, distribution, sender)
-		GBankClassic_Chat:OnCommReceived(prefix, message, distribution, sender)
+		self:OnCommReceived(prefix, message, distribution, sender)
 	end)
 
     -- State summary
 	GBankClassic_Core:RegisterComm("gbank-state", function(prefix, message, distribution, sender)
-		GBankClassic_Chat:OnCommReceived(prefix, message, distribution, sender)
+		self:OnCommReceived(prefix, message, distribution, sender)
 	end)
     -- No change
 	GBankClassic_Core:RegisterComm("gbank-nochange", function(prefix, message, distribution, sender)
-		GBankClassic_Chat:OnCommReceived(prefix, message, distribution, sender)
+		self:OnCommReceived(prefix, message, distribution, sender)
 	end)
 
     -- Hello
     GBankClassic_Core:RegisterComm("gbank-h", function(prefix, message, distribution, sender)
-        GBankClassic_Chat:OnCommReceived(prefix, message, distribution, sender)
+        self:OnCommReceived(prefix, message, distribution, sender)
     end)
     -- Hello reply
     GBankClassic_Core:RegisterComm("gbank-hr", function(prefix, message, distribution, sender)
-        GBankClassic_Chat:OnCommReceived(prefix, message, distribution, sender)
+        self:OnCommReceived(prefix, message, distribution, sender)
     end)
 
     -- Share
     GBankClassic_Core:RegisterComm("gbank-s", function(prefix, message, distribution, sender)
-        GBankClassic_Chat:OnCommReceived(prefix, message, distribution, sender)
+        self:OnCommReceived(prefix, message, distribution, sender)
     end)
     -- Share reply
     GBankClassic_Core:RegisterComm("gbank-sr", function(prefix, message, distribution, sender)
-        GBankClassic_Chat:OnCommReceived(prefix, message, distribution, sender)
+        self:OnCommReceived(prefix, message, distribution, sender)
     end)
 
     -- Wipe
     GBankClassic_Core:RegisterComm("gbank-w", function(prefix, message, distribution, sender)
-        GBankClassic_Chat:OnCommReceived(prefix, message, distribution, sender)
+        self:OnCommReceived(prefix, message, distribution, sender)
     end)
     -- Wipe reply
     GBankClassic_Core:RegisterComm("gbank-wr", function(prefix, message, distribution, sender)
-        GBankClassic_Chat:OnCommReceived(prefix, message, distribution, sender)
+        self:OnCommReceived(prefix, message, distribution, sender)
     end)
 
 	-- -- Request-specific message handlers
 	-- GBankClassic_Core:RegisterComm("gbank-rq", function(prefix, message, distribution, sender)
-	-- 	GBankClassic_Chat:OnCommReceived(prefix, message, distribution, sender)
+	-- 	self:OnCommReceived(prefix, message, distribution, sender)
 	-- end)
 	-- GBankClassic_Core:RegisterComm("gbank-rd", function(prefix, message, distribution, sender)
-	-- 	GBankClassic_Chat:OnCommReceived(prefix, message, distribution, sender)
+	-- 	self:OnCommReceived(prefix, message, distribution, sender)
 	-- end)
-end
-
--- Wrapper for debug logging (delegates to centralized logger)
-function GBankClassic_Chat:Debug(...)
-	return GBankClassic_Output:Debug(...)
 end
 
 -- Centralized sync function for both /sync command and UI opening
-function GBankClassic_Chat:PerformSync()
+function Chat:PerformSync()
 	-- Use delta version broadcast with ALERT priority so it happens immediately
 	GBankClassic_Events:SyncDeltaVersion("ALERT")
 	-- Also send legacy version broadcast like the automatic timer does
@@ -132,13 +140,13 @@ function GBankClassic_Chat:PerformSync()
 	GBankClassic_Guild:FastFillMissingAlts()
 	-- -- Query request snapshot with ALERT priority for immediate sync
 	-- local player = GBankClassic_Guild:GetPlayer()
-	-- GBankClassic_Guild:QueryRequestsSnapshot(player, "ALERT")
+	-- GBankClassic_Guild:QueryRequestsSnapshot("ALERT")
 end
 
 local SHARES_COLOR = "|cff80bfffshares|r"
 local QUERIES_COLOR = "|cffffff00queries|r"
 
-local function ColorPlayerName(name)
+local function colorPlayerName(name)
 	if not name or name == "" then
 		return ""
 	end
@@ -160,7 +168,7 @@ local function ColorPlayerName(name)
 	return string.format("|cff80bfff%s|r", name)
 end
 
-local function FormatSyncStatus(status)
+local function formatSyncStatus(status)
 	if status == ADOPTION_STATUS.ADOPTED then
 		return "(newer, integrating)"
 	end
@@ -180,46 +188,9 @@ local function FormatSyncStatus(status)
 	return ""
 end
 
-function GBankClassic_Chat:IsAltDataAllowed_Restrictive(sender, claimedNorm)
-	-- 'sender' was normalized near the top of OnCommReceived
-	local hasExistingAlt = false
-	if GBankClassic_Guild and GBankClassic_Guild.Info and GBankClassic_Guild.Info.alts then
-		local existingAlt = GBankClassic_Guild.Info.alts[claimedNorm]
-		hasExistingAlt = existingAlt ~= nil and type(existingAlt) == "table"
-	end
-	local allowed = false
-	-- If the sender is the claimed owner, always accept
-	if sender == claimedNorm then
-		allowed = true
-	else
-		-- If the claimed owner is a registered bank toon, only accept from bank-marked senders
-		local claimedIsBank = GBankClassic_Guild:IsBank(claimedNorm)
-		if claimedIsBank then
-			if GBankClassic_Guild:SenderHasGbankNote(sender) then
-				allowed = true
-			else
-				allowed = false
-				-- Allow relayed data only when we have no entry yet
-				if not hasExistingAlt then
-					allowed = true
-				end
-			end
-		else
-			-- claimed owner is not a bank toon: accept delegated shares from anyone
-			allowed = true
-		end
-	end
-
-	return allowed
-end
-
-function GBankClassic_Chat:IsAltDataAllowed_Permissive(_, _)
-	return true
-end
-
 -- Roster-based validation to prevent cross-guild data bleed
 -- Only accept alt data if both sender and claimed alt are in current guild
-function GBankClassic_Chat:IsAltDataAllowed_RosterBased(sender, claimedNorm)
+function Chat:IsAltDataAllowed_RosterBased(sender, claimedNorm)
 	-- Check if sender is in the current guild
 	if not GBankClassic_Guild:IsInCurrentGuildRoster(sender) then
 		GBankClassic_Output:Debug("PROTOCOL", "Rejecting alt data from %s: sender not in current guild roster", sender)
@@ -227,9 +198,9 @@ function GBankClassic_Chat:IsAltDataAllowed_RosterBased(sender, claimedNorm)
 		return false
 	end
 
-	-- Check if claimed alt is in the current guild's bank roster
+	-- Check if claimed alt is in the current guild's bank alt roster
 	if not GBankClassic_Guild:IsBank(claimedNorm) then
-		GBankClassic_Output:Debug("PROTOCOL", "Rejecting alt data for %s: not a guild bank alt in current guild roster", claimedNorm)
+		GBankClassic_Output:Debug("PROTOCOL", "Rejecting alt data for %s: not a guild bank alt in current guild bank alt roster", claimedNorm)
 
 		return false
 	end
@@ -237,13 +208,13 @@ function GBankClassic_Chat:IsAltDataAllowed_RosterBased(sender, claimedNorm)
 	return true
 end
 
-function GBankClassic_Chat:IsAltDataAllowed(sender, claimedNorm)
+function Chat:IsAltDataAllowed(sender, claimedNorm)
 	-- Use roster-based validation by default
 	return self:IsAltDataAllowed_RosterBased(sender, claimedNorm)
 end
 
 -- Cancel pending legacy dv messages for specific alts (called when dv2 arrives)
-function GBankClassic_Chat:CancelPendingDvMessages(sender, altNames)
+function Chat:CancelPendingDvMessages(sender, altNames)
 	if not self.pending_dv_messages[sender] then
 		return
 	end
@@ -259,7 +230,7 @@ function GBankClassic_Chat:CancelPendingDvMessages(sender, altNames)
 end
 
 -- Process delayed legacy dv message after timer expires
-function GBankClassic_Chat:ProcessDelayedDvMessage(sender, data, prefix, message, distribution)
+function Chat:ProcessDelayedDvMessage(sender, data, prefix, message, distribution)
 	GBankClassic_Output:Debug("PROTOCOL", "Processing delayed dv message from %s (no dv2 received)", sender)
 
 	-- Remove from pending queue
@@ -272,18 +243,13 @@ function GBankClassic_Chat:ProcessDelayedDvMessage(sender, data, prefix, message
 end
 
 -- Process version broadcast message (gbank-v, gbank-dv, gbank-dv2)
-function GBankClassic_Chat:ProcessVersionBroadcast(prefix, data, sender, message, distribution)
+function Chat:ProcessVersionBroadcast(prefix, data, sender, message, distribution)
 	local isDeltaVersion = (prefix == "gbank-dv" or prefix == "gbank-dv2")
 	local isDV2 = (prefix == "gbank-dv2")
 
-	-- Debug: Show what data we received
+	-- Show what data we received
 	if isDeltaVersion then
-		local altCount = 0
-		if data.alts then
-			for _ in pairs(data.alts) do
-				altCount = altCount + 1
-			end
-		end
+		local altCount = data.alts and GBankClassic_Globals:Count(data.alts)
 		GBankClassic_Output:Debug("PROTOCOL", "gbank-dv/dv2 from %s: has data.alts=%s, alts count=%d, isDV2=%s", sender, tostring(data.alts ~= nil), altCount, tostring(isDV2))
 	end
 
@@ -306,7 +272,7 @@ function GBankClassic_Chat:ProcessVersionBroadcast(prefix, data, sender, message
 				seen = time(),
 			}
 
-				-- Track online guild bank alts for pull-based protocol
+			-- Track online guild bank alts for pull-based protocol
 			if data.isGuildBankAlt then
 				if not self.online_guild_bank_alts then
 					self.online_guild_bank_alts = {}
@@ -325,25 +291,22 @@ function GBankClassic_Chat:ProcessVersionBroadcast(prefix, data, sender, message
 
 			if current_data.addon and data.addon > current_data.addon then
 				if not self.addon_outdated then
-					-- only make the callout once
+					-- Only make the callout once
 					self.addon_outdated = true
-					GBankClassic_Output:Info("A newer version is available! Download it from https://www.curseforge.com/wow/addons/bankclassic/")
+					GBankClassic_Output:Info("A newer version is available! Download it from https://www.curseforge.com/wow/addons/gbankclassic-revived")
 				end
 			end
 		end
 		if data.roster then
 			if current_data.roster == nil or data.roster > current_data.roster then
-				self:Debug("SYNC", ">", ColorPlayerName(sender), "has fresher roster data, querying.")
+				GBankClassic_Output:Debug("SYNC", ">", colorPlayerName(sender), "has fresher roster data, querying.")
 				GBankClassic_Guild:QueryRoster(sender, data.roster)
 			end
 		end
 		-- Request sync decoupled from inventory sync (gbank-dv)
 		-- Request syncs now handled independently via SendRequestsVersionPing()
 		if data.alts then
-			local altCount = 0
-			for _ in pairs(data.alts) do
-				altCount = altCount + 1
-			end
+			local altCount = GBankClassic_Globals:Count(data.alts)
 			GBankClassic_Output:Debug("PROTOCOL", "Processing %d alts from %s (isDeltaVersion=%s)", altCount, sender, tostring(isDeltaVersion))
 			for k, v in pairs(data.alts) do
 				local kNorm = GBankClassic_Guild:NormalizeName(k)
@@ -355,7 +318,7 @@ function GBankClassic_Chat:ProcessVersionBroadcast(prefix, data, sender, message
 				local ourVersion = type(ourAlt) == "table" and ourAlt.version or nil
 				local ourHash = type(ourAlt) == "table" and ourAlt.inventoryHash or nil
 
-				-- Debug: show what we received
+				-- Show what we received
 				if theirHash then
 					GBankClassic_Output:Debug("SYNC", "Received %s from %s: version=%d, hash=%d (our hash=%s)", kNorm, sender, theirVersion, theirHash, ourHash and tostring(ourHash) or "nil")
 				end
@@ -372,22 +335,22 @@ function GBankClassic_Chat:ProcessVersionBroadcast(prefix, data, sender, message
 							if not ourHash then
 								-- They have data, we don't - query
 								shouldQuery = true
-								self:Debug("SYNC", ">", ColorPlayerName(sender), "has bank data for", ColorPlayerName(kNorm) .. " (we have none), querying.")
+								GBankClassic_Output:Debug("SYNC", ">", colorPlayerName(sender), "has bank data for", colorPlayerName(kNorm) .. " (we have none), querying.")
 							elseif theirHash ~= ourHash then
 								-- Hashes differ - we need an update
 								shouldQuery = true
-								self:Debug("SYNC", ">", ColorPlayerName(sender), "has different inventory for", ColorPlayerName(kNorm) .. " (hash mismatch), querying.")
+								GBankClassic_Output:Debug("SYNC", ">", colorPlayerName(sender), "has different inventory for", colorPlayerName(kNorm) .. " (hash mismatch), querying.")
 							end
 						elseif not ourVersion or theirVersion > ourVersion then
 							-- No hash available, fall back to version comparison
 							shouldQuery = true
-							self:Debug("SYNC", ">", ColorPlayerName(sender), "has fresher bank data about", ColorPlayerName(kNorm) .. ", querying (delta).")
+							GBankClassic_Output:Debug("SYNC", ">", colorPlayerName(sender), "has fresher bank data about", colorPlayerName(kNorm) .. ", querying (delta).")
 						end
 					else
 						-- Legacy version: query as usual
 						if not ourVersion or theirVersion > ourVersion then
 							shouldQuery = true
-							self:Debug("SYNC", ">", ColorPlayerName(sender), "has fresher bank data about", ColorPlayerName(kNorm) .. ", querying.")
+							GBankClassic_Output:Debug("SYNC", ">", colorPlayerName(sender), "has fresher bank data about", colorPlayerName(kNorm) .. ", querying.")
 						end
 					end
 
@@ -401,21 +364,20 @@ function GBankClassic_Chat:ProcessVersionBroadcast(prefix, data, sender, message
 	end
 end
 
-function GBankClassic_Chat:OnCommReceived(prefix, message, distribution, sender)
+function Chat:OnCommReceived(prefix, message, distribution, sender)
 	local prefixDesc = COMM_PREFIX_DESCRIPTIONS[prefix] or "(Unknown)"
 
-	-- Log ALL incoming messages before any filtering
+	-- Log all incoming messages before any filtering
 	if prefix == "gbank-dv" then
-		GBankClassic_Output:Debug("COMMS", "RAW RECEIVED: %s from %s (%d bytes)", prefix, sender, #message)
+		GBankClassic_Output:Debug("COMMS", "Received: %s from %s (%d bytes)", prefix, sender, #message)
 	end
 
-	-- WHISPER DEBUG
 	if distribution == "WHISPER" or prefix == "gbank-r" or prefix == "gbank-rr" then
-		GBankClassic_Output:DebugComm("RECEIVED: %s via %s from %s", prefix, distribution, sender)
+		GBankClassic_Output:DebugComm("Received: %s via %s from %s", prefix, distribution, sender)
 	end
 
 	if IsInRaid() then
-		self:Debug("PROTOCOL", "> (ignoring)", prefix, prefixDesc, "from", ColorPlayerName(sender), "(in raid)")
+		GBankClassic_Output:Debug("PROTOCOL", "> (ignoring)", prefix, prefixDesc, "from", colorPlayerName(sender), "(in raid)")
 
 		return
 	end
@@ -425,48 +387,38 @@ function GBankClassic_Chat:OnCommReceived(prefix, message, distribution, sender)
 	sender = GBankClassic_Guild:NormalizeName(sender)
 
 	if player == sender then
-		self:Debug("PROTOCOL", "> (ignoring)", prefix, prefixDesc, "(our own)")
+		GBankClassic_Output:Debug("PROTOCOL", "> (ignoring)", prefix, prefixDesc, "(our own)")
 
 		return
 	end
 
 	local success, data = GBankClassic_Core:DeserializeWithChecksum(message)
 	if not success then
-		self:Debug("PROTOCOL", "> failed to deserialize", prefix, prefixDesc, "from", ColorPlayerName(sender), "error:", tostring(data))
+		GBankClassic_Output:Debug("PROTOCOL", "> failed to deserialize", prefix, prefixDesc, "from", colorPlayerName(sender), "ERROR:", tostring(data))
 		
         return
 	end
 
 	-- Log what we deserialized for gbank-dv
 	if prefix == "gbank-dv" then
-		local altCount = 0
-		if data and data.alts then
-			for _ in pairs(data.alts) do
-				altCount = altCount + 1
-			end
-		end
+		local altCount = data and data.alts and GBankClassic_Globals:Count(data.alts)
 		GBankClassic_Output:Debug("PROTOCOL", "gbank-dv from %s: success=%s, has data=%s, has data.alts=%s, altCount=%d", sender, tostring(success), tostring(data ~= nil), tostring(data and data.alts ~= nil), altCount)
 	end
 
 	if prefix ~= "gbank-r" then
 		-- gbank-r does its own output
-		self:Debug("PROTOCOL", ">", ColorPlayerName(sender), ">", prefix, prefixDesc)
+		GBankClassic_Output:Debug("PROTOCOL", ">", colorPlayerName(sender), ">", prefix, prefixDesc)
 	end
 
 	if prefix == "gbank-v" or prefix == "gbank-dv" or prefix == "gbank-dv2" then
-		local isDeltaVersion = (prefix == "gbank-dv" or prefix == "gbank-dv2")
-		local isDV2 = (prefix == "gbank-dv2")
-
 		-- Delta clients ignore legacy version broadcasts
 		if prefix == "gbank-v" then
-			-- Silently ignore - delta clients only listen to gbank-dv
 			return
 		end
 
 		-- New clients only listen to gbank-dv2, ignore gbank-dv
 		-- Legacy clients only listen to gbank-dv, ignore gbank-dv2
-		local weUseDV2 = GBankClassic_Guild:UsesAggregatedItemsFormat()
-		if weUseDV2 and prefix == "gbank-dv" then
+		if prefix == "gbank-dv" then
 			-- Delay dv processing to allow dv2 to arrive first (prioritize newer protocol)
 			GBankClassic_Output:Debug("PROTOCOL", "Delaying dv message from %s for %d seconds (waiting for dv2)", sender, self.DV_DELAY)
 			
@@ -491,13 +443,10 @@ function GBankClassic_Chat:OnCommReceived(prefix, message, distribution, sender)
 			end
 			
 			-- Create timer to process after delay
-			C_Timer.After(self.DV_DELAY, function()
+			After(self.DV_DELAY, function()
 				self:ProcessDelayedDvMessage(sender, data, prefix, message, distribution)
 			end)
 			
-			return
-		elseif not weUseDV2 and prefix == "gbank-dv2" then
-			-- Legacy clients ignore the new protocol
 			return
 		end
 		
@@ -517,16 +466,15 @@ function GBankClassic_Chat:OnCommReceived(prefix, message, distribution, sender)
 	end
 
 	if prefix == "gbank-r" then
-		GBankClassic_Output:DebugComm("gbank-r DATA.TYPE = %s from %s", tostring(data.type), sender)
+		GBankClassic_Output:DebugComm("gbank-r type = %s from %s", tostring(data.type), sender)
 
 		-- Check if this is a pull-based request (has type == "alt-request")
 		if data.type == "alt-request" then
 			-- Pull-based request flow - respond with gbank-rr acknowledgment
 			local altName = data.name
-			local requester = data.requester or sender
 
-			GBankClassic_Output:DebugComm("RECEIVED PULL-BASED REQUEST from %s for alt %s", sender, altName)
-			self:Debug("SYNC", ">", ColorPlayerName(sender), QUERIES_COLOR, "pull-based request for", ColorPlayerName(altName))
+			GBankClassic_Output:DebugComm("Received pull-based alt-request from %s for alt %s", sender, altName)
+			GBankClassic_Output:Debug("SYNC", ">", colorPlayerName(sender), QUERIES_COLOR, "pull-based request for", colorPlayerName(altName))
 
 			-- Check if we have this alt
 			local player = GBankClassic_Guild:GetNormalizedPlayer()
@@ -544,14 +492,14 @@ function GBankClassic_Chat:OnCommReceived(prefix, message, distribution, sender)
 				}
 				local ackData = GBankClassic_Core:SerializeWithChecksum(ack)
 
-				GBankClassic_Output:DebugComm("SENDING ACK: gbank-rr via WHISPER to %s (isGuildBankAlt=%s, hasData=%s)", sender, tostring(isGuildBankAlt), tostring(hasData))
+				GBankClassic_Output:DebugComm("Sending acknowledgement: gbank-rr via whisper to %s (isGuildBankAlt=%s, hasData=%s)", sender, tostring(isGuildBankAlt), tostring(hasData))
 				if not GBankClassic_Core:SendWhisper("gbank-rr", ackData, sender, "NORMAL") then
 					return
 				end
-				self:Debug("SYNC", "<", "Sent gbank-rr to", ColorPlayerName(sender), string.format("(isGuildBankAlt=%s, hasData=%s)", tostring(isGuildBankAlt), tostring(hasData)))
+				GBankClassic_Output:Debug("SYNC", "<", "Sent gbank-rr to", colorPlayerName(sender), string.format("(isGuildBankAlt=%s, hasData=%s)", tostring(isGuildBankAlt), tostring(hasData)))
 			else
 				-- Don't respond if we don't have the data
-				self:Debug("SYNC", "Ignoring pull-based request (no data for %s)", altName)
+				GBankClassic_Output:Debug("SYNC", "Ignoring pull-based request (no data for %s)", altName)
 			end
 
 			return
@@ -562,28 +510,28 @@ function GBankClassic_Chat:OnCommReceived(prefix, message, distribution, sender)
 		-- 	-- Use REQUESTS category for request-related queries, SYNC for alt queries
 		-- 	local isRequestQuery = data.type and string.find(data.type, "^requests") ~= nil
 		-- 	local category = isRequestQuery and "REQUESTS" or "SYNC"
-		-- 	self:Debug(category, ">", ColorPlayerName(sender), QUERIES_COLOR, isRequestQuery and "[REQ]" or "", data.type, data.name and ColorPlayerName(GBankClassic_Guild:NormalizeName(data.name)) or "")
+		-- 	GBankClassic_Output:Debug(category, ">", colorPlayerName(sender), QUERIES_COLOR, isRequestQuery and "Requests:" or "Sync:", data.type, data.name and colorPlayerName(GBankClassic_Guild:NormalizeName(data.name)) or "")
 
 		-- 	-- Request data is guild-wide, anyone can respond (player="*")
 		-- 	if data.type == "requests" then
 		-- 		local matches = (data.player == "*" or data.player == player)
-		-- 		GBankClassic_Output:DebugComm("REQUEST HANDLER CHECK: type=requests, player=%s, myName=%s, matches=%s", tostring(data.player), tostring(player), tostring(matches))
+		-- 		GBankClassic_Output:DebugComm("Handler check: type=requests, player=%s, myName=%s, matches=%s", tostring(data.player), tostring(player), tostring(matches))
 		-- 		if matches then
-		-- 			GBankClassic_Output:DebugComm("REQUEST HANDLER: Responding to requests query")
+		-- 			GBankClassic_Output:DebugComm("Responding to requests query")
 		-- 			GBankClassic_Guild:SendRequestsSnapshot(sender)
 		-- 		end
 		-- 	end
 		-- 	if data.type == "requests-index" then
 		-- 		local matches = (data.player == "*" or data.player == player)
 		-- 		if matches then
-		-- 			GBankClassic_Output:DebugComm("REQUEST INDEX HANDLER: Responding to requests-index query")
+		-- 			GBankClassic_Output:DebugComm("Responding to requests-index query")
 		-- 			GBankClassic_Guild:SendRequestsIndex(sender)
 		-- 		end
 		-- 	end
 		-- 	if data.type == "requests-by-id" then
 		-- 		local matches = (data.player == "*" or data.player == player)
 		-- 		if matches then
-		-- 			GBankClassic_Output:DebugComm("REQUEST BY-ID HANDLER: Responding to requests-by-id query")
+		-- 			GBankClassic_Output:DebugComm("Responding to requests-by-id query")
 		-- 			GBankClassic_Guild:SendRequestsById(sender, data.ids)
 		-- 		end
 		-- 	end
@@ -591,7 +539,7 @@ function GBankClassic_Chat:OnCommReceived(prefix, message, distribution, sender)
 		-- 		-- Legacy query type - respond with full snapshot
 		-- 		local matches = (data.player == "*" or data.player == player)
 		-- 		if matches then
-		-- 			GBankClassic_Output:DebugComm("REQUEST LOG HANDLER: Responding with snapshot (log queries deprecated)")
+		-- 			GBankClassic_Output:DebugComm("Responding with snapshot (log queries deprecated)")
 		-- 			GBankClassic_Guild:SendRequestsSnapshot(sender)
 		-- 		end
 		-- 	end
@@ -599,6 +547,7 @@ function GBankClassic_Chat:OnCommReceived(prefix, message, distribution, sender)
 
 		-- Alt and roster queries are per-player, only respond if query is for us
 		if data.player and data.player == player then
+			-- Roster query: keep because some players may be unable to know about guild bank alts defined in officer notes
 			if data.type == "roster" then
 				local time = GetServerTime()
 				if self.last_roster_sync == nil or time - self.last_roster_sync > 300 then
@@ -630,7 +579,7 @@ function GBankClassic_Chat:OnCommReceived(prefix, message, distribution, sender)
 				-- Fall back to normal query response
 				table.insert(self.sync_queue, nameNorm)
 				if not self.is_syncing then
-					GBankClassic_Chat:ProcessQueue()
+					self:ProcessQueue()
 				end
 			end
 		end
@@ -643,15 +592,15 @@ function GBankClassic_Chat:OnCommReceived(prefix, message, distribution, sender)
 			local isGuildBankAlt = data.isGuildBankAlt or false
 			local hasData = data.hasData or false
 
-			GBankClassic_Output:DebugComm("RECEIVED ACK: gbank-rr from %s for alt %s (isGuildBankAlt=%s, hasData=%s)", sender, altName, tostring(isGuildBankAlt), tostring(hasData))
-			self:Debug("SYNC", ">", ColorPlayerName(sender), QUERIES_COLOR, string.format("acknowledged request for %s (altName=%s, hasData=%s)", ColorPlayerName(altName), tostring(isGuildBankAlt), tostring(hasData)))
+			GBankClassic_Output:DebugComm("Received acknowledgment: gbank-rr from %s for alt %s (isGuildBankAlt=%s, hasData=%s)", sender, altName, tostring(isGuildBankAlt), tostring(hasData))
+			GBankClassic_Output:Debug("SYNC", ">", colorPlayerName(sender), QUERIES_COLOR, string.format("acknowledged request for %s (altName=%s, hasData=%s)", colorPlayerName(altName), tostring(isGuildBankAlt), tostring(hasData)))
 
 			-- If sender has the data, send our state summary to them
 			if hasData then
-				GBankClassic_Output:DebugComm("CALLING SendStateSummary for %s to %s", altName, sender)
+				GBankClassic_Output:DebugComm("Calling SendStateSummary for %s to %s", altName, sender)
 				GBankClassic_Guild:SendStateSummary(altName, sender)
 			else
-				GBankClassic_Output:DebugComm("NOT sending state summary (hasData=false)")
+				GBankClassic_Output:DebugComm("Not sending state summary (hasData=false)")
 			end
 		end
 	end
@@ -662,11 +611,11 @@ function GBankClassic_Chat:OnCommReceived(prefix, message, distribution, sender)
 			local altName = data.name
 			local summary = data.summary
 
-			GBankClassic_Output:DebugComm("RECEIVED STATE SUMMARY from %s for alt %s (hash=%s, version=%s)", sender, altName, tostring(summary and summary.hash), tostring(summary and summary.version))
-			self:Debug("SYNC", ">", ColorPlayerName(sender), QUERIES_COLOR, string.format("received state summary for %s", ColorPlayerName(altName)))
+			GBankClassic_Output:DebugComm("Received state summary from %s for alt %s (hash=%s, version=%s)", sender, altName, tostring(summary and summary.hash), tostring(summary and summary.version))
+			GBankClassic_Output:Debug("SYNC", ">", colorPlayerName(sender), QUERIES_COLOR, string.format("received state summary for %s", colorPlayerName(altName)))
 
 			-- Compute and send response (full/delta/no-change)
-			GBankClassic_Output:DebugComm("CALLING RespondToStateSummary for %s from %s", altName, sender)
+			GBankClassic_Output:DebugComm("Calling RespondToStateSummary for %s from %s", altName, sender)
 			GBankClassic_Guild:RespondToStateSummary(altName, summary, sender)
 		end
 	end
@@ -677,8 +626,8 @@ function GBankClassic_Chat:OnCommReceived(prefix, message, distribution, sender)
 			local altName = data.name
 			local version = data.version or 0
 
-			GBankClassic_Output:DebugComm("RECEIVED NO-CHANGE from %s for alt %s (version=%d)", sender, altName, version)
-			self:Debug("SYNC", ">", ColorPlayerName(sender), QUERIES_COLOR, string.format("no changes for %s (v%d)", ColorPlayerName(altName), version))
+			GBankClassic_Output:DebugComm("Received no-change from %s for alt %s (version=%d)", sender, altName, version)
+			GBankClassic_Output:Debug("SYNC", ">", colorPlayerName(sender), QUERIES_COLOR, string.format("no changes for %s (v%d)", colorPlayerName(altName), version))
 
 			-- Mark sync as complete
 			GBankClassic_Guild:ConsumePendingSync("alt", sender, altName)
@@ -696,67 +645,93 @@ function GBankClassic_Chat:OnCommReceived(prefix, message, distribution, sender)
 		end
 	end
 
-	-- gbank-d: link-less full sync
-	if prefix == "gbank-d" or prefix == "gbank-rm" then
-		GBankClassic_Output:DebugComm("%s received from %s: type=%s", prefix, sender, tostring(data.type))
+	-- if prefix == "gbank-rm" then
+	-- 	GBankClassic_Output:DebugComm("%s received from %s: type=%s", prefix, sender, tostring(data.type))
 		
-		-- -- Critical debug for request mutations
-		-- if data.type == "requests-log" then
-		-- 	GBankClassic_Output:Debug("SYNC", "%s requests-log received from %s, about to call ReceiveRequestMutations", prefix, sender)
-		-- end
+	-- 	-- -- Critical debug for request mutations
+	-- 	-- if data.type == "requests-log" then
+	-- 	-- 	GBankClassic_Output:Debug("SYNC", "%s requests-log received from %s, about to call ReceiveRequestMutations", prefix, sender)
+	-- 	-- end
 
-		if data.type == "roster" then
-			-- Only accept roster updates from a sender that is marked as a bank in guild notes, or from the guild master
-			-- TODO: also accept from players that can view guild notes
-			local allowed = (GBankClassic_Guild and GBankClassic_Guild.SenderHasGbankNote and GBankClassic_Guild:SenderHasGbankNote(sender)) or GBankClassic_Guild:SenderIsGM(sender)
-			if GBankClassic_Guild:ConsumePendingSync("roster", sender) then
-				allowed = true
-			end
-			self:Debug("SYNC", ">", ColorPlayerName(sender), SHARES_COLOR, "roster data. We", allowed and "accept it." or "do not accept it.")
-		end
+	-- 	if data.type == "roster" then
+	-- 		-- Only accept roster updates from a sender that is marked as a bank in guild notes, or from the guild master
+	-- 		-- TODO: also accept from players that can view guild notes
+	-- 		local allowed = (GBankClassic_Guild and GBankClassic_Guild.SenderHasGbankNote and GBankClassic_Guild:SenderHasGbankNote(sender)) or GBankClassic_Guild:SenderIsGM(sender)
+	-- 		if GBankClassic_Guild:ConsumePendingSync("roster", sender) then
+	-- 			allowed = true
+	-- 		end
+	-- 		GBankClassic_Output:Debug("SYNC", ">", colorPlayerName(sender), SHARES_COLOR, "roster data. We", allowed and "accept it." or "do not accept it.")
+	-- 	end
 
-		-- if data.type == "requests" then
-		-- 	local status = GBankClassic_Guild:ReceiveRequestsData(data)
-		-- 	self:Debug("REQUESTS", ">", ColorPlayerName(sender), SHARES_COLOR, "requests snapshot. We accept it by default.", FormatSyncStatus(status))
-		-- end
-		-- if data.type == "requests-index" then
-		-- 	self:Debug("REQUESTS", ">", ColorPlayerName(sender), SHARES_COLOR, "requests index. We accept it by default.")
-		-- 	GBankClassic_Guild:ReceiveRequestsIndex(data, sender)
-		-- end
-		-- if data.type == "requests-by-id" then
-		-- 	local status = GBankClassic_Guild:ReceiveRequestsById(data)
-		-- 	self:Debug("REQUESTS", ">", ColorPlayerName(sender), SHARES_COLOR, "requests by-id data. We accept it by default.", FormatSyncStatus(status))
-		-- end
-		-- if data.type == "requests-log" then
-		-- 	self:Debug("REQUESTS", ">", ColorPlayerName(sender), SHARES_COLOR, "request mutations. We accept by default.")
-		-- 	GBankClassic_Guild:ReceiveRequestMutations(data, sender)
-		-- end
+	-- 	if data.type == "requests" then
+	-- 		local status = GBankClassic_Guild:ReceiveRequestsData(data)
+	-- 		GBankClassic_Output:Debug("REQUESTS", ">", colorPlayerName(sender), SHARES_COLOR, "requests snapshot. We accept it by default.", formatSyncStatus(status))
+	-- 	end
+	-- 	if data.type == "requests-index" then
+	-- 		GBankClassic_Output:Debug("REQUESTS", ">", colorPlayerName(sender), SHARES_COLOR, "requests index. We accept it by default.")
+	-- 		GBankClassic_Guild:ReceiveRequestsIndex(data, sender)
+	-- 	end
+	-- 	if data.type == "requests-by-id" then
+	-- 		local status = GBankClassic_Guild:ReceiveRequestsById(data)
+	-- 		GBankClassic_Output:Debug("REQUESTS", ">", colorPlayerName(sender), SHARES_COLOR, "requests by-id data. We accept it by default.", formatSyncStatus(status))
+	-- 	end
+	-- 	if data.type == "requests-log" then
+	-- 		GBankClassic_Output:Debug("REQUESTS", ">", colorPlayerName(sender), SHARES_COLOR, "request mutations. We accept by default.")
+	-- 		GBankClassic_Guild:ReceiveRequestMutations(data, sender)
+	-- 	end
+	-- 	if data.type == "alt" then
+	-- 		-- Only accept alt data if the sender matches the claimed alt name
+	-- 		local claimed = data.name
+	-- 		local claimedNorm = GBankClassic_Guild:NormalizeName(claimed)
+	-- 		local allowed = self:IsAltDataAllowed(sender, claimedNorm)
+	-- 		if GBankClassic_Guild:ConsumePendingSync("alt", sender, claimedNorm) then
+	-- 			allowed = true
+	-- 		end
+	-- 		local status = allowed and GBankClassic_Guild:ReceiveAltData(claimedNorm, data.alt, sender) or ADOPTION_STATUS.UNAUTHORIZED
+	-- 		GBankClassic_Output:Debug("SYNC", ">", colorPlayerName(sender), SHARES_COLOR, "bank data (link-less) about", colorPlayerName(claimedNorm) .. ". We", allowed and "accept it." or "do not accept it.", formatSyncStatus(status))
+	-- 		if allowed then
+	-- 			-- ReceiveAltData already applied/rejected; refresh UI if open
+	-- 			if status == ADOPTION_STATUS.ADOPTED and GBankClassic_UI_Inventory and GBankClassic_UI_Inventory.isOpen then
+	-- 				GBankClassic_UI_Inventory:DrawContent()
+	-- 			end
+	-- 		else
+	-- 			-- Ignore spoofed alt data
+	-- 			return
+	-- 		end
+	-- 	end
+	-- end
+
+	-- Full sync with links
+	if prefix == "gbank-d" then
 		if data.type == "alt" then
-			-- only accept alt data if the sender matches the claimed alt name
+			-- Only accept alt data if the sender matches the claimed alt name
 			local claimed = data.name
 			local claimedNorm = GBankClassic_Guild:NormalizeName(claimed)
+
+			GBankClassic_Output:DebugComm("Receive data: gbank-d from %s for alt %s (%d bytes)", sender, claimedNorm, #message)
+
 			local allowed = self:IsAltDataAllowed(sender, claimedNorm)
 			if GBankClassic_Guild:ConsumePendingSync("alt", sender, claimedNorm) then
 				allowed = true
 			end
 			local status = allowed and GBankClassic_Guild:ReceiveAltData(claimedNorm, data.alt, sender) or ADOPTION_STATUS.UNAUTHORIZED
-			self:Debug("SYNC", ">", ColorPlayerName(sender), SHARES_COLOR, "bank data (link-less) about", ColorPlayerName(claimedNorm) .. ". We", allowed and "accept it." or "do not accept it.", FormatSyncStatus(status))
+			GBankClassic_Output:Debug("SYNC", ">", colorPlayerName(sender), SHARES_COLOR, "bank data (link-less) about", colorPlayerName(claimedNorm) .. ". We", allowed and "accept it." or "do not accept it.", formatSyncStatus(status))
 			if allowed then
 				-- ReceiveAltData already applied/rejected; refresh UI if open
 				if status == ADOPTION_STATUS.ADOPTED and GBankClassic_UI_Inventory and GBankClassic_UI_Inventory.isOpen then
 					GBankClassic_UI_Inventory:DrawContent()
 				end
 			else
-				-- ignore spoofed alt data
+				-- Ignore spoofed alt data
 				return
 			end
 		end
 	end
 
-	-- gbank-dd: link-less delta
+	-- Delta with links
 	if prefix == "gbank-dd" then
 		if data.type == "alt-delta" then
-			-- only accept delta data if the sender matches the claimed alt name
+			-- Only accept delta data if the sender matches the claimed alt name
 			local claimed = data.name
 			local claimedNorm = GBankClassic_Guild:NormalizeName(claimed)
 			local allowed = self:IsAltDataAllowed(sender, claimedNorm)
@@ -766,10 +741,10 @@ function GBankClassic_Chat:OnCommReceived(prefix, message, distribution, sender)
 
 			if allowed then
 				-- Validate and sanitize delta structure
-				local valid, err = GBankClassic_Core:ValidateDeltaStructure(data)
+				local valid, err = GBankClassic_DeltaComms:ValidateDeltaStructure(data)
 				if not valid then
 					local errorMsg = "Validation failed: " .. (err or "unknown error")
-					self:Debug("DELTA", ">", ColorPlayerName(sender), SHARES_COLOR, "delta (link-less) for", ColorPlayerName(claimedNorm), "- validation failed:", err)
+					GBankClassic_Output:Debug("DELTA", ">", colorPlayerName(sender), SHARES_COLOR, "delta (link-less) for", colorPlayerName(claimedNorm), "- validation failed:", err)
 					-- Record error and request full sync
 					GBankClassic_Guild:RecordDeltaError(claimedNorm, "VALIDATION_FAILED", errorMsg)
 					GBankClassic_Guild:QueryAlt(sender, claimedNorm, nil)
@@ -780,7 +755,8 @@ function GBankClassic_Chat:OnCommReceived(prefix, message, distribution, sender)
 					return
 				end
 
-				-- Reconstruct links from ItemIDs before applying delta
+				-- Reconstruct item links in background using batched queue system
+				-- Processes 5 items every 0.1s to prevent stuttering
 				if data.changes then
 					if data.changes.bank then
 						GBankClassic_Guild:ReconstructItemLinks(data.changes.bank.added)
@@ -795,9 +771,9 @@ function GBankClassic_Chat:OnCommReceived(prefix, message, distribution, sender)
 				end
 
 				local status = GBankClassic_Guild:ApplyDelta(claimedNorm, data, sender)
-				self:Debug("DELTA", ">", ColorPlayerName(sender), SHARES_COLOR, "delta (link-less) for", ColorPlayerName(claimedNorm) .. ".", FormatSyncStatus(status))
+				GBankClassic_Output:Debug("DELTA", ">", colorPlayerName(sender), SHARES_COLOR, "delta (link-less) for", colorPlayerName(claimedNorm) .. ".", formatSyncStatus(status))
 			else
-				self:Debug("DELTA", ">", ColorPlayerName(sender), SHARES_COLOR, "delta (link-less) for", ColorPlayerName(claimedNorm) .. ". We do not accept it.", FormatSyncStatus(ADOPTION_STATUS.UNAUTHORIZED))
+				GBankClassic_Output:Debug("DELTA", ">", colorPlayerName(sender), SHARES_COLOR, "delta (link-less) for", colorPlayerName(claimedNorm) .. ". We do not accept it.", formatSyncStatus(ADOPTION_STATUS.UNAUTHORIZED))
 			end
 		end
 	end
@@ -809,7 +785,7 @@ function GBankClassic_Chat:OnCommReceived(prefix, message, distribution, sender)
 	-- 		local fromVersion = data.fromVersion
 	-- 		local toVersion = data.toVersion
 
-	-- 		self:Debug("REQUESTS", ">", ColorPlayerName(sender), QUERIES_COLOR, "requests delta chain for", ColorPlayerName(altName), string.format("(v%d→v%d)", fromVersion, toVersion))
+	-- 		GBankClassic_Output:Debug("REQUESTS", ">", colorPlayerName(sender), QUERIES_COLOR, "requests delta chain for", colorPlayerName(altName), string.format("(v%d→v%d)", fromVersion, toVersion))
 
 	-- 		-- Get delta history
 	-- 		if GBankClassic_Guild.Info and GBankClassic_Guild.Info.name then
@@ -825,10 +801,10 @@ function GBankClassic_Chat:OnCommReceived(prefix, message, distribution, sender)
 	-- 				if not GBankClassic_Core:SendWhisper("gbank-dc", serialized, sender, "ALERT") then
 	-- 					return
 	-- 				end
-	-- 				self:Debug("<", "gbank-dc (delta chain) to", ColorPlayerName(sender), string.format("(%d hops, %d bytes)", #deltaChain, string.len(serialized or "")))
+	-- 				GBankClassic_Output:Debug("REQUESTS", "<", "gbank-dc (delta chain) to", colorPlayerName(sender), string.format("(%d hops, %d bytes)", #deltaChain, string.len(serialized or "")))
 	-- 			else
 	-- 				-- Can't build chain, let them request full sync
-	-- 				self:Debug("< Cannot build delta chain for", ColorPlayerName(altName), string.format("(v%d→v%d), no history", fromVersion, toVersion))
+	-- 				GBankClassic_Output:Debug("REQUESTS", "< Cannot build delta chain for", colorPlayerName(altName), string.format("(v%d→v%d), no history", fromVersion, toVersion))
 	-- 			end
 	-- 		end
 	-- 	end
@@ -840,64 +816,64 @@ function GBankClassic_Chat:OnCommReceived(prefix, message, distribution, sender)
 	-- 		local altName = data.altName
 	-- 		local deltaChain = data.deltas
 
-	-- 		self:Debug("REQUESTS", ">", ColorPlayerName(sender), SHARES_COLOR, "delta chain for", ColorPlayerName(altName), string.format("(%d hops)", #deltaChain))
+	-- 		GBankClassic_Output:Debug("REQUESTS", ">", colorPlayerName(sender), SHARES_COLOR, "delta chain for", colorPlayerName(altName), string.format("(%d hops)", #deltaChain))
 
 	-- 		-- Apply delta chain
 	-- 		local status = GBankClassic_Guild:ApplyDeltaChain(altName, deltaChain)
-	-- 		self:Debug("REQUESTS", "Delta chain application", FormatSyncStatus(status))
+	-- 		GBankClassic_Output:Debug("REQUESTS", "Delta chain application", formatSyncStatus(status))
 	-- 	end
 	-- end
 
 	-- -- Request-specific query handler (gbank-rq)
 	-- -- This is the dedicated prefix for request queries, replacing gbank-r with type="requests*"
 	-- if prefix == "gbank-rq" then
-	-- 	GBankClassic_Output:DebugComm("gbank-rq DATA.TYPE = %s from %s", tostring(data.type), sender)
-	-- 	self:Debug( "REQUESTS", ">", ColorPlayerName(sender), QUERIES_COLOR, "request query:", data.type or "unknown")
+	-- 	GBankClassic_Output:DebugComm("gbank-rq type = %s from %s", tostring(data.type), sender)
+	-- 	GBankClassic_Output:Debug( "REQUESTS", ">", colorPlayerName(sender), QUERIES_COLOR, "request query:", data.type or "unknown")
 
 	-- 	-- Request data is guild-wide, anyone can respond (player="*")
 	-- 	if data.type == "requests" then
 	-- 		local matches = (data.player == "*" or data.player == player)
-	-- 		GBankClassic_Output:DebugComm("REQUEST HANDLER CHECK: type=requests, player=%s, myName=%s, matches=%s", tostring(data.player), tostring(player), tostring(matches))
+	-- 		GBankClassic_Output:DebugComm("Handler check: type=requests, player=%s, myName=%s, matches=%s", tostring(data.player), tostring(player), tostring(matches))
 	-- 		if matches then
-	-- 			GBankClassic_Output:DebugComm("REQUEST HANDLER: Responding to requests query")
+	-- 			GBankClassic_Output:DebugComm("Responding to requests query")
 	-- 			GBankClassic_Guild:SendRequestsSnapshot(sender)
 	-- 		end
 	-- 	end
 	-- 	if data.type == "requests-index" then
 	-- 		local matches = (data.player == "*" or data.player == player)
 	-- 		if matches then
-	-- 			GBankClassic_Output:DebugComm("REQUEST INDEX HANDLER: Responding to requests-index query")
+	-- 			GBankClassic_Output:DebugComm("Responding to requests-index query")
 	-- 			GBankClassic_Guild:SendRequestsIndex(sender)
 	-- 		end
 	-- 	end
 	-- 	if data.type == "requests-by-id" then
 	-- 		local matches = (data.player == "*" or data.player == player)
 	-- 		if matches then
-	-- 			GBankClassic_Output:DebugComm("REQUEST BY-ID HANDLER: Responding to requests-by-id query")
+	-- 			GBankClassic_Output:DebugComm("Responding to requests-by-id query")
 	-- 			GBankClassic_Guild:SendRequestsById(sender, data.ids)
 	-- 		end
 	-- 	end
 	-- end
 
 	-- -- Request-specific data handler (togbank-rd)
-	-- -- This is the dedicated prefix for request data, replacing gbank-d with type="requests*"
+	-- -- This is the dedicated prefix for request data
 	-- if prefix == "gbank-rd" then
 	-- 	GBankClassic_Output:DebugComm("gbank-rd received from %s: type=%s", sender, tostring(data.type))
 
 	-- 	if data.type == "requests" then
 	-- 		local status = GBankClassic_Guild:ReceiveRequestsData(data)
-	-- 		self:Debug("REQUESTS", ">", ColorPlayerName(sender), SHARES_COLOR, "requests snapshot.", FormatSyncStatus(status))
+	-- 		GBankClassic_Output:Debug("REQUESTS", ">", colorPlayerName(sender), SHARES_COLOR, "requests snapshot.", formatSyncStatus(status))
 	-- 	end
 	-- 	if data.type == "requests-index" then
-	-- 		self:Debug("REQUESTS", ">", ColorPlayerName(sender), SHARES_COLOR, "requests index.")
+	-- 		GBankClassic_Output:Debug("REQUESTS", ">", colorPlayerName(sender), SHARES_COLOR, "requests index.")
 	-- 		GBankClassic_Guild:ReceiveRequestsIndex(data, sender)
 	-- 	end
 	-- 	if data.type == "requests-by-id" then
 	-- 		local status = GBankClassic_Guild:ReceiveRequestsById(data)
-	-- 		self:Debug("REQUESTS", ">", ColorPlayerName(sender), SHARES_COLOR, "requests by-id data.", FormatSyncStatus(status))
+	-- 		GBankClassic_Output:Debug("REQUESTS", ">", colorPlayerName(sender), SHARES_COLOR, "requests by-id data.", formatSyncStatus(status))
 	-- 	end
 	-- 	if data.type == "requests-log" then
-	-- 		self:Debug("REQUESTS", ">", ColorPlayerName(sender), SHARES_COLOR, "request mutations.")
+	-- 		GBankClassic_Output:Debug("REQUESTS", ">", colorPlayerName(sender), SHARES_COLOR, "request mutations.")
 	-- 		GBankClassic_Guild:ReceiveRequestMutations(data, sender)
 	-- 	end
 	-- end
@@ -907,7 +883,7 @@ function GBankClassic_Chat:OnCommReceived(prefix, message, distribution, sender)
 	end
 
 	if prefix == "gbank-hr" then
-		self:Debug("PROTOCOL", data)
+		GBankClassic_Output:Debug("PROTOCOL", data)
 	end
 
 	if prefix == "gbank-s" then
@@ -940,14 +916,13 @@ local COMMAND_REGISTRY = {
 		name = "help",
 		help = "this message",
 		handler = function()
-			GBankClassic_Chat:ShowHelp()
+			Chat:ShowHelp()
 		end,
 	},
 	{
 		name = "version",
 		help = "display the GBankClassic version",
 		handler = function()
-            local GetAddOnMetadata = GetAddOnMetadata or C_AddOns.GetAddOnMetadata
 			local version = GetAddOnMetadata("GBankClassic", "Version") or "unknown"
 			GBankClassic_Output:Response("GBankClassic version:", version)
 		end,
@@ -956,7 +931,7 @@ local COMMAND_REGISTRY = {
 		name = "sync",
 		help = "manually receive the latest data from other online users with guild bank data; this is done every 10 minutes automatically",
 		handler = function()
-			GBankClassic_Chat:PerformSync()
+			Chat:PerformSync()
 		end,
 	},
 	{
@@ -976,6 +951,7 @@ local COMMAND_REGISTRY = {
 			if not guild then
 				return
 			end
+
 			GBankClassic_Guild:Reset(guild)
 		end,
 	},
@@ -988,6 +964,7 @@ local COMMAND_REGISTRY = {
 			local guild = GBankClassic_Guild:GetGuild()
 			if not guild then
 				GBankClassic_Output:Response("Not in a guild")
+
 				return
 			end
 			local db = GBankClassic_Database.db.factionrealm[guild]
@@ -1013,14 +990,12 @@ local COMMAND_REGISTRY = {
 			local guild = GBankClassic_Guild:GetGuild()
 			if not guild then
 				GBankClassic_Output:Response("Not in a guild")
+
 				return
 			end
 			local db = GBankClassic_Database.db.factionrealm[guild]
 			if db and db.deltaSnapshots then
-				local count = 0
-				for _ in pairs(db.deltaSnapshots) do
-					count = count + 1
-				end
+				local count = GBankClassic_Globals:Count(db.deltaSnapshots)
 				db.deltaSnapshots = {}
 				GBankClassic_Output:Response("Cleared %d delta snapshot(s)", count)
 			else
@@ -1041,7 +1016,7 @@ local COMMAND_REGISTRY = {
 		help = "show recent delta sync errors and failure counts",
 		expert = true,
 		handler = function()
-			GBankClassic_Chat:PrintDeltaErrors()
+			Chat:PrintDeltaErrors()
 		end,
 	},
 	{
@@ -1052,10 +1027,11 @@ local COMMAND_REGISTRY = {
 			local guild = GBankClassic_Guild:GetGuild()
 			if not guild then
 				GBankClassic_Output:Response("Not in a guild")
+
 				return
 			end
 			
-			local db = GBankClassic_Database.db.faction[guild]
+			local db = GBankClassic_Database.db.factionrealm[guild]
 			if db and db.deltaErrors then
 				db.deltaErrors.lastErrors = {}
 				db.deltaErrors.failureCounts = {}
@@ -1071,7 +1047,7 @@ local COMMAND_REGISTRY = {
 		help = "show stored delta chain history for offline recovery",
 		expert = true,
 		handler = function()
-			GBankClassic_Chat:PrintDeltaHistory()
+			Chat:PrintDeltaHistory()
 		end,
 	},
 	{
@@ -1079,7 +1055,7 @@ local COMMAND_REGISTRY = {
 		help = "show delta sync statistics and bandwidth savings",
 		expert = true,
 		handler = function()
-			GBankClassic_Chat:PrintDeltaStats()
+			Chat:PrintDeltaStats()
 		end,
 	},
 	{
@@ -1114,31 +1090,25 @@ local COMMAND_REGISTRY = {
 	-- 	help = "check current request persistence state",
 	-- 	expert = true,
 	-- 	handler = function()
-	-- 		local G = GBankClassic_Guild
-	-- 		if not G or not G.Info then
+	-- 		if not GBankClassic_Guild or not GBankClassic_Guild.Info then
 	-- 			GBankClassic_Output:Response("Guild info not loaded")
 
 	-- 			return
 	-- 		end
 
-	-- 		local logCount = #(G.Info.requestLog or {})
+	-- 		local logCount = #(GBankClassic_Guild.Info.requestLog or {})
 	-- 		local appliedCount = 0
 	-- 		local appliedActors = {}
-	-- 		if G.Info.requestLogApplied then
-	-- 			for actor, seq in pairs(G.Info.requestLogApplied) do
+	-- 		if GBankClassic_Guild.Info.requestLogApplied then
+	-- 			for actor, seq in pairs(GBankClassic_Guild.Info.requestLogApplied) do
 	-- 				appliedCount = appliedCount + 1
 	-- 				table.insert(appliedActors, string.format("%s=%d", actor, seq))
 	-- 			end
 	-- 		end
-	-- 		local requestCount = #(G.Info.requests or {})
-	-- 		local seqCount = 0
-	-- 		if G.Info.requestLogSeq then
-	-- 			for _ in pairs(G.Info.requestLogSeq) do
-	-- 				seqCount = seqCount + 1
-	-- 			end
-	-- 		end
+	-- 		local requestCount = #(GBankClassic_Guild.Info.requests or {})
+	-- 		local seqCount = GBankClassic_Guild.Info.requestLogSeq and GBankClassic_Globals:Count(GBankClassic_Guild.Info.requestLogSeq) or 0
 
-	-- 		GBankClassic_Output:Response("=== Request Persistence State ===")
+	-- 		GBankClassic_Output:Response("=== Request persistence state ===")
 	-- 		GBankClassic_Output:Response("requests: %d items", requestCount)
 	-- 		GBankClassic_Output:Response("requestLog: %d entries", logCount)
 	-- 		GBankClassic_Output:Response("requestLogApplied: %d actors", appliedCount)
@@ -1150,22 +1120,14 @@ local COMMAND_REGISTRY = {
 	-- 		-- Check if data is referencing SavedVariables
 	-- 		local db = GBankClassic_Database and GBankClassic_Database.db
 	-- 		if db and db.faction then
-	-- 			local guildName = G:GetGuild()
+	-- 			local guildName = GBankClassic_Guild:GetGuild()
 	-- 			if guildName and db.faction[guildName] then
-	-- 				local isSameRef = (G.Info == db.faction[guildName])
-	-- 				GBankClassic_Output:Response("Guild.Info %s SavedVariables reference", isSameRef and "IS" or "IS NOT")
+	-- 				local isSameRef = (GBankClassic_Guild.Info == db.faction[guildName])
+	-- 				GBankClassic_Output:Response("Guild.Info %s SavedVariables reference", isSameRef and "is" or "is not")
 	-- 			end
 	-- 		end
 	-- 	end,
 	-- },
-	{
-		name = "protocol",
-		help = "show protocol version distribution across guild members",
-		expert = true,
-		handler = function()
-			GBankClassic_Chat:PrintProtocolInfo()
-		end,
-	},
 	-- {
 	-- 	name = "requestlog",
 	-- 	usage = "[N|all]",
@@ -1183,6 +1145,7 @@ local COMMAND_REGISTRY = {
 			local guild = GBankClassic_Guild:GetGuild()
 			if not guild then
 				GBankClassic_Output:Response("Not in a guild")
+
 				return
 			end
 			if GBankClassic_Database:ResetDeltaMetrics(guild) then
@@ -1207,6 +1170,7 @@ local COMMAND_REGISTRY = {
 		handler = function(arg)
 			if not GBankClassic_Tests then
 				GBankClassic_Output:Response("Test module not loaded")
+
 				return
 			end
 
@@ -1215,7 +1179,7 @@ local COMMAND_REGISTRY = {
 			if arg == "" or arg == "all" then
 				GBankClassic_Tests:RunAllTests()
 			elseif arg == "help" then
-				GBankClassic_Output:Response("GBank Test Commands:")
+				GBankClassic_Output:Response("GBankClassic test commands:")
 				GBankClassic_Output:Response("  /bank test - Run all tests")
 				GBankClassic_Output:Response("  /bank test all - Run all tests")
 				GBankClassic_Output:Response("  /bank test <test-name> - Run specific test")
@@ -1230,7 +1194,7 @@ local COMMAND_REGISTRY = {
 		help = "show addon versions of online guild members",
 		expert = true,
 		handler = function()
-			GBankClassic_Chat:PrintVersions()
+			Chat:PrintVersions()
 		end,
 	},
 	{
@@ -1273,7 +1237,7 @@ local COMMAND_REGISTRY = {
 				GBankClassic_Output:Response("Debug: off (log level: " .. levelName .. ")")
 			else
 				-- Save current level before entering debug mode
-				preDebugLogLevel = GBankClassic_Options.db.global.bank["logLevel"]
+				preDebugLogLevel = GBankClassic_Options:GetLogLevel()
 				GBankClassic_Output:SetLevel(LOG_LEVEL.DEBUG)
 				GBankClassic_Options.db.global.bank["logLevel"] = LOG_LEVEL.DEBUG
 				GBankClassic_Output:Response("Debug: on (log level: Debug)")
@@ -1283,23 +1247,24 @@ local COMMAND_REGISTRY = {
 	{
 		name = "debugdump",
 		handler = function()
-			local G = GBankClassic_Guild
-			if not G or not G.Info or not G.Info.alts then
-				GBankClassic_Output:Response("no alts table available")
+			local GBankClassic_Guild = GBankClassic_Guild
+			if not GBankClassic_Guild or not GBankClassic_Guild.Info or not GBankClassic_Guild.Info.alts then
+				GBankClassic_Output:Response("No alts table available")
+
 				return
 			end
-			GBankClassic_Output:Response("Listing Info.alts keys:")
+			GBankClassic_Output:Response("Listing keys in alts table:")
 			local i = 0
-			for k, v in pairs(G.Info.alts) do
+			for k, v in pairs(GBankClassic_Guild.Info.alts) do
 				i = i + 1
 				GBankClassic_Output:Response(i, tostring(k), type(v))
 				if i >= 200 then
-					GBankClassic_Output:Response("truncated at 200 entries")
+					GBankClassic_Output:Response("Truncated at 200 entries")
 					break
 				end
 			end
 			if i == 0 then
-				GBankClassic_Output:Response("no entries")
+				GBankClassic_Output:Response("No entries")
 			end
 		end,
 	},
@@ -1334,7 +1299,7 @@ local HELP_INSTRUCTIONS = {
 	},
 }
 
-function GBankClassic_Chat:ChatCommand(input)
+function Chat:ChatCommand(input)
 	if input == nil or input == "" then
 		GBankClassic_UI_Inventory:Toggle()
 	else
@@ -1344,14 +1309,14 @@ function GBankClassic_Chat:ChatCommand(input)
 			handler(arg1)
 		else
 			GBankClassic_Output:Response("Unknown command: ", prefix)
-			GBankClassic_Chat:ShowHelp()
+			self:ShowHelp()
 		end
 	end
 
 	return false
 end
 
-function GBankClassic_Chat:ShowHelp()
+function Chat:ShowHelp()
 	local H = HELP_COLOR.HEADER
 	local C = HELP_COLOR.COMMAND
 	local R = HELP_COLOR.RESET
@@ -1386,7 +1351,7 @@ function GBankClassic_Chat:ShowHelp()
 	end
 end
 
-function GBankClassic_Chat:ProcessQueue()
+function Chat:ProcessQueue()
 	if IsInRaid() then
 		return
 	end
@@ -1407,22 +1372,21 @@ function GBankClassic_Chat:ProcessQueue()
 		GBankClassic_Guild:SendAltData(name)
 	end
 
-	GBankClassic_Chat:ReprocessQueue()
+	self:ReprocessQueue()
 end
 
-function GBankClassic_Chat:ReprocessQueue()
+function Chat:ReprocessQueue()
     GBankClassic_Core:ScheduleTimer(function(...)
-        GBankClassic_Chat:OnTimer()
+        self:OnTimer()
     end, TIMER_INTERVALS.ALT_DATA_QUEUE_RETRY)
 end
 
-function GBankClassic_Chat:OnTimer()
-    GBankClassic_Chat:ProcessQueue()
+function Chat:OnTimer()
+    self:ProcessQueue()
 end
 
-function GBankClassic_Chat:PrintVersions()
+function Chat:PrintVersions()
 	-- Get our own version
-    local GetAddOnMetadata = GetAddOnMetadata or C_AddOns.GetAddOnMetadata
 	local myVersion = GetAddOnMetadata("GBankClassic", "Version") or "unknown"
 	local myPlayer = GBankClassic_Guild:GetPlayer()
 
@@ -1469,7 +1433,7 @@ function GBankClassic_Chat:PrintVersions()
 	end
 end
 
-function GBankClassic_Chat:PrintDeltaStats()
+function Chat:PrintDeltaStats()
 	local guild = GBankClassic_Guild:GetGuild()
 	if not guild then
 		GBankClassic_Output:Response("Not in a guild")
@@ -1537,12 +1501,12 @@ function GBankClassic_Chat:PrintDeltaStats()
 		GBankClassic_Output:Response("  Full sync fallbacks: %d", fullSyncFallbacks)
 
 		local successRate = (deltasApplied / totalOps) * 100
-		local rateColor = "|cff00ff00" -- green
+		local rateColor = "|cff00ff00" -- Green
 		if successRate < 95 then
-			rateColor = "|cffffff00" -- yellow
+			rateColor = "|cffffff00" -- Yellow
 		end
 		if successRate < 80 then
-			rateColor = "|cffff0000" -- red
+			rateColor = "|cffff0000" -- Red
 		end
 		GBankClassic_Output:Response("  Success rate:        %s%.1f%%|r", rateColor, successRate)
 		GBankClassic_Output:Response("")
@@ -1570,7 +1534,7 @@ function GBankClassic_Chat:PrintDeltaStats()
 end
 
 -- Print recent delta errors and failure counts
-function GBankClassic_Chat:PrintDeltaErrors()
+function Chat:PrintDeltaErrors()
 	local guild = GBankClassic_Guild:GetGuild()
 	if not guild then
 		GBankClassic_Output:Response("Not in a guild")
@@ -1629,17 +1593,12 @@ function GBankClassic_Chat:PrintDeltaErrors()
 
 	-- Print summary
 	local totalErrors = #(errors.lastErrors or {})
-	local totalAlts = 0
-	if errors.failureCounts then
-		for _ in pairs(errors.failureCounts) do
-			totalAlts = totalAlts + 1
-		end
-	end
+	local totalAlts = errors.failureCounts and GBankClassic_Globals:Count(errors.failureCounts) or 0
 	GBankClassic_Output:Response("|cffffff00Summary:|r %d error(s) tracked, %d alt(s) affected", totalErrors, totalAlts)
 end
 
 -- Print stored delta chain history
-function GBankClassic_Chat:PrintDeltaHistory()
+function Chat:PrintDeltaHistory()
 	local guild = GBankClassic_Guild:GetGuild()
 	if not guild then
 		GBankClassic_Output:Response("Not in a guild")
@@ -1692,131 +1651,19 @@ function GBankClassic_Chat:PrintDeltaHistory()
 				-- Delta is nested: historyEntry.delta.changes
 				local changes = delta.delta and delta.delta.changes or nil
 				if changes then
-					if changes.bank then changeCount = changeCount + 1 end
-					if changes.bags then changeCount = changeCount + 1 end
-					if changes.money then changeCount = changeCount + 1 end
+					if changes.bank then
+						changeCount = changeCount + 1
+					end
+					if changes.bags then
+						changeCount = changeCount + 1
+					end
+					if changes.money then
+						changeCount = changeCount + 1
+					end
 				end
 
 				GBankClassic_Output:Response("  %d. v%d (%d change(s), %s)", i, delta.version or 0, changeCount, ageStr)
 			end
 		end
-	end
-end
-
-function GBankClassic_Chat:PrintProtocolInfo()
-	local guild = GBankClassic_Guild:GetGuild()
-	if not guild then
-		GBankClassic_Output:Response("Not in a guild")
-
-		return
-	end
-
-	GBankClassic_Output:Response("|cff00ffffProtocol Version Distribution|r")
-	GBankClassic_Output:Response("")
-
-	-- Get guild delta support
-	local support = GBankClassic_Database:GetGuildDeltaSupport(guild)
-	local threshold = PROTOCOL.DELTA_SUPPORT_THRESHOLD
-
-	-- Count versions
-	local db = GBankClassic_Database.db.factionrealm[guild]
-	if not db or not db.guildProtocolVersions then
-		GBankClassic_Output:Response("No protocol data available")
-        
-		return
-	end
-
-	local now = GetServerTime()
-	local onlineV1 = 0
-	local onlineV2 = 0
-	local allTimeV1 = 0
-	local allTimeV2 = 0
-	local recentMembers = {}
-
-	for sender, info in pairs(db.guildProtocolVersions) do
-		if info then
-			local version = info.version or 1
-			local isOnline = info.lastSeen and (now - info.lastSeen) < 600
-
-			-- All time counts
-			if version >= 2 then
-				allTimeV2 = allTimeV2 + 1
-			else
-				allTimeV1 = allTimeV1 + 1
-			end
-
-			-- Online counts (last 10 minutes)
-			if isOnline then
-				if version >= 2 then
-					onlineV2 = onlineV2 + 1
-				else
-					onlineV1 = onlineV1 + 1
-				end
-			end
-
-			-- Track recent members for display
-			if isOnline then
-				table.insert(recentMembers, { name = sender, version = version, lastSeen = info.lastSeen })
-			end
-		end
-	end
-
-	-- Sort recent members by last seen
-	table.sort(recentMembers, function(a, b)
-		return a.lastSeen > b.lastSeen
-	end)
-
-	-- Display online distribution
-	local totalOnline = onlineV1 + onlineV2
-	if totalOnline > 0 then
-		GBankClassic_Output:Response("|cffffff00Online (last 10 minutes):|r")
-		GBankClassic_Output:Response("  Protocol v2 (delta): %d (%.1f%%)", onlineV2, (onlineV2 / totalOnline) * 100)
-		GBankClassic_Output:Response("  Protocol v1 (full):  %d (%.1f%%)", onlineV1, (onlineV1 / totalOnline) * 100)
-		GBankClassic_Output:Response("  Total online: %d", totalOnline)
-		GBankClassic_Output:Response("")
-	end
-
-	-- Display all-time distribution
-	local totalAllTime = allTimeV1 + allTimeV2
-	if totalAllTime > 0 then
-		GBankClassic_Output:Response("|cffffff00All time:|r")
-		GBankClassic_Output:Response("  Protocol v2: %d", allTimeV2)
-		GBankClassic_Output:Response("  Protocol v1: %d", allTimeV1)
-		GBankClassic_Output:Response("")
-	end
-
-	-- Display threshold status
-	local statusIcon = support >= threshold and "|cff00ff00✓|r" or "|cffff0000⚠|r"
-	local statusText = support >= threshold and "enabled" or "disabled"
-	GBankClassic_Output:Response("%s Delta sync %s (%.1f%% %s %.0f%% threshold)", statusIcon, statusText, support * 100, support >= threshold and "≥" or "<", threshold * 100)
-
-	-- Display recent members
-	if #recentMembers > 0 then
-		GBankClassic_Output:Response("")
-		GBankClassic_Output:Response("|cffffff00Recently seen members:|r")
-		local shown = 0
-		for _, member in ipairs(recentMembers) do
-			if shown >= 10 then
-				GBankClassic_Output:Response("  ... and %d more", #recentMembers - shown)
-				break
-			end
-
-			local age = ""
-			local seconds = now - member.lastSeen
-			if seconds < 60 then
-				age = "now"
-			elseif seconds < 3600 then
-				age = string.format("%dm ago", math.floor(seconds / 60))
-			else
-				age = string.format("%dh ago", math.floor(seconds / 3600))
-			end
-
-			GBankClassic_Output:Response("  %s: v%d (%s)", member.name, member.version, age)
-			shown = shown + 1
-		end
-	end
-
-	if totalOnline == 0 and totalAllTime == 0 then
-		GBankClassic_Output:Response("No protocol version data available")
 	end
 end

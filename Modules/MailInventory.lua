@@ -1,11 +1,24 @@
-GBankClassic_MailInventory = {}
+GBankClassic_MailInventory = GBankClassic_MailInventory or {}
 
--- Flag to track if mail was accessed this session
-GBankClassic_MailInventory.hasUpdated = false
+local MailInventory = GBankClassic_MailInventory
+
+MailInventory.hasUpdated = false
+
+local Globals = GBankClassic_Globals
+local upvalues = Globals.GetUpvalues("time")
+local time = upvalues.time
+local upvalues = Globals.GetUpvalues("GetInboxNumItems", "GetInboxHeaderInfo", "GetInboxItem", "GetInboxItemLink", "GetServerTime")
+local GetInboxNumItems = upvalues.GetInboxNumItems
+local GetInboxHeaderInfo = upvalues.GetInboxHeaderInfo
+local GetInboxItem = upvalues.GetInboxItem
+local GetInboxItemLink = upvalues.GetInboxItemLink
+local GetServerTime = upvalues.GetServerTime
+local upvalues = Globals.GetUpvalues("ATTACHMENTS_MAX_RECEIVE")
+local ATTACHMENTS_MAX_RECEIVE = upvalues.ATTACHMENTS_MAX_RECEIVE
 
 -- Scans the current mailbox and returns structured mail inventory data
 -- Called from Bank:Scan() when mail was accessed (hasUpdated = true)
-function GBankClassic_MailInventory:ScanMailInventory()
+function MailInventory:ScanMailInventory()
 	-- Only scan if mail was accessed this session
 	if not self.hasUpdated then
 		GBankClassic_Output:Debug("MAIL", "ScanMailInventory called but hasUpdated=false, returning nil")
@@ -15,30 +28,30 @@ function GBankClassic_MailInventory:ScanMailInventory()
 	
 	-- Use same structure as bank/bags: aggregate by composite key, store as array
 	local mailItemsTable = {}
-	local numItems, totalItems = GetInboxNumItems()
+	local numItems = GetInboxNumItems()
 	
 	GBankClassic_Output:Debug("MAIL", "Starting mailbox scan: %d mail messages", numItems)
 	
 	for i = 1, numItems do
-		local packageIcon, stationeryIcon, sender, subject, money, CODAmount, daysLeft, hasItem, wasRead, wasReturned, textCreated, canReply, isGM = GetInboxHeaderInfo(i)
+		local _, _, sender, _, _, CODAmount, _, hasItem = GetInboxHeaderInfo(i)
 		
 		-- Skip COD mail (can't take items without payment)
 		if hasItem and CODAmount == 0 then
 			for j = 1, ATTACHMENTS_MAX_RECEIVE do
-				local name, itemID, itemTexture, count, quality, canUse = GetInboxItem(i, j)
+				local name, itemID, _, count = GetInboxItem(i, j)
 				
 				if itemID and name then
 					local link = GetInboxItemLink(i, j)
 					
 					-- Conditionally include link based on item class
-					-- Gear (weapons/armor) needs FULL link for suffix differentiation
+					-- Gear (weapons/armor) needs full link for suffix differentiation
 					-- Consumables/trade goods don't need link (saves bandwidth in d3 sync)
 					local storageLink = nil
 					if link and GBankClassic_Item:NeedsLink(link) then
-						storageLink = link -- Store FULL link for gear
+						storageLink = link -- Store full link for gear
 					end
 					
-					-- Use NORMALIZED key for deduplication (strips unique instance ID)
+					-- Use normalized key for deduplication (strips unique instance ID)
 					-- This allows identical items to merge even if they have different instance IDs
 					local itemKey = GBankClassic_Item:GetItemKey(link)
 					local key = tostring(itemID) .. itemKey
@@ -47,7 +60,7 @@ function GBankClassic_MailInventory:ScanMailInventory()
 						-- Item already exists, add to count
 						local item = mailItemsTable[key]
 						mailItemsTable[key] = { ID = item.ID, Count = item.Count + count, Link = item.Link or storageLink }
-						GBankClassic_Output:Debug("MAIL", "Item %s: MERGED (key=%s) added %d, total now %d", name, key, count, mailItemsTable[key].Count)
+						GBankClassic_Output:Debug("MAIL", "Item %s: merged (key=%s) added %d, total now %d", name, key, count, mailItemsTable[key].Count)
 					else
 						-- New item
 						mailItemsTable[key] = { ID = itemID, Count = count, Link = storageLink }
@@ -91,7 +104,7 @@ function GBankClassic_MailInventory:ScanMailInventory()
 end
 
 -- Returns list of alts that have the specified item in their mail
-function GBankClassic_MailInventory:GetItemsInMail(itemID)
+function MailInventory:GetItemsInMail(itemID)
 	local alts = {}
 	
 	if not GBankClassic_Guild.Info or not GBankClassic_Guild.Info.alts then
@@ -100,7 +113,7 @@ function GBankClassic_MailInventory:GetItemsInMail(itemID)
 	
 	for name, alt in pairs(GBankClassic_Guild.Info.alts) do
 		if alt.mail and alt.mail.items then
-			-- mail.items is an array, search for matching ID
+			-- Search for matching ID
 			for _, item in ipairs(alt.mail.items) do
 				if item.ID == itemID then
 					table.insert(alts, { name = name, count = item.Count, lastScan = alt.mail.lastScan or 0 })
@@ -113,20 +126,20 @@ function GBankClassic_MailInventory:GetItemsInMail(itemID)
 	return alts
 end
 
--- Returns total count of item across all alts' mail
-function GBankClassic_MailInventory:GetTotalInMail(itemID)
-	local total = 0
-	local alts = self:GetItemsInMail(itemID)
+-- -- Returns total count of item across all alts' mail
+-- function MailInventory:GetTotalInMail(itemID)
+-- 	local total = 0
+-- 	local alts = self:GetItemsInMail(itemID)
 	
-	for _, alt in ipairs(alts) do
-		total = total + alt.count
-	end
+-- 	for _, alt in ipairs(alts) do
+-- 		total = total + alt.count
+-- 	end
 	
-	return total
-end
+-- 	return total
+-- end
 
 -- Returns age of mail scan data in seconds
-function GBankClassic_MailInventory:GetMailDataAge(alt)
+function MailInventory:GetMailDataAge(alt)
 	if not alt or not alt.mail or not alt.mail.lastScan then
 		return nil
 	end
@@ -134,12 +147,12 @@ function GBankClassic_MailInventory:GetMailDataAge(alt)
 	return time() - alt.mail.lastScan
 end
 
--- Checks if alt has mail inventory data
-function GBankClassic_MailInventory:HasMailInventory(alt)
-	if not alt or not alt.mail or not alt.mail.items then
-		return false
-	end
+-- -- Checks if alt has mail inventory data
+-- function MailInventory:HasMailInventory(alt)
+-- 	if not alt or not alt.mail or not alt.mail.items then
+-- 		return false
+-- 	end
 	
-	-- Check if there are any items (mail.items is array format)
-	return #alt.mail.items > 0
-end
+-- 	-- Check if there are any items (mail.items is array format)
+-- 	return #alt.mail.items > 0
+-- end

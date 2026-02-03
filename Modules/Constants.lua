@@ -15,11 +15,11 @@ TIMER_INTERVALS = {
 
 -- Log levels (lower = more verbose)
 LOG_LEVEL = {
-	DEBUG = 1,       -- development/troubleshooting details
-	INFO = 2,        -- sync status, normal operations
-	WARN = 3,        -- something unexpected but recoverable
-	ERROR = 4,       -- something failed
-	RESPONSE = 5,    -- response to user commands (always shown)
+	DEBUG = 1,       -- Development/troubleshooting details
+	INFO = 2,        -- Sync status, normal operations
+	WARN = 3,        -- Something unexpected but recoverable
+	ERROR = 4,       -- Something failed
+	RESPONSE = 5,    -- Response to user commands (always shown)
 }
 
 -- Debug categories for filtering
@@ -39,8 +39,8 @@ DEBUG_CATEGORY = {
 	INVENTORY = "INVENTORY",	 -- Inventory (bags, bank, mail) scanning and tracking
 	MAIL = "MAIL",               -- Mail inventory scanning and tracking
 	ITEM = "ITEM",               -- Item loading, validation, and processing
-	-- FULFILL = "FULFILL",
-	SEARCH = "SEARCH",			-- Search operations
+	-- FULFILL = "FULFILL",		 -- Request fullfillment by guild bank alts
+	SEARCH = "SEARCH",			 -- Search operations
 }
 
 -- -- Request storage settings
@@ -51,24 +51,25 @@ DEBUG_CATEGORY = {
 
 -- -- Request sync throttling settings
 -- REQUESTS_SYNC = {
--- 	-- NOTE: Short values for quick testing; production values should be higher.
--- 	INDEX_QUERY_COOLDOWN = 60,         -- seconds between index queries (global and per-sender)
--- 	INDEX_INFLIGHT_TIMEOUT = 30,       -- seconds before in-flight index sync is considered stale
+-- 	-- Short values for quick testing; production values should be higher.
+-- 	INDEX_QUERY_COOLDOWN = 60,         -- Seconds between index queries (global and per-sender)
+-- 	INDEX_INFLIGHT_TIMEOUT = 30,       -- Seconds before in-flight index sync is considered stale
 -- }
 
 -- Communication prefix descriptions for debug logging
 COMM_PREFIX_DESCRIPTIONS = {
 	["gbank-v"] = "(Version)",
 	["gbank-dv"] = "(Delta version)",
-	["gbank-d"] = "(Data - No links)",
-	["gbank-dd"] = "(Delta data - No links)",
+	["gbank-dv2"] = "(Delta version - Aggregate items)",
+	["gbank-d"] = "(Data - No links)", -- togbank-d3 (we're not using togbank-d)
+	["gbank-dd"] = "(Delta data - No links)", -- togbank-d4 (we're not using togbank-d2)
 	-- ["gbank-dr"] = "(Delta range request)",
 	-- ["gbank-dc"] = "(Delta chain)",
 	["gbank-r"] = "(Query)",
 	["gbank-rr"] = "(Query reply)",
-	-- ["gbank-rq"] = "(Request Query)",
-	-- ["gbank-rd"] = "(Request Data)",
-	-- ["gbank-rm"] = "(Request Mutations)",
+	-- ["gbank-rq"] = "(Request query)",
+	-- ["gbank-rd"] = "(Request data)",
+	-- ["gbank-rm"] = "(Request mutations)",
 	["gbank-state"] = "(State summary)",
 	["gbank-nochange"] = "(No change)",
 	["gbank-h"] = "(Hello)",
@@ -84,9 +85,7 @@ PROTOCOL = {
 	VERSION = 2,                    -- Current protocol version (bump for breaking changes)
 	SUPPORTS_DELTA = true,          -- This client supports delta updates
 	DELTA_SNAPSHOT_MAX_AGE = 3600,  -- 1 hour: snapshots older than this are invalid
-	DELTA_SUPPORT_THRESHOLD = 0.05, -- Use delta if >5% of online guild supports it (lowered for testing: 1 of 14 = 7.1%)
 	DELTA_HISTORY_MAX_COUNT = 10,   -- Keep last N deltas per alt (memory limit)
-	DELTA_HISTORY_MAX_AGE = 3600,   -- 1 hour: purge deltas older than this
 	DELTA_CHAIN_MAX_HOPS = 30,      -- Max deltas in one chain request (increased for testing)
 	DELTA_CHAIN_MAX_SIZE = 5000,    -- If chain >5KB, fall back to full sync
 }

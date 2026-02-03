@@ -1,26 +1,37 @@
-GBankClassic_UI_Search = {}
+GBankClassic_UI_Search = GBankClassic_UI_Search or {}
 
-function GBankClassic_UI_Search:Init()
+local UI_Search = GBankClassic_UI_Search
+
+local Globals = GBankClassic_Globals
+local upvalues = Globals.GetUpvalues("GetCursorInfo", "ClearCursor", "IsShiftKeyDown", "IsControlKeyDown")
+local GetCursorInfo = upvalues.GetCursorInfo
+local ClearCursor = upvalues.ClearCursor
+local IsShiftKeyDown = upvalues.IsShiftKeyDown
+local IsControlKeyDown = upvalues.IsControlKeyDown
+local upvalues = Globals.GetUpvalues("Item")
+local Item = upvalues.Item
+
+function UI_Search:Init()
     self:DrawWindow()
 end
 
-local function OnClose(_)
-    GBankClassic_UI_Search.isOpen = false
-    GBankClassic_UI_Search.Window:Hide()
-	-- if GBankClassic_UI_Search.RequestDialog then
-	-- 	GBankClassic_UI_Search.RequestDialog:Hide()
+local function onClose(_)
+    UI_Search.isOpen = false
+    UI_Search.Window:Hide()
+	-- if UI_Search.RequestDialog then
+	-- 	UI_Search.RequestDialog:Hide()
 	-- end
 end
 
 -- -- Build (once) and show the request dialog for clicking search results
--- function GBankClassic_UI_Search:EnsureRequestDialog()
+-- function UI_Search:EnsureRequestDialog()
 -- 	if self.RequestDialog then
 -- 		return
 -- 	end
 
 -- 	local dialog = GBankClassic_UI:Create("Frame")
 -- 	dialog:Hide()
--- 	dialog:SetTitle("Item Request")
+-- 	dialog:SetTitle("Item request")
 -- 	dialog:SetLayout("List")
 -- 	dialog:SetWidth(340)
 -- 	dialog:SetHeight(200)
@@ -32,7 +43,7 @@ end
 -- 	dialog.frame:SetAlpha(1)
 -- 	if dialog.frame and dialog.frame.GetChildren then
 -- 		for _, child in ipairs({ dialog.frame:GetChildren() }) do
--- 			-- Hide the built-in close button so we only show Send/Cancel actions
+-- 			-- Hide the built-in close button so we only show send/cancel actions
 -- 			if child.GetText and (child:GetText() == CLOSE or child:GetText() == "Close") then
 -- 				child:Hide()
 -- 				child:EnableMouse(false)
@@ -83,7 +94,7 @@ end
 -- 	dialog:AddChild(buttons)
 
 -- 	local send = GBankClassic_UI:Create("Button")
--- 	send:SetText("Send Request")
+-- 	send:SetText("Send request")
 -- 	send:SetWidth(140)
 -- 	send:SetCallback("OnClick", function()
 -- 		self:SubmitRequest()
@@ -101,7 +112,7 @@ end
 -- 	self.RequestDialog = dialog
 -- end
 
--- function GBankClassic_UI_Search:ShowRequestDialog(itemEntry, bankAlt)
+-- function UI_Search:ShowRequestDialog(itemEntry, bankAlt)
 -- 	if not itemEntry or not itemEntry.Info or not bankAlt then
 -- 		return
 -- 	end
@@ -162,7 +173,7 @@ end
 -- 	end
 -- end
 
--- function GBankClassic_UI_Search:SubmitRequest()
+-- function UI_Search:SubmitRequest()
 -- 	if not self.requestContext or not self.RequestDialog then
 -- 		return
 -- 	end
@@ -206,6 +217,7 @@ end
 
 -- 	if not quantity or quantity <= 0 then
 -- 		self.RequestDialog:SetStatusText("Enter a quantity greater than 0.")
+
 -- 		return
 -- 	end
 --	if quantity > maxAllowed then
@@ -215,6 +227,7 @@ end
 --			else
 --				self.RequestDialog:SetStatusText("Cannot request - none available right now.")
 --			end
+
 --			return
 --		else
 --			if maxRequestPercent < 100 then
@@ -250,6 +263,7 @@ end
 
 -- 	if not GBankClassic_Guild:AddRequest(request) then
 -- 		self.RequestDialog:SetStatusText("Unable to send request.")
+
 -- 		return
 -- 	end
 
@@ -259,7 +273,7 @@ end
 -- 	GBankClassic_Output:Response("Requested %d x %s from %s", quantity, request.item, request.bank)
 -- end
 
-function GBankClassic_UI_Search:Toggle()
+function UI_Search:Toggle()
     if self.isOpen then
         self:Close()
     else
@@ -267,7 +281,7 @@ function GBankClassic_UI_Search:Toggle()
     end
 end
 
-function GBankClassic_UI_Search:Open()
+function UI_Search:Open()
 	if self.isOpen then
 		return
 	end
@@ -302,26 +316,25 @@ function GBankClassic_UI_Search:Open()
     end
 end
 
-function GBankClassic_UI_Search:Close()
+function UI_Search:Close()
 	if not self.isOpen then
 		return
 	end
-
 	if not self.Window then
 		return
 	end
 
-    OnClose(self.Window)
+    onClose(self.Window)
 
     if GBankClassic_UI_Inventory.isOpen == false then
         _G["GBankClassic"]:Hide()
     end
 end
 
-function GBankClassic_UI_Search:DrawWindow()
+function UI_Search:DrawWindow()
     local searchWindow = GBankClassic_UI:Create("Frame")
     searchWindow:Hide()
-    searchWindow:SetCallback("OnClose", OnClose)
+    searchWindow:SetCallback("OnClose", onClose)
     searchWindow:SetTitle("Search")
     searchWindow:SetLayout("Flow")
     searchWindow:EnableResize(false)
@@ -331,7 +344,7 @@ function GBankClassic_UI_Search:DrawWindow()
 		searchWindow:SetStatusTable(GBankClassic_Options.db.char.framePositions)
 	end
 
-	-- Set width AFTER SetStatusTable to override any saved width
+	-- Set width after SetStatusTable to override any saved width
     searchWindow:SetWidth(250)
     self.Window = searchWindow
 
@@ -394,7 +407,7 @@ function GBankClassic_UI_Search:DrawWindow()
     self.Results = resultGroup
 end
 
-function GBankClassic_UI_Search:BuildSearchData()
+function UI_Search:BuildSearchData()
 	GBankClassic_Output:Debug("SEARCH", "BuildSearchData called - clearing and rebuilding search data")
     self.SearchData = {
         Corpus = {},
@@ -409,10 +422,7 @@ function GBankClassic_UI_Search:BuildSearchData()
 		return
 	end
 
-	local rosterCount = 0
-	for _ in pairs(roster_alts) do
-        rosterCount = rosterCount + 1
-    end
+	local rosterCount = GBankClassic_Globals:Count(roster_alts)
 	GBankClassic_Output:Debug("SEARCH", "BuildSearchData: processing %d roster alts", rosterCount)
 
     local items = {}
@@ -420,10 +430,10 @@ function GBankClassic_UI_Search:BuildSearchData()
 		local norm = GBankClassic_Guild:NormalizeName(player)
         local alt = info.alts[norm]
 		GBankClassic_Output:Debug("SEARCH", "Search corpus loop: processing player=%s, norm=%s, has alt=%s", player, norm, tostring(alt ~= nil))
-        if alt and _G.type(alt) == "table" then
+        if alt and type(alt) == "table" then
 			-- Use alt.items if available (aggregated format)
 			if alt.items and next(alt.items) ~= nil then
-				-- alt.items already includes bank+bags+mail, use it directly
+				-- Use alt.items which includes bank+bags+mail
 				local beforeCount = #items
 				items = GBankClassic_Item:Aggregate(items, alt.items)
 				local afterCount = #items
@@ -438,12 +448,9 @@ function GBankClassic_UI_Search:BuildSearchData()
 				end
 				-- Include mail items (now in array format like bank/bags)
 				if alt.mail and alt.mail.items then
-					local mailItemCount = 0
-					for _ in ipairs(alt.mail.items) do
-                        mailItemCount = mailItemCount + 1
-                    end
+					local mailItemCount = GBankClassic_Globals:Count(alt.mail.items)
 					GBankClassic_Output:Debug("SEARCH", "Search corpus: aggregating mail for %s (%d unique items)", player, mailItemCount)
-					-- Mail items are now in array format {ID, Count, Link}, not key-value
+					-- Mail items are now in array format, not key-value
 					items = GBankClassic_Item:Aggregate(items, alt.mail.items)
 				end
 			end
@@ -454,10 +461,7 @@ function GBankClassic_UI_Search:BuildSearchData()
 	local corpusNamesSeen = {}
 	
 	-- Count items in hash table
-	local itemCount = 0
-	for _ in pairs(items) do
-        itemCount = itemCount + 1
-    end
+	local itemCount = GBankClassic_Globals:Count(items)
 	GBankClassic_Output:Debug("SEARCH", "About to validate %d items before GetItems", itemCount)
 	
 	-- Validate and filter items before passing to GetItems
@@ -482,7 +486,7 @@ function GBankClassic_UI_Search:BuildSearchData()
 				if not itemNames[v.ID] then
 					itemNames[v.ID] = v.Info.name
 				end
-				-- Only add each unique name to Corpus once
+				-- Only add each unique name to corpus once
 				if not corpusNamesSeen[v.Info.name] then
 					corpusNamesSeen[v.Info.name] = true
 					table.insert(self.SearchData.Corpus, v.Info.name)
@@ -498,10 +502,10 @@ function GBankClassic_UI_Search:BuildSearchData()
 			local norm = GBankClassic_Guild:NormalizeName(player)
             local alt = info.alts[norm]
 			GBankClassic_Output:Debug("SEARCH", "Search results loop: processing player=%s, norm=%s, has alt=%s", player, norm, tostring(alt ~= nil))
-            if alt and _G.type(alt) == "table" then
+            if alt and type(alt) == "table" then
 				-- Use alt.items if available (aggregated format)
 				if alt.items and next(alt.items) ~= nil then
-					-- alt.items already includes bank+bags+mail, use it directly
+				    -- Use alt.items which includes bank+bags+mail
 					for _, item in pairs(alt.items) do
 						table.insert(altItems, item)
 					end
@@ -517,7 +521,7 @@ function GBankClassic_UI_Search:BuildSearchData()
 					-- Include mail items (now in array format like bank/bags)
 					if alt.mail and alt.mail.items then
 						GBankClassic_Output:Debug("SEARCH", "Search results: aggregating mail for %s (%d unique items)", player, #alt.mail.items)
-						-- Mail items are now in array format {ID, Count, Link}, not key-value
+						-- Mail items are now in array format, not key-value
 						altItems = GBankClassic_Item:Aggregate(altItems, alt.mail.items)
 					end
 				end
@@ -534,7 +538,7 @@ function GBankClassic_UI_Search:BuildSearchData()
                     for _, existingEntry in pairs(self.SearchData.Lookup[name]) do
 						if existingEntry.alt == player and existingEntry.item.ID == itemEntry.ID then
                             found = true
-							GBankClassic_Output:Debug("SEARCH", "Search results: DUPLICATE FOUND - skipping %s (ID: %d) for %s", name, itemEntry.ID, player)
+							GBankClassic_Output:Debug("SEARCH", "Search results: duplicate found - skipping %s (ID: %d) for %s", name, itemEntry.ID, player)
                             break
                         end
                     end
@@ -548,7 +552,7 @@ function GBankClassic_UI_Search:BuildSearchData()
     end)
 end
 
-function GBankClassic_UI_Search:DrawContent()
+function UI_Search:DrawContent()
 	if not self.Results then
 		return
 	end
@@ -615,10 +619,7 @@ function GBankClassic_UI_Search:DrawContent()
                     -- No lookup for this name; skip
 					GBankClassic_Output:Debug("SEARCH", "Search display: '%s' matched search but has NO lookup entries", v)
                 else
-					local lookupCount = 0
-					for _ in pairs(lookupList) do
-                        lookupCount = lookupCount + 1
-                    end
+					local lookupCount = GBankClassic_Globals:Count(lookupList)
 					GBankClassic_Output:Debug("SEARCH", "Search display: '%s' matched search, has %d lookup entries", v, lookupCount)
                     for _, vv in pairs(lookupList) do
 						local resultItem = vv.item
@@ -630,9 +631,11 @@ function GBankClassic_UI_Search:DrawContent()
 							itemWidget:SetCallback("OnClick", function(widget, event)
 								if IsShiftKeyDown() or IsControlKeyDown() then
 									GBankClassic_UI:EventHandler(widget, event)
+
 									return
 								end
-								-- GBankClassic_UI_Search:ShowRequestDialog(resultItem, bankAlt)
+                                
+								-- self:ShowRequestDialog(resultItem, bankAlt)
 							end)
 						end
 

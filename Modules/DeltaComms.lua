@@ -1,12 +1,18 @@
--- Handles all delta synchronization communication and protocol logic
--- This includes delta validation, computation, application, error tracking, and protocol coordination
+GBankClassic_DeltaComms = GBankClassic_DeltaComms or {}
 
-GBankClassic_DeltaComms = {}
+local DeltaComms = GBankClassic_DeltaComms
 
--- VALIDATION FUNCTIONS --
+local Globals = GBankClassic_Globals
+local upvalues = Globals.GetUpvalues("GetServerTime", "debugprofilestop", "UnitName", "GetNormalizedRealmName")
+local GetServerTime = upvalues.GetServerTime
+local debugprofilestop = upvalues.debugprofilestop
+local UnitName = upvalues.UnitName
+local GetNormalizedRealmName = upvalues.GetNormalizedRealmName
+
+-- Validation functions --
 
 -- Validate that a delta structure is well-formed
-function GBankClassic_DeltaComms:ValidateDeltaStructure(delta)
+function DeltaComms:ValidateDeltaStructure(delta)
 	if not delta or type(delta) ~= "table" then
 		return false, "delta is not a table"
 	end
@@ -56,7 +62,7 @@ function GBankClassic_DeltaComms:ValidateDeltaStructure(delta)
 end
 
 -- Validate an item delta structure (added/modified/removed)
-function GBankClassic_DeltaComms:ValidateItemDelta(itemDelta)
+function DeltaComms:ValidateItemDelta(itemDelta)
 	if not itemDelta or type(itemDelta) ~= "table" then
 		return false, "itemDelta is not a table"
 	end
@@ -66,6 +72,7 @@ function GBankClassic_DeltaComms:ValidateItemDelta(itemDelta)
 		if type(itemDelta.added) ~= "table" then
 			return false, "added is not a table"
 		end
+
 		for _, item in pairs(itemDelta.added) do
 			if type(item) ~= "table" then
 				return false, "added item is not a table"
@@ -76,7 +83,6 @@ function GBankClassic_DeltaComms:ValidateItemDelta(itemDelta)
 			if item.Link and type(item.Link) ~= "string" then
 				return false, "added item has invalid link"
 			end
-			-- slot is optional (merged items don't have slots)
 		end
 	end
 
@@ -85,6 +91,7 @@ function GBankClassic_DeltaComms:ValidateItemDelta(itemDelta)
 		if type(itemDelta.modified) ~= "table" then
 			return false, "modified is not a table"
 		end
+
 		for _, item in pairs(itemDelta.modified) do
 			if type(item) ~= "table" then
 				return false, "modified item is not a table"
@@ -95,7 +102,6 @@ function GBankClassic_DeltaComms:ValidateItemDelta(itemDelta)
 			if item.Link and type(item.Link) ~= "string" then
 				return false, "modified item has invalid link"
 			end
-			-- slot is optional (merged items don't have slots)
 		end
 	end
 
@@ -104,6 +110,7 @@ function GBankClassic_DeltaComms:ValidateItemDelta(itemDelta)
 		if type(itemDelta.removed) ~= "table" then
 			return false, "removed is not a table"
 		end
+
 		for _, item in pairs(itemDelta.removed) do
 			if type(item) ~= "table" then
 				return false, "removed item is not a table"
@@ -117,85 +124,9 @@ function GBankClassic_DeltaComms:ValidateItemDelta(itemDelta)
 	return true
 end
 
--- Sanitize a delta structure by removing malformed data
-function GBankClassic_DeltaComms:SanitizeDelta(delta)
-	if not delta or type(delta) ~= "table" then
-		return nil
-	end
-
-	-- Create sanitized copy
-	local sanitized = {
-		type = delta.type,
-		name = delta.name,
-		version = delta.version,
-		changes = {},
-	}
-
-	if not delta.changes or type(delta.changes) ~= "table" then
-		return sanitized
-	end
-
-	local changes = delta.changes
-
-	-- Sanitize money
-	if changes.money and type(changes.money) == "number" then
-		sanitized.changes.money = changes.money
-	end
-
-	-- Sanitize bank delta
-	if changes.bank and type(changes.bank) == "table" then
-		sanitized.changes.bank = self:SanitizeItemDelta(changes.bank)
-	end
-
-	-- Sanitize bags delta
-	if changes.bags and type(changes.bags) == "table" then
-		sanitized.changes.bags = self:SanitizeItemDelta(changes.bags)
-	end
-
-	return sanitized
-end
-
--- Sanitize an item delta structure
-function GBankClassic_DeltaComms:SanitizeItemDelta(itemDelta)
-	local sanitized = {
-		added = {},
-		modified = {},
-		removed = {},
-	}
-
-	-- Sanitize added items
-	if itemDelta.added and type(itemDelta.added) == "table" then
-		for _, item in pairs(itemDelta.added) do
-			if type(item) == "table" and item.ID and item.slot then
-				table.insert(sanitized.added, item)
-			end
-		end
-	end
-
-	-- Sanitize modified items
-	if itemDelta.modified and type(itemDelta.modified) == "table" then
-		for _, item in pairs(itemDelta.modified) do
-			if type(item) == "table" and item.slot then
-				table.insert(sanitized.modified, item)
-			end
-		end
-	end
-
-	-- Sanitize removed slots
-	if itemDelta.removed and type(itemDelta.removed) == "table" then
-		for _, slot in pairs(itemDelta.removed) do
-			if type(slot) == "number" then
-				table.insert(sanitized.removed, slot)
-			end
-		end
-	end
-
-	return sanitized
-end
-
 -- Compute a hash of inventory state to detect actual changes
 -- Only updates version timestamps when this hash changes
-function GBankClassic_DeltaComms:ComputeInventoryHash(bank, bags, mailOrMoney, money)
+function DeltaComms:ComputeInventoryHash(bank, bags, mailOrMoney, money)
 	-- Handle multiple calling conventions:
 	-- 2.6.0+ (aggregated): ComputeInventoryHash(items, nil, nil, money) - items is direct array
 	-- Pre 2.6.0: ComputeInventoryHash(bank, bags, money) - bank/bags have .items, no mail
@@ -214,6 +145,7 @@ function GBankClassic_DeltaComms:ComputeInventoryHash(bank, bags, mailOrMoney, m
 			if not itemsArray or type(itemsArray) ~= "table" then
 				return ""
 			end
+
 			local sorted = {}
 			for _, item in ipairs(itemsArray) do
 				if item and item.ID then
@@ -232,7 +164,7 @@ function GBankClassic_DeltaComms:ComputeInventoryHash(bank, bags, mailOrMoney, m
 	end
 	
 	-- Legacy calling convention: ComputeInventoryHash(bank, bags, money)
-	-- mailOrMoney is actually money (number), no mail parameter exists
+	-- Parameter mailOrMoney is actually money (number), no mail parameter exists
 	local actualMoney = mailOrMoney or 0
 	local parts = {}
 
@@ -282,10 +214,10 @@ function GBankClassic_DeltaComms:ComputeInventoryHash(bank, bags, mailOrMoney, m
 	return sum
 end
 
--- DELTA PROTOCOL FUNCTIONS --
+-- Delta protocol functions --
 
 -- Get peer protocol capabilities
-function GBankClassic_DeltaComms:GetPeerCapabilities(guildName, sender)
+function DeltaComms:GetPeerCapabilities(guildName, sender)
 	if not guildName or not sender then
 		return nil
 	end
@@ -294,7 +226,7 @@ function GBankClassic_DeltaComms:GetPeerCapabilities(guildName, sender)
 end
 
 -- Strip links from delta for bandwidth savings
-function GBankClassic_DeltaComms:StripDeltaLinks(delta)
+function DeltaComms:StripDeltaLinks(delta)
 	if not delta or not delta.changes then
 		return nil
 	end
@@ -303,6 +235,7 @@ function GBankClassic_DeltaComms:StripDeltaLinks(delta)
 		if not items then
 			return nil
 		end
+
 		local stripped = {}
 		for _, item in ipairs(items) do
 			local strippedItem = {
@@ -352,10 +285,10 @@ function GBankClassic_DeltaComms:StripDeltaLinks(delta)
 	return strippedDelta
 end
 
--- DELTA COMPUTATION FUNCTIONS --
+-- Delta computation functions --
 
 -- Compare two items for equality
-function GBankClassic_DeltaComms:ItemsEqual(item1, item2)
+function DeltaComms:ItemsEqual(item1, item2)
 	if not item1 and not item2 then
 		return true
 	end
@@ -395,7 +328,7 @@ function GBankClassic_DeltaComms:ItemsEqual(item1, item2)
 end
 
 -- Extract only the fields that changed between two items
-function GBankClassic_DeltaComms:GetChangedFields(oldItem, newItem)
+function DeltaComms:GetChangedFields(oldItem, newItem)
 	-- Always include ID and link for identification (merged items use these as keys)
 	local changes = {
 		ID = newItem.ID,
@@ -416,7 +349,7 @@ function GBankClassic_DeltaComms:GetChangedFields(oldItem, newItem)
 end
 
 -- Build a slot-indexed lookup table from items array
-function GBankClassic_DeltaComms:BuildItemIndex(items)
+function DeltaComms:BuildItemIndex(items)
 	local index = {}
 	if not items then
 		return index
@@ -433,7 +366,7 @@ function GBankClassic_DeltaComms:BuildItemIndex(items)
 end
 
 -- Compute delta between old and new item sets
-function GBankClassic_DeltaComms:ComputeItemDelta(oldItems, newItems)
+function DeltaComms:ComputeItemDelta(oldItems, newItems)
 	local delta = { added = {}, modified = {}, removed = {} }
 
 	oldItems = oldItems or {}
@@ -470,7 +403,7 @@ function GBankClassic_DeltaComms:ComputeItemDelta(oldItems, newItems)
 end
 
 -- Compute full delta for an alt
-function GBankClassic_DeltaComms:ComputeDelta(guildName, altName, currentAlt)
+function DeltaComms:ComputeDelta(guildName, altName, currentAlt)
 	if not guildName or not altName or not currentAlt then
 		return nil
 	end
@@ -507,7 +440,7 @@ function GBankClassic_DeltaComms:ComputeDelta(guildName, altName, currentAlt)
 end
 
 -- Estimate serialized size of a data structure
-function GBankClassic_DeltaComms:EstimateSize(data)
+function DeltaComms:EstimateSize(data)
 	if not data then
 		return 0
 	end
@@ -519,7 +452,7 @@ function GBankClassic_DeltaComms:EstimateSize(data)
 end
 
 -- Check if delta has any actual changes
-function GBankClassic_DeltaComms:DeltaHasChanges(delta)
+function DeltaComms:DeltaHasChanges(delta)
 	if not delta or not delta.changes then
 		return false
 	end
@@ -541,10 +474,10 @@ function GBankClassic_DeltaComms:DeltaHasChanges(delta)
 	return false
 end
 
--- DELTA APPLICATION FUNCTIONS --
+-- Delta application functions --
 
 -- Apply item delta to an items table
-function GBankClassic_DeltaComms:ApplyItemDelta(items, delta)
+function DeltaComms:ApplyItemDelta(items, delta)
 	if not items or not delta then
 		return false
 	end
@@ -601,7 +534,7 @@ function GBankClassic_DeltaComms:ApplyItemDelta(items, delta)
 end
 
 -- Apply a delta to alt data
-function GBankClassic_DeltaComms:ApplyDelta(guildInfo, altName, deltaData, sender)
+function DeltaComms:ApplyDelta(guildInfo, altName, deltaData, sender)
 	if not guildInfo then
 		return ADOPTION_STATUS.IGNORED
 	end
@@ -640,7 +573,7 @@ function GBankClassic_DeltaComms:ApplyDelta(guildInfo, altName, deltaData, sende
 	if playerIsGuildBankAlt then
 		-- We are a guild bank alt - protect our own data and other guild bank alt data
 
-		-- CRITICAL: If this delta is about US, reject it (we are the source of truth for our own data)
+		-- If this delta is about US, reject it (we are the source of truth for our own data)
 		if norm == playerNorm then
 			local errorMsg = string.format("Rejected delta from %s about ourselves (guild bank alt is source of truth for own data)", sender or "unknown")
 			GBankClassic_Output:Debug("DELTA", "%s", errorMsg)
@@ -648,7 +581,7 @@ function GBankClassic_DeltaComms:ApplyDelta(guildInfo, altName, deltaData, sende
 			return ADOPTION_STATUS.UNAUTHORIZED
 		end
 		
-		-- Also protect OTHER guild bank alt data from non-guild bank alt updates
+		-- Also protect other guild bank alt data from non-guild bank alt updates
 		local currentIsGuildBankAlt = GBankClassic_Guild:IsBank(norm)
 		local senderNorm = sender and GBankClassic_Guild:NormalizeName(sender) or nil
 		local senderIsGuildBankAlt = senderNorm and GBankClassic_Guild:IsBank(senderNorm) or false
@@ -683,7 +616,7 @@ function GBankClassic_DeltaComms:ApplyDelta(guildInfo, altName, deltaData, sende
 
 	if not success then
 		-- Delta application failed, request full sync
-		local errorMsg = string.format("Delta application error: %s", tostring(err))
+		local errorMsg = string.format("Delta application ERROR: %s", tostring(err))
 		GBankClassic_Output:Error("Failed to apply delta for %s: %s", norm, tostring(err))
 		self:RecordDeltaError(guildInfo.name, norm, "APPLICATION_ERROR", errorMsg)
 		GBankClassic_Guild:QueryAlt(nil, norm, nil)
@@ -708,7 +641,7 @@ function GBankClassic_DeltaComms:ApplyDelta(guildInfo, altName, deltaData, sende
 	-- Reset error count on successful application
 	self:ResetDeltaErrorCount(guildInfo.name, norm)
 
-	-- Trigger UI refresh if Inventory window is open
+	-- Trigger UI refresh if inventory window is open
 	if GBankClassic_UI_Inventory and GBankClassic_UI_Inventory.isOpen then
 		GBankClassic_UI_Inventory:DrawContent()
 	end
@@ -717,7 +650,7 @@ function GBankClassic_DeltaComms:ApplyDelta(guildInfo, altName, deltaData, sende
 end
 
 -- Apply a chain of deltas sequentially
-function GBankClassic_DeltaComms:ApplyDeltaChain(guildInfo, altName, deltaChain)
+function DeltaComms:ApplyDeltaChain(guildInfo, altName, deltaChain)
 	if not altName or not deltaChain or type(deltaChain) ~= "table" or #deltaChain == 0 then
 		return ADOPTION_STATUS.INVALID
 	end
@@ -773,9 +706,9 @@ function GBankClassic_DeltaComms:ApplyDeltaChain(guildInfo, altName, deltaChain)
 	return ADOPTION_STATUS.ADOPTED
 end
 
--- ERROR TRACKING FUNCTIONS --
+-- Error tracking functions --
 
-function GBankClassic_DeltaComms:RecordDeltaError(guildName, altName, errorType, errorMessage)
+function DeltaComms:RecordDeltaError(guildName, altName, errorType, errorMessage)
 	local error = {
 		altName = altName,
 		errorType = errorType,
@@ -808,12 +741,13 @@ function GBankClassic_DeltaComms:RecordDeltaError(guildName, altName, errorType,
 					db.deltaErrors.notifiedAlts[altName] = true
 				end
 			end
+
 			return
 		end
 	end
 
 	-- Fallback: Use temporary in-memory storage
-	GBankClassic_Output:Debug("DELTA", "Using temporary error storage for %s (%s): Guild.Info not initialized", altName or "unknown", errorType or "unknown")
+	GBankClassic_Output:Debug("DELTA", "Using temporary error storage for %s (%s): initialization issue", altName or "unknown", errorType or "unknown")
 
 	if not GBankClassic_Guild.tempDeltaErrors then
 		GBankClassic_Guild.tempDeltaErrors = {
@@ -846,7 +780,7 @@ function GBankClassic_DeltaComms:RecordDeltaError(guildName, altName, errorType,
 end
 
 -- Reset failure count for an alt (called on successful sync)
-function GBankClassic_DeltaComms:ResetDeltaErrorCount(guildName, altName)
+function DeltaComms:ResetDeltaErrorCount(guildName, altName)
 	if not altName then
 		return
 	end
@@ -875,26 +809,8 @@ function GBankClassic_DeltaComms:ResetDeltaErrorCount(guildName, altName)
 	end
 end
 
--- Get recent delta errors
-function GBankClassic_DeltaComms:GetRecentDeltaErrors(guildName)
-	-- Return from database if available
-	if guildName then
-		local db = GBankClassic_Database.db.factionrealm[guildName]
-		if db and db.deltaErrors then
-			return db.deltaErrors.lastErrors
-		end
-	end
-
-	-- Fallback to temporary storage
-	if GBankClassic_Guild.tempDeltaErrors then
-		return GBankClassic_Guild.tempDeltaErrors.lastErrors
-	end
-
-	return {}
-end
-
 -- Get failure count for an alt
-function GBankClassic_DeltaComms:GetDeltaFailureCount(guildName, altName)
+function DeltaComms:GetDeltaFailureCount(guildName, altName)
 	-- Check database first if available
 	if guildName then
 		local db = GBankClassic_Database.db.factionrealm[guildName]
@@ -912,7 +828,7 @@ function GBankClassic_DeltaComms:GetDeltaFailureCount(guildName, altName)
 end
 
 -- Clear error counters for all offline players (called on roster update)
-function GBankClassic_DeltaComms:ClearOfflineErrorCounters(guildName)
+function DeltaComms:ClearOfflineErrorCounters(guildName)
 	if not guildName then
 		return
 	end
@@ -931,48 +847,10 @@ function GBankClassic_DeltaComms:ClearOfflineErrorCounters(guildName)
 	end
 end
 
--- PULL-BASED PROTOCOL FUNCTIONS --
-
--- -- Request a chain of deltas to catch up from an old version
--- function GBankClassic_DeltaComms:RequestDeltaChain(guildName, altName, fromVersion, toVersion, sender)
--- 	if not altName or not fromVersion or not toVersion or not sender then
--- 		return false
--- 	end
-
--- 	-- Validate request parameters
--- 	if fromVersion >= toVersion then
--- 		GBankClassic_Output:Debug("DELTA", "Invalid delta chain request: fromVersion >= toVersion")
--- 		return false
--- 	end
-
--- 	-- Check if sender is online before attempting WHISPER
--- 	if not GBankClassic_Guild:IsPlayerOnline(sender) then
--- 		GBankClassic_Output:Debug("DELTA", "Cannot request delta chain for %s from %s - sender is offline", altName, sender)
-
--- 		return false
--- 	end
-
--- 	-- Note: We don't check version gap age here - if we have the deltas, we use them.
--- 	-- The delta history cleanup (DELTA_HISTORY_MAX_AGE) handles storage limits.
--- 	-- If we can't build the chain, BuildDeltaChain will return nil and we'll fall back.
-
--- 	-- Send delta range request
--- 	local requestData = {
--- 		altName = altName,
--- 		fromVersion = fromVersion,
--- 		toVersion = toVersion
--- 	}
-
--- 	local serialized = GBankClassic_Core:SerializeWithChecksum(requestData)
--- 	GBankClassic_Core:SendWhisper("gbank-dr", serialized, sender, "ALERT")
-
--- 	GBankClassic_Output:Debug("DELTA", "Requesting delta chain for %s from v%d to v%d from %s", altName, fromVersion, toVersion, sender)
-
--- 	return true
--- end
+-- Pull-based protocol functions --
 
 -- Fast-fill missing alts using pull-based protocol
-function GBankClassic_DeltaComms:FastFillMissingAlts(guildInfo)
+function DeltaComms:FastFillMissingAlts(guildInfo)
 	if not guildInfo then
 		return
 	end

@@ -11,6 +11,9 @@
 # Libraries
 embeds.xml
 
+# Globals and shared functions
+Globals.lua
+
 # Modules
 Modules/Constants.lua
 Modules/Output.lua

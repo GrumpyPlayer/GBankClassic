@@ -1,22 +1,46 @@
-GBankClassic_Options = {}
+GBankClassic_Options = GBankClassic_Options or {}
 
-function GBankClassic_Options:Init()
-    self.db = LibStub("AceDB-3.0"):New("GBankClassicOptionDB")
-    self.db.char = self.db.char or {}
-    self.db.char.minimap = self.db.char.minimap or { enabled = true }
-    self.db.char.combat = self.db.char.combat or { hide = true }
-    self.db.char.bank = self.db.char.bank or { donations = true }
-    self.db.char.bank['donations'] = (self.db.char.bank['donations'] == nil) and true or self.db.char.bank['donations']
-    self.db.char.framePositions = self.db.char.framePositions or {}
-    self.db.global = self.db.global or {}
-    self.db.global.bank = self.db.global.bank or { report = true, logLevel = LOG_LEVEL.INFO, commDebug = false, muteSyncProgress = false }
-	self.db.global.bank["logLevel"] = self.db.global.bank["logLevel"] or LOG_LEVEL.INFO
-	self.db.global.bank["commDebug"] = self.db.global.bank["commDebug"] or false
-	self.db.global.bank["muteSyncProgress"] = self.db.global.bank["muteSyncProgress"] or false
+local Options = GBankClassic_Options
 
-    -- Initialize logger with saved level
+local Globals = GBankClassic_Globals
+local upvalues = Globals.GetUpvalues("LibStub")
+local LibStub = upvalues.LibStub
+local upvalues = Globals.GetUpvalues("Settings")
+local Settings = upvalues.Settings
+
+function Options:Init()
+	local defaults = {
+		char = {
+			minimap = { enabled = true },
+			combat = { hide = true },
+			bank = { donations = true },
+			framePositions = {},
+		},
+		global = {
+			bank = { report = true, logLevel = LOG_LEVEL.INFO, commDebug = false },
+			-- requests = {
+			-- 	maxRequestPercent = 100,  -- Maximum % of available items that can be requested (100 = no limit)
+			-- },
+		},
+	}
+	self.db = LibStub("AceDB-3.0"):New("GBankClassicOptionDB", defaults)
+	
+	-- Migrate from old shutup toggle to new logLevel
+	if self.db.global.bank["shutup"] ~= nil then
+		if self.db.global.bank["shutup"] == true then
+			self.db.global.bank["logLevel"] = LOG_LEVEL.RESPONSE
+		end
+		self.db.global.bank["shutup"] = nil
+	end
+	if self.db.global.bank["logLevel"] == nil then
+		self.db.global.bank["logLevel"] = LOG_LEVEL.INFO
+	end
+	if self.db.global.bank["commDebug"] == nil then
+		self.db.global.bank["commDebug"] = false
+	end
+
+    -- Initialize
 	GBankClassic_Output:SetLevel(self.db.global.bank["logLevel"])
-	-- Initialize comm debug with saved setting
 	GBankClassic_Output:SetCommDebug(self.db.global.bank["commDebug"])
 
     local options = {
@@ -79,19 +103,6 @@ function GBankClassic_Options:Init()
 							return self.db.global.bank["logLevel"]
 						end,
                     },
-					["muteSyncProgress"] = {
-						order = 2.6,
-						type = "toggle",
-						width = "full",
-						name = "Mute sync progress messages",
-						desc = "Hides 'Sharing guild bank data...' and 'Send complete...' messages during data sync",
-						set = function(_, v)
-							self.db.global.bank["muteSyncProgress"] = v
-						end,
-						get = function()
-							return self.db.global.bank["muteSyncProgress"]
-						end,
-					},
                     ["reset"] = {
                         order = -1,
                         name = "Reset database",
@@ -101,6 +112,7 @@ function GBankClassic_Options:Init()
                             if not guild then
                                 return
 							end
+
                             GBankClassic_Guild:Reset(guild)
                         end,
                     },
@@ -384,7 +396,7 @@ function GBankClassic_Options:Init()
 			-- 			max = 100,
 			-- 			step = 1,
 			-- 			get = function()
-			-- 				return GBankClassic_Options:GetMaxRequestPercent()
+			-- 				return Options:GetMaxRequestPercent()
 			-- 			end,
 			-- 			set = function(_, v)
 			-- 				-- Write to guild-synced settings (propagates to all clients)
@@ -404,7 +416,7 @@ function GBankClassic_Options:Init()
 			-- 			order = 3,
 			-- 			type = "group",
 			-- 			inline = true,
-			-- 			name = "Example Calculations",
+			-- 			name = "Example calculations",
 			-- 			args = {
 			-- 				["example1"] = {
 			-- 					order = 1,
@@ -414,7 +426,8 @@ function GBankClassic_Options:Init()
 			-- 						local pct = self.db.global.requests.maxRequestPercent or 100
 			-- 						local available = 100
 			-- 						local maxRequest = math.max(1, math.floor(available * pct / 100))
-			-- 						return string.format("|cff00ff00Current Setting: %d%%|r\n\nIf bank has %d items available:\n  Max: |cffffd700%d items|r", pct, available, maxRequest)
+
+			-- 						return string.format("|cff00ff00Current setting: %d%%|r\n\nIf bank has %d items available:\n  Max: |cffffd700%d items|r", pct, available, maxRequest)
 			-- 					end,
 			-- 				},
 			-- 				["example2"] = {
@@ -425,6 +438,7 @@ function GBankClassic_Options:Init()
 			-- 						local pct = self.db.global.requests.maxRequestPercent or 100
 			-- 						local available = 1
 			-- 						local maxRequest = math.max(1, math.floor(available * pct / 100))
+
 			-- 						return string.format("If bank has %d item available (gear/single):\n  Max: |cffffd700%d item|r", available, maxRequest)
 			-- 					end,
 			-- 				},
@@ -439,7 +453,7 @@ function GBankClassic_Options:Init()
     LibStub("AceConfigDialog-3.0"):AddToBlizOptions("GBankClassic - Revived", "GBankClassic - Revived")
 end
 
-function GBankClassic_Options:InitGuild()
+function Options:InitGuild()
     local player = GBankClassic_Guild:GetPlayer()
     if not GBankClassic_Guild:IsBank(player) then 
         return
@@ -447,6 +461,8 @@ function GBankClassic_Options:InitGuild()
 
     if self.db and self.db.char and self.db.char.bank and self.db.char.bank["enabled"] == nil then
         self.db.char.bank["enabled"] = true
+
+		-- Send an update version of the roster after enabling a new guild bank alt
         GBankClassic_Guild:AuthorRosterData()
     end
 
@@ -455,6 +471,7 @@ function GBankClassic_Options:InitGuild()
 		name = "Bank",
         hidden = function()
             local player = GBankClassic_Guild:GetPlayer()
+			
             return not GBankClassic_Guild:IsBank(player)
         end,
         args = {
@@ -467,6 +484,7 @@ function GBankClassic_Options:InitGuild()
                 set = function(_, v) 
                     self.db.char.bank["enabled"] = v 
                     if v == true then
+						-- Send an update version of the roster after enabling a new guild bank alt
                         GBankClassic_Guild:AuthorRosterData()
                     end
                 end,
@@ -524,40 +542,40 @@ function GBankClassic_Options:InitGuild()
         },
     }
     LibStub("AceConfig-3.0"):RegisterOptionsTable("GBankClassic - Revived/Bank", bankOptions)
-    if self.optionsAdded then return end
+
+    if self.optionsAdded then
+		return
+	end
+
     LibStub("AceConfigDialog-3.0"):AddToBlizOptions("GBankClassic - Revived/Bank", "Bank", "GBankClassic - Revived")
     self.optionsAdded = true
 end
 
-function GBankClassic_Options:GetBankEnabled()
+function Options:GetBankEnabled()
     return self.db.char.bank["enabled"]
 end
 
-function GBankClassic_Options:GetDonationEnabled()
+function Options:GetDonationEnabled()
     return self.db.char.bank["donations"]
 end
 
-function GBankClassic_Options:GetBankReporting()
+function Options:GetBankReporting()
     return self.db.global.bank["report"]
 end
 
-function GBankClassic_Options:GetLogLevel()
+function Options:GetLogLevel()
 	return self.db.global.bank["logLevel"] or LOG_LEVEL.INFO
 end
 
-function GBankClassic_Options:GetMinimapEnabled()
+function Options:GetMinimapEnabled()
     return self.db.char.minimap["enabled"]
 end
 
-function GBankClassic_Options:GetCombatHide()
+function Options:GetCombatHide()
     return self.db.char.combat["hide"]
 end
 
-function GBankClassic_Options:IsSyncProgressMuted()
-	return self.db.global.bank["muteSyncProgress"] or false
-end
-
--- function GBankClassic_Options:GetMaxRequestPercent()
+-- function Options:GetMaxRequestPercent()
 -- 	-- Read from guild-synced settings first (officer-configured, syncs to all clients)
 -- 	if GBankClassic_Guild and GBankClassic_Guild.Info and GBankClassic_Guild.Info.settings then
 -- 		return GBankClassic_Guild.Info.settings.maxRequestPercent or 100
@@ -570,6 +588,6 @@ end
 -- 	return self.db.global.requests.maxRequestPercent or 100
 -- end
 
-function GBankClassic_Options:Open()
+function Options:Open()
     Settings.OpenToCategory("GBankClassic - Revived")
 end

@@ -1,24 +1,41 @@
-GBankClassic_Guild = {}
+GBankClassic_Guild = GBankClassic_Guild or {}
 
-GBankClassic_Guild.Info = nil
+local Guild = GBankClassic_Guild
 
--- Cache of online guild members (updated via GUILD_ROSTER_UPDATE)
--- Avoids stale data from GuildRoster() which only requests an update
-GBankClassic_Guild.onlineMembers = {}
-
--- Cache of guild guild bank alts (updated via GUILD_ROSTER_UPDATE)
--- Prevents iterating through entire guild roster on every IsBank() call
-GBankClassic_Guild.banksCache = nil
-
--- Temporary in-memory error storage for when Guild.Info is not initialized
-GBankClassic_Guild.tempDeltaErrors = {
+Guild.Info = nil
+Guild.onlineMembers = {}
+Guild.banksCache = nil
+Guild.tempDeltaErrors = {
 	lastErrors = {},
 	failureCounts = {},
 	notifiedAlts = {},
 }
 
--- Migrate temporary errors to database once Guild.Info is initialized
-function GBankClassic_Guild:MigrateTempErrors()
+local PENDING_SYNC_TTL_SECONDS = 180
+
+local Globals = GBankClassic_Globals
+local upvalues = Globals.GetUpvalues("wipe")
+local wipe = upvalues.wipe
+local upvalues = Globals.GetUpvalues("GetNormalizedRealmName", "UnitName", "NewTicker", "IsInGuild", "GetGuildInfo", "GetNumGuildMembers", "GetGuildRosterInfo", "GetAddOnMetadata", "GetServerTime", "GetTime", "GetItemInfo", "After", "debugprofilestop", "CanViewOfficerNote")
+local GetNormalizedRealmName = upvalues.GetNormalizedRealmName
+local UnitName = upvalues.UnitName
+local NewTicker = upvalues.NewTicker
+local IsInGuild = upvalues.IsInGuild
+local GetGuildInfo = upvalues.GetGuildInfo
+local GetNumGuildMembers = upvalues.GetNumGuildMembers
+local GetGuildRosterInfo = upvalues.GetGuildRosterInfo
+local GetAddOnMetadata = upvalues.GetAddOnMetadata
+local GetServerTime = upvalues.GetServerTime
+local GetTime = upvalues.GetTime
+local GetItemInfo = upvalues.GetItemInfo
+local After = upvalues.After
+local debugprofilestop = upvalues.debugprofilestop
+local CanViewOfficerNote = upvalues.CanViewOfficerNote
+local upvalues = Globals.GetUpvalues("Item")
+local Item = upvalues.Item
+
+-- Migrate temporary errors to database once GBankClassic_Guild.Info is initialized
+function Guild:MigrateTempErrors()
 	if not self.Info or not self.Info.name then
 		return
 	end
@@ -63,26 +80,21 @@ function GBankClassic_Guild:MigrateTempErrors()
 end
 
 -- Record a delta error with details (persisted to database or temp storage)
-function GBankClassic_Guild:RecordDeltaError(altName, errorType, errorMessage)
+function Guild:RecordDeltaError(altName, errorType, errorMessage)
 	return GBankClassic_DeltaComms:RecordDeltaError(self.Info and self.Info.name, altName, errorType, errorMessage)
 end
 
 -- Reset failure count for an alt (called on successful sync)
-function GBankClassic_Guild:ResetDeltaErrorCount(altName)
+function Guild:ResetDeltaErrorCount(altName)
 	return GBankClassic_DeltaComms:ResetDeltaErrorCount(self.Info and self.Info.name, altName)
 end
 
--- Get recent delta errors
-function GBankClassic_Guild:GetRecentDeltaErrors()
-	return GBankClassic_DeltaComms:GetRecentDeltaErrors(self.Info and self.Info.name)
-end
-
 -- Get failure count for an alt
-function GBankClassic_Guild:GetDeltaFailureCount(altName)
+function Guild:GetDeltaFailureCount(altName)
 	return GBankClassic_DeltaComms:GetDeltaFailureCount(self.Info and self.Info.name, altName)
 end
 
-function GetPlayerWithNormalizedRealm(name)
+local function getPlayerWithNormalizedRealm(name)
 	if string.match(name, "(.*)%-(.*)") then
 		return name
 	end
@@ -90,12 +102,12 @@ function GetPlayerWithNormalizedRealm(name)
 	return name .. "-" .. GetNormalizedRealmName("player")
 end
 
-local function NormalizePlayerName(name)
+local function normalizePlayerName(name)
 	if not name then
 		return nil
 	end
 
-	if _G.type(name) ~= "string" then
+	if type(name) ~= "string" then
 		name = tostring(name)
 	end
 
@@ -125,16 +137,16 @@ local function NormalizePlayerName(name)
 	end
 
 	-- If helper exists, use it
-	if GetPlayerWithNormalizedRealm then
-		return GetPlayerWithNormalizedRealm(normalized)
+	if getPlayerWithNormalizedRealm then
+		return getPlayerWithNormalizedRealm(normalized)
 	end
 
 	-- Fallback: append current realm
 	return normalized .. "-" .. GetNormalizedRealmName("player")
 end
-GBankClassic_Guild.NormalizePlayerName = NormalizePlayerName
+Guild.NormalizePlayerName = normalizePlayerName
 
-function GBankClassic_Guild:NormalizeName(name)
+function Guild:NormalizeName(name)
 	if not name then
 		return nil
 	end
@@ -147,48 +159,55 @@ function GBankClassic_Guild:NormalizeName(name)
 	return name
 end
 
-function GBankClassic_Guild:GetNormalizedPlayer(name)
+function Guild:GetNormalizedPlayer(name)
 	return self:NormalizeName(name or self:GetPlayer())
 end
 
-function GBankClassic_Guild:GetPlayer()
+function Guild:GetPlayer()
+    -- Return cached player if available
     if GBankClassic_Bank.player then
         return GBankClassic_Bank.player
     end
 
-    -- The below code should never be called, but is here for safety
-    local function try()
-        local name, realm = UnitName("player"), GetNormalizedRealmName()
-        if name and realm then
-            GBankClassic_Bank.player = name .. "-" .. realm
+    -- Try to get player info immediately
+    local name, realm = UnitName("player"), GetNormalizedRealmName()
+    if name and realm then
+        GBankClassic_Bank.player = name .. "-" .. realm
 
-            return true
-        end
-    end
-    if try() then
         return GBankClassic_Bank.player
     end
-    local count, max, delay = 0, 10, 15
-	local timer
-    timer = C_Timer.NewTicker(delay, function()
-        count = count + 1
-        if try() or count >= max then
-            if timer then
+
+    -- If player info not yet available, set up background retry (happens once)
+    if not self._playerRetryScheduled then
+        self._playerRetryScheduled = true
+        local retryCount = 0
+        local maxRetries = 20
+        local timer
+        timer = NewTicker(0.5, function()
+            retryCount = retryCount + 1
+            local name, realm = UnitName("player"), GetNormalizedRealmName()
+            if name and realm then
+                GBankClassic_Bank.player = name .. "-" .. realm
                 timer:Cancel()
+                self._playerRetryScheduled = false
+            elseif retryCount >= maxRetries then
+                timer:Cancel()
+                self._playerRetryScheduled = false
             end
-        end
-    end)
-  
-    return nil
+        end)
+    end
+
+    -- Always return a value (cached or fallback)
+    return GBankClassic_Bank.player or "Unknown-Unknown"
 end
 
-function GBankClassic_Guild:GetGuild()
+function Guild:GetGuild()
     return IsInGuild("player") and GetGuildInfo("player") or nil
 end
 
 -- Check if a player is in the current guild roster
 -- Returns true if the player is a member of the current guild
-function GBankClassic_Guild:IsInCurrentGuildRoster(playerName)
+function Guild:IsInCurrentGuildRoster(playerName)
 	if not playerName then
 		return false
 	end
@@ -198,9 +217,6 @@ function GBankClassic_Guild:IsInCurrentGuildRoster(playerName)
 	end
 
 	local normPlayer = self:NormalizeName(playerName)
-
-    local GetNumGuildMembers = GetNumGuildMembers or C_GuildInfo.GetNumGuildMembers
-    local GetGuildRosterInfo = GetGuildRosterInfo or C_GuildInfo.GetGuildRosterInfo
 	for i = 1, GetNumGuildMembers() do
 		local rosterName = GetGuildRosterInfo(i)
 		if rosterName then
@@ -214,9 +230,7 @@ function GBankClassic_Guild:IsInCurrentGuildRoster(playerName)
 	return false
 end
 
-function GBankClassic_Guild:GetPlayerInfo(name)
-    local GetNumGuildMembers = GetNumGuildMembers or C_GuildInfo.GetNumGuildMembers
-    local GetGuildRosterInfo = GetGuildRosterInfo or C_GuildInfo.GetGuildRosterInfo
+function Guild:GetPlayerInfo(name)
     for i = 1, GetNumGuildMembers() do
         local playerRealm, _, _, _, _, _, _, _, _, _, class = GetGuildRosterInfo(i)
         if playerRealm == name then
@@ -227,7 +241,7 @@ function GBankClassic_Guild:GetPlayerInfo(name)
     return nil
 end
 
-function GBankClassic_Guild:Reset(name)
+function Guild:Reset(name)
 	if not name then
 		return
 	end
@@ -239,11 +253,10 @@ function GBankClassic_Guild:Reset(name)
 	self:MigrateTempErrors()
 end
 
-function GBankClassic_Guild:Init(name)
+function Guild:Init(name)
 	if not name then
 		return false
 	end
-
 	if self.Info and self.Info.name == name then
 		return false
 	end
@@ -265,7 +278,7 @@ function GBankClassic_Guild:Init(name)
     return true
 end
 
-function GBankClassic_Guild:CleanupMalformedAlts()
+function Guild:CleanupMalformedAlts()
 	if not self.Info or not self.Info.alts then
 		return 0
 	end
@@ -273,14 +286,14 @@ function GBankClassic_Guild:CleanupMalformedAlts()
     local cleaned = 0
     for name, alt in pairs(self.Info.alts) do
         local remove = false
-        if _G.type(alt) ~= "table" then
+        if type(alt) ~= "table" then
             remove = true
         else
             -- Ensure version is present, but malformed nested fields are problematic
 			if alt.items then
 				-- alt.items should be an array or a map of items with ID fields; remove any empty entries
 				for k, v in pairs(alt.items) do
-					if not v or _G.type(v) ~= "table" or not v.ID then
+					if not v or type(v) ~= "table" or not v.ID then
 						alt.items[k] = nil
 					end
 				end
@@ -312,7 +325,7 @@ function GBankClassic_Guild:CleanupMalformedAlts()
     if self.Info.roster and self.Info.roster.alts then
         local new_alts = {}
         for _, v in pairs(self.Info.roster.alts) do
-            if _G.type(v) == "string" and v ~= "" then
+            if type(v) == "string" and v ~= "" then
                 table.insert(new_alts, v)
             end
         end
@@ -322,7 +335,7 @@ function GBankClassic_Guild:CleanupMalformedAlts()
     return cleaned
 end
 
-function GBankClassic_Guild:GetBanks()
+function Guild:GetBanks()
 	-- Return cached banks list if available
 	if self.banksCache ~= nil then
 		return self.banksCache
@@ -330,12 +343,10 @@ function GBankClassic_Guild:GetBanks()
 
 	-- Build banks list
     local banks = {}
-    local GetNumGuildMembers = GetNumGuildMembers or C_GuildInfo.GetNumGuildMembers
-    local GetGuildRosterInfo = GetGuildRosterInfo or C_GuildInfo.GetGuildRosterInfo
     for i = 1, GetNumGuildMembers() do
-        local name, _, _, _, _, _, publicNote, officer_note, _, _, _ = GetGuildRosterInfo(i)
+        local name, _, _, _, _, _, publicNote, officer_note = GetGuildRosterInfo(i)
         if publicNote ~= nil or officer_note ~= nil then
-            if string.match(publicNote, "(.*)gbank(.*)") or string.match(officer_note, "(.*)gbank(.*)") then
+            if (publicNote and string.match(publicNote, "(.*)gbank(.*)")) or (officer_note and string.match(officer_note, "(.*)gbank(.*)")) then
                 table.insert(banks, name)
             end
         end
@@ -346,27 +357,26 @@ function GBankClassic_Guild:GetBanks()
 		self.banksCache = nil
 		return nil
 	end
+
 	self.banksCache = banks
 
 	return banks
 end
 
 -- Invalidate the banks cache (call when guild roster changes)
-function GBankClassic_Guild:InvalidateBanksCache()
+function Guild:InvalidateBanksCache()
 	self.banksCache = nil
 end
 
 -- Rebuild roster of guild bank alts from local guild notes (no network communication needed)
 -- Called automatically on GUILD_ROSTER_UPDATE event
--- Note: this will be incomplete for players without access to view officer notes where gbank can also be maintained
-function GBankClassic_Guild:RebuildGuildBankAltsRoster()
+-- This will be incomplete for players without access to view officer notes where gbank can also be maintained
+function Guild:RebuildGuildBankAltsRoster()
 	if not self.Info then
 		return
 	end
 
 	local banks = {}
-    local GetNumGuildMembers = GetNumGuildMembers or C_GuildInfo.GetNumGuildMembers
-    local GetGuildRosterInfo = GetGuildRosterInfo or C_GuildInfo.GetGuildRosterInfo
 	for i = 1, GetNumGuildMembers() do
 		local name, _, _, _, _, _, publicNote, officer_note = GetGuildRosterInfo(i)
 		if name and (publicNote or officer_note) then
@@ -386,7 +396,7 @@ function GBankClassic_Guild:RebuildGuildBankAltsRoster()
 	end
 end
 
-function GBankClassic_Guild:GetRosterAlts()
+function Guild:GetRosterAlts()
 	if not self.Info then
 		return nil
 	end
@@ -396,7 +406,7 @@ function GBankClassic_Guild:GetRosterAlts()
 
 	if roster and roster.alts then
 		for _, v in pairs(roster.alts) do
-			if _G.type(v) == "string" and v ~= "" then
+			if type(v) == "string" and v ~= "" then
 				table.insert(list, v)
 			end
 		end
@@ -407,7 +417,7 @@ function GBankClassic_Guild:GetRosterAlts()
 	end
 
 	for name, alt in pairs(self.Info.alts or {}) do
-		if _G.type(alt) == "table" then
+		if type(alt) == "table" then
 			table.insert(list, name)
 		end
 	end
@@ -422,16 +432,16 @@ end
 -- Request missing guild bank alts on UI open
 -- Compares roster guild bank alts against local alt data and queries for missing guild bank alts
 -- Use current guild roster instead of cached roster to prevent requesting data for guild bank alts from other guilds
-function GBankClassic_Guild:FastFillMissingAlts()
+function Guild:FastFillMissingAlts()
 	return GBankClassic_DeltaComms:FastFillMissingAlts(self.Info)
 end
 
-function GBankClassic_Guild:IsBank(player)
+function Guild:IsBank(player)
 	if not player then
 		return false
 	end
 
-    local banks = GBankClassic_Guild:GetBanks()
+    local banks = self:GetBanks()
 	if banks == nil then
 		return false
 	end
@@ -448,34 +458,11 @@ function GBankClassic_Guild:IsBank(player)
     return isBank
 end
 
-function GBankClassic_Guild:GetAnyGuildBankAlt()
-	local banks = self:GetBanks()
-	if not banks or #banks == 0 then
-		return nil
-	end
-
-	-- Return the first guild bank alt (normalized)
-	return self:NormalizeName(banks[1])
-end
-
-function GBankClassic_Guild:CheckVersion(version)
-	if self.Info then
-		return false
-	end
-
-	if version > self.Info.roster.version then
-		return false
-	end
-
-	return true
-end
-
-function GBankClassic_Guild:GetVersion()
+function Guild:GetVersion()
 	if not self.Info then
 		return nil
 	end
 
-    local GetAddOnMetadata = GetAddOnMetadata or C_AddOns.GetAddOnMetadata
     local versionInfo = GetAddOnMetadata("GBankClassic", "Version"):gsub("%.", "")
     local versionNumber = tonumber(versionInfo)
     local data = {
@@ -489,7 +476,6 @@ function GBankClassic_Guild:GetVersion()
     if self.Info.name then
         data.name = self.Info.name
     end
-
     if self.Info.roster.version then
         data.roster = self.Info.roster.version
     end
@@ -501,7 +487,7 @@ function GBankClassic_Guild:GetVersion()
 	-- }
 
     for k, v in pairs(self.Info.alts) do
-        if _G.type(v) == "table" and v.version then
+        if type(v) == "table" and v.version then
 			-- Send hash only in delta-enabled mode (backwards compatibility)
 			if PROTOCOL.SUPPORTS_DELTA and v.inventoryHash then
 				data.alts[k] = {
@@ -520,12 +506,11 @@ function GBankClassic_Guild:GetVersion()
     return data
 end
 
-local PENDING_SYNC_TTL_SECONDS = 180
-
-function GBankClassic_Guild:MarkPendingSync(syncType, sender, name)
+function Guild:MarkPendingSync(syncType, sender, name)
 	if not syncType or not sender then
 		return
 	end
+
 	local now = GetServerTime()
 	local normSender = self:NormalizeName(sender)
 	if not self.pending_sync then
@@ -539,21 +524,21 @@ function GBankClassic_Guild:MarkPendingSync(syncType, sender, name)
 	end
 
 	if syncType == "roster" then
-		if self.pending_sync.roster then
+		if self.pending_sync.roster and normSender then
 			self.pending_sync.roster[normSender] = now
 		end
 	elseif syncType == "alt" and name then
 		local normName = self:NormalizeName(name)
-		if self.pending_sync.alts and not self.pending_sync.alts[normName] then
+		if self.pending_sync.alts and normName and not self.pending_sync.alts[normName] then
 			self.pending_sync.alts[normName] = {}
 		end
-		if self.pending_sync.alts and self.pending_sync.alts[normName] then
+		if self.pending_sync.alts and normName and normSender and self.pending_sync.alts[normName] then
 			self.pending_sync.alts[normName][normSender] = now
 		end
 	end
 end
 
-function GBankClassic_Guild:ConsumePendingSync(syncType, sender, name)
+function Guild:ConsumePendingSync(syncType, sender, name)
 	if not syncType or not sender then
 		return false
 	end
@@ -563,7 +548,7 @@ function GBankClassic_Guild:ConsumePendingSync(syncType, sender, name)
 	end
 
 	local now = GetServerTime()
-	local normSender = self:NormalizeName(sender)
+	local normSender = self:NormalizeName(sender) or ""
 	if syncType == "roster" then
 		local roster = self.pending_sync.roster
 		local ts = roster and roster[normSender]
@@ -579,7 +564,7 @@ function GBankClassic_Guild:ConsumePendingSync(syncType, sender, name)
 		return false
 	end
 	if syncType == "alt" and name then
-		local normName = self:NormalizeName(name)
+		local normName = self:NormalizeName(name) or ""
 		local alts = self.pending_sync.alts and self.pending_sync.alts[normName]
 		local ts = alts and alts[normSender]
 		if ts and now - ts <= PENDING_SYNC_TTL_SECONDS then
@@ -601,7 +586,7 @@ function GBankClassic_Guild:ConsumePendingSync(syncType, sender, name)
 	return false
 end
 
-function GBankClassic_Guild:QueryRoster(player, version)
+function Guild:QueryRoster(player, version)
 	self.hasRequested = true
 	if self.requestCount == nil then
 		self.requestCount = 1
@@ -613,7 +598,7 @@ function GBankClassic_Guild:QueryRoster(player, version)
 	GBankClassic_Core:SendCommMessage("gbank-r", data, "Guild", nil, "NORMAL")
 end
 
-function GBankClassic_Guild:QueryAlt(player, name, version)
+function Guild:QueryAlt(player, name, version)
 	self.hasRequested = true
 	if self.requestCount == nil then
 		self.requestCount = 1
@@ -625,13 +610,13 @@ function GBankClassic_Guild:QueryAlt(player, name, version)
 	GBankClassic_Core:SendCommMessage("gbank-r", data, "Guild", nil, "NORMAL")
 end
 
--- Pull-based query - WHISPER to guild bank alt if known, GUILD if unknown
-function GBankClassic_Guild:QueryAltPullBased(name)
+-- Pull-based query - whisper to guild bank alt if known, send to guild otherwise
+function Guild:QueryAltPullBased(name)
 	if not name then
 		return
 	end
 
-	local norm = self:NormalizeName(name)
+	local norm = self:NormalizeName(name) or ""
 	self.hasRequested = true
 	if self.requestCount == nil then
 		self.requestCount = 1
@@ -643,7 +628,7 @@ function GBankClassic_Guild:QueryAltPullBased(name)
 	self._lastQueryTime = self._lastQueryTime or {}
 	local now = GetTime()
 	local last = self._lastQueryTime[norm] or 0
-	local cooldown = 15 -- seconds
+	local cooldown = 15 -- Seconds
 	if now - last < cooldown then
 		GBankClassic_Output:Debug("SYNC", "QueryAltPullBased: Skipping %s due to cooldown (%.2fs remaining)", norm, cooldown - (now - last))
 
@@ -673,21 +658,21 @@ function GBankClassic_Guild:QueryAltPullBased(name)
 	local data = GBankClassic_Core:SerializeWithChecksum(request)
 
 	if guildBankAlt and (GetServerTime() - mostRecent) < 600 and self:IsPlayerOnline(guildBankAlt) then
-		-- Guild bank alt known, seen recently (within 10 min), AND currently online - WHISPER directly
-		GBankClassic_Output:DebugComm("SENDING WHISPER: gbank-r to %s for alt %s", guildBankAlt, norm)
-		GBankClassic_Output:Debug("SYNC", "Pull-based query for %s (WHISPER to guild bank alt %s)", norm, guildBankAlt)
+		-- Guild bank alt known, seen recently (within 10 min), and currently online - whisper directly
+		GBankClassic_Output:DebugComm("Sending whisper: gbank-r to %s for alt %s", guildBankAlt, norm)
+		GBankClassic_Output:Debug("SYNC", "Pull-based query for %s (whisper to guild bank alt %s)", norm, guildBankAlt)
 		GBankClassic_Core:SendWhisper("gbank-r", data, guildBankAlt, "NORMAL")
 		self:MarkPendingSync("alt", guildBankAlt, norm)
 	else
-		-- No known guild bank alt, stale, or offline - broadcast on GUILD
-		GBankClassic_Output:DebugComm("SENDING GUILD BROADCAST: gbank-r for alt %s (no online guild bank alt)", norm)
-		GBankClassic_Output:Debug("SYNC", "Pull-based query for %s (GUILD broadcast, no online guild bank alt)", norm)
+		-- No known guild bank alt, stale, or offline - broadcast to guild
+		GBankClassic_Output:DebugComm("Sending guild broadcast: gbank-r for alt %s (no online guild bank alt)", norm)
+		GBankClassic_Output:Debug("SYNC", "Pull-based query for %s (guild broadcast, no online guild bank alt)", norm)
 		GBankClassic_Core:SendCommMessage("gbank-r", data, "GUILD", nil, "NORMAL")
 		self:MarkPendingSync("alt", nil, norm)
 	end
 end
 
-function GBankClassic_Guild:SendRosterData()
+function Guild:SendRosterData()
 	if not self.Info then
 		return
 	end
@@ -696,37 +681,11 @@ function GBankClassic_Guild:SendRosterData()
 	GBankClassic_Core:SendCommMessage("gbank-d", data, "Guild", nil, "BULK")
 end
 
-function GBankClassic_Guild:ReceiveRosterData(roster)
-	if not self.Info then
-		return
-	end
-
-	if self.Info.roster.version and roster.version and roster.version < self.Info.roster.version then
-		return
-	end
-
-	if self.hasRequested then
-		if self.requestCount == nil then
-			self.requestCount = 0
-		else
-			self.requestCount = self.requestCount - 1
-		end
-		if self.requestCount == 0 then
-			self.hasRequested = false
-			GBankClassic_Output:Info("Sync completed.")
-		end
-	end
-
-	self.Info.roster = roster
-end
-
-function GBankClassic_Guild:SenderHasGbankNote(sender)
+function Guild:SenderHasGbankNote(sender)
 	if not sender then
 		return false
 	end
 
-    local GetNumGuildMembers = GetNumGuildMembers or C_GuildInfo.GetNumGuildMembers
-    local GetGuildRosterInfo = GetGuildRosterInfo or C_GuildInfo.GetGuildRosterInfo
     for i = 1, GetNumGuildMembers() do
         local playerRealm, _, _, _, _, _, publicNote, officer_note = GetGuildRosterInfo(i)
         if playerRealm then
@@ -744,14 +703,10 @@ end
 
 -- Refresh the online members cache from current guild roster
 -- Called automatically when GUILD_ROSTER_UPDATE event fires
-function GBankClassic_Guild:RefreshOnlineCache()
-	local startTime = debugprofilestop()
-
+function Guild:RefreshOnlineCache()
 	self.onlineMembers = self.onlineMembers or {}
 	wipe(self.onlineMembers)
 
-    local GetNumGuildMembers = GetNumGuildMembers or C_GuildInfo.GetNumGuildMembers
-    local GetGuildRosterInfo = GetGuildRosterInfo or C_GuildInfo.GetGuildRosterInfo
 	for i = 1, GetNumGuildMembers() do
 		local name, _, _, _, _, _, _, _, isOnline = GetGuildRosterInfo(i)
 		if name and isOnline then
@@ -762,17 +717,15 @@ function GBankClassic_Guild:RefreshOnlineCache()
 		end
 	end
 
-	local count = 0
-	for _ in pairs(self.onlineMembers) do
-		count = count + 1
-	end
+	local count = GBankClassic_Globals:Count(self.onlineMembers)
+	-- TODO, one or the other
 	GBankClassic_Output:Debug("CACHE", "Refreshed online cache: %d members online", count)
 	GBankClassic_Output:Debug("ROSTER", "Refreshed online cache: %d members online", count)
 end
 
 -- Check if a player is currently online in the guild
 -- Uses cached roster data updated via GUILD_ROSTER_UPDATE event
-function GBankClassic_Guild:IsPlayerOnline(playerName)
+function Guild:IsPlayerOnline(playerName)
 	if not playerName then
 		return false
 	end
@@ -785,7 +738,7 @@ end
 -- Compute minimal state summary for pull-based protocol
 -- Returns {[itemID] = quantity} - no links, bags, slots, or metadata
 -- ~800 bytes for 100 items vs 5-7KB for full data
-function GBankClassic_Guild:ComputeStateSummary(name)
+function Guild:ComputeStateSummary(name)
 	if not name then
 		return nil
 	end
@@ -794,12 +747,7 @@ function GBankClassic_Guild:ComputeStateSummary(name)
 
 	-- If we don't have data for this alt, return a "no data" summary
 	if not self.Info or not self.Info.alts or not self.Info.alts[norm] then
-		return {
-			version = 0,
-			hash = nil,
-			money = 0,
-			items = {}
-		}
+		return { version = 0, hash = nil, money = 0, items = {} }
 	end
 
 	local alt = self.Info.alts[norm]
@@ -812,7 +760,10 @@ function GBankClassic_Guild:ComputeStateSummary(name)
 
 	-- Aggregate items by ID (combine bank + bags)
 	local function addItems(items)
-		if not items then return end
+		if not items then
+			return
+		end
+
 		for _, item in ipairs(items) do
 			if item and item.ID then
 				local id = tostring(item.ID)
@@ -830,10 +781,10 @@ function GBankClassic_Guild:ComputeStateSummary(name)
 end
 
 -- Send state summary to responder (step 4 of pull-based flow)
-function GBankClassic_Guild:SendStateSummary(name, target)
-	GBankClassic_Output:DebugComm("SendStateSummary CALLED: name=%s, target=%s", tostring(name), tostring(target))
+function Guild:SendStateSummary(name, target)
+	GBankClassic_Output:DebugComm("SendStateSummary called: name=%s, target=%s", tostring(name), tostring(target))
 	if not name or not target then
-		GBankClassic_Output:DebugComm("SendStateSummary EARLY RETURN: missing params")
+		GBankClassic_Output:DebugComm("SendStateSummary early return: missing params")
 
 		return
 	end
@@ -853,25 +804,21 @@ function GBankClassic_Guild:SendStateSummary(name, target)
 	}
 
 	local data = GBankClassic_Core:SerializeWithChecksum(message)
-	GBankClassic_Output:DebugComm("SENDING STATE SUMMARY via WHISPER to %s for %s (%d bytes, hash=%s)", target, name, #data, tostring(summary.hash))
+	GBankClassic_Output:DebugComm("Sending state summary via whisper to %s for %s (%d bytes, hash=%s)", target, name, #data, tostring(summary.hash))
 	if not GBankClassic_Core:SendWhisper("gbank-state", data, target, "NORMAL") then
 		return
 	end
 
-	local itemCount = 0
-	for _ in pairs(summary.items) do
-        itemCount = itemCount + 1
-    end
-
+	local itemCount = GBankClassic_Globals:Count(summary.items)
 	GBankClassic_Output:Debug("SYNC", "Sent state summary for %s to %s (%d unique items, %d bytes)", name, target, itemCount, string.len(data))
 end
 
 -- Respond to state summary (step 5 & 6 of pull-based flow)
 -- Compare requester's state with our data and send appropriate response
-function GBankClassic_Guild:RespondToStateSummary(name, summary, requester)
-	GBankClassic_Output:DebugComm("RespondToStateSummary CALLED: name=%s, requester=%s", tostring(name), tostring(requester))
+function Guild:RespondToStateSummary(name, summary, requester)
+	GBankClassic_Output:DebugComm("RespondToStateSummary called: name=%s, requester=%s", tostring(name), tostring(requester))
 	if not name or not summary or not requester then
-		GBankClassic_Output:DebugComm("RespondToStateSummary EARLY RETURN: missing params")
+		GBankClassic_Output:DebugComm("RespondToStateSummary early return: missing params")
 		return
 	end
 
@@ -879,6 +826,7 @@ function GBankClassic_Guild:RespondToStateSummary(name, summary, requester)
 	if not self.Info or not self.Info.alts or not self.Info.alts[norm] then
 		GBankClassic_Output:DebugComm("RespondToStateSummary: No data for %s", norm)
 		GBankClassic_Output:Debug("SYNC", "Cannot respond to state summary for %s (no data)", norm)
+
 		return
 	end
 
@@ -886,7 +834,7 @@ function GBankClassic_Guild:RespondToStateSummary(name, summary, requester)
 	local requesterVersion = summary.version or 0
 	local currentVersion = currentAlt.version or 0
 
-	-- In delta mode, compare HASHES not versions
+	-- In delta mode, compare hashes not versions
 	local requesterHash = summary.hash or nil
 	local currentHash = currentAlt.inventoryHash or nil
 
@@ -903,10 +851,10 @@ function GBankClassic_Guild:RespondToStateSummary(name, summary, requester)
 		return
 	end
 
-	-- Delta mode - ONLY use hashes, no version fallback
+	-- Delta mode - only use hashes, no version fallback
 	-- If current alt doesn't have a hash, send full data (might be from pre-hash version)
 	if not currentHash then
-		GBankClassic_Output:DebugComm("DELTA MODE: Current alt missing hash - sending full data for %s", norm)
+		GBankClassic_Output:DebugComm("Delta mode: Current alt missing hash - sending full data for %s", norm)
 		GBankClassic_Output:Debug("SYNC", "Sending full data to %s for %s (responder has no hash)", requester, norm)
 		self:SendAltData(norm, requester)
 		self._lastSentState[key] = hashOrVersion
@@ -916,7 +864,7 @@ function GBankClassic_Guild:RespondToStateSummary(name, summary, requester)
 
 	-- If requester has no hash (nil), they have no data - send everything
 	if not requesterHash then
-		GBankClassic_Output:DebugComm("DELTA MODE: REQUESTER HAS NO DATA (hash=nil) - sending full data for %s", norm)
+		GBankClassic_Output:DebugComm("Delta mode: Requestor has no data (hash=nil) - sending full data for %s", norm)
 		GBankClassic_Output:Debug("SYNC", "Sending full data to %s for %s (requester has no data)", requester, norm)
 		self:SendAltData(norm, requester)
 		self._lastSentState[key] = hashOrVersion
@@ -933,53 +881,29 @@ function GBankClassic_Guild:RespondToStateSummary(name, summary, requester)
 			hash = currentHash,
 		}
 		local data = GBankClassic_Core:SerializeWithChecksum(noChangeMsg)
-		GBankClassic_Output:DebugComm("DELTA MODE: SENDING NO-CHANGE to %s for %s (hash match: %d)", requester, norm, currentHash)
+		GBankClassic_Output:DebugComm("Delta mode: Sending no-change to %s for %s (hash match: %d)", requester, norm, currentHash)
 		if not GBankClassic_Core:SendWhisper("gbank-nochange", data, requester, "NORMAL") then
 			return
 		end
+
 		GBankClassic_Output:Debug("SYNC", "Sent no-change reply to %s for %s (hash=%d)", requester, norm, currentHash)
 		self._lastSentState[key] = hashOrVersion
 
 		return
 	else
 		-- Hashes differ - send data
-		GBankClassic_Output:DebugComm("DELTA MODE: HASH MISMATCH - calling SendAltData for %s (requester=%d, current=%d)", norm, requesterHash, currentHash)
+		GBankClassic_Output:DebugComm("Delta mode: Hash mismatch, calling SendAltData for %s (requester=%d, current=%d)", norm, requesterHash, currentHash)
 		GBankClassic_Output:Debug("SYNC", "Sending data to %s for %s (hash mismatch: requester=%d, current=%d)", requester, norm, requesterHash, currentHash)
 		self:SendAltData(norm, requester)
 		self._lastSentState[key] = hashOrVersion
 
 		return
 	end
-
-	-- Legacy mode: compare versions only
-	GBankClassic_Output:DebugComm("LEGACY MODE: Comparing versions")
-	if requesterVersion == currentVersion then
-		-- No changes - send no-change message
-		local noChangeMsg = {
-			type = "no-change",
-			name = norm,
-			version = currentVersion,
-		}
-		local data = GBankClassic_Core:SerializeWithChecksum(noChangeMsg)
-		GBankClassic_Output:DebugComm("SENDING NO-CHANGE to %s for %s (version match)", requester, norm)
-		if not GBankClassic_Core:SendWhisper("gbank-nochange", data, requester, "NORMAL") then
-			return
-		end
-		GBankClassic_Output:Debug("SYNC", "Sent no-change reply to %s for %s (v%d)", requester, norm, currentVersion)
-		self._lastSentState[key] = hashOrVersion
-
-		return
-	end
-
-	-- Version mismatch - send full data
-	GBankClassic_Output:Debug("SYNC", "Sending data to %s for %s (version mismatch: requester=%d, current=%d)", requester, norm, requesterVersion, currentVersion)
-	self:SendAltData(norm, requester)
-	self._lastSentState[key] = hashOrVersion
 end
 
 -- Strip link fields from items for transmission (bandwidth optimization)
 -- Saves 60-80 bytes per item, receiver reconstructs with GetItemInfo()
-function GBankClassic_Guild:StripItemLinks(items)
+function Guild:StripItemLinks(items)
 	if not items then
 		return nil
 	end
@@ -1010,11 +934,12 @@ end
 -- Calls GetItemInfo() to recreate links from ItemID or ItemString
 -- Throttle UI refreshes to prevent stuttering when many items load async
 local lastUIRefresh = 0
-local function ThrottledUIRefresh()
+local function throttledUIRefresh()
 	local now = GetTime()
 	if now - lastUIRefresh < 0.5 then -- Throttle to max once per 0.5 seconds
 		return
 	end
+
 	lastUIRefresh = now
 
 	-- Only refresh if UI is actually open
@@ -1034,7 +959,7 @@ local MAX_CONCURRENT_ASYNC = 3 -- Limit concurrent async operations
 local BATCH_SIZE = 10 -- Process 10 items at a time
 local BATCH_DELAY = 0.2 -- 0.2 second delay between batches (slower = smoother)
 
-local function ProcessItemQueue()
+local function processItemQueue()
 	if #itemReconstructQueue == 0 then
 		isProcessingQueue = false
 		
@@ -1060,19 +985,19 @@ local function ProcessItemQueue()
 						pendingAsyncLoads = pendingAsyncLoads + 1
 						local itemObj = Item:CreateFromItemID(item.ID)
 
-						-- Debug: Check itemObj state
-						GBankClassic_Output:Debug("ITEM", "ItemString Item %d: itemObj=%s, itemObj.itemID=%s", item.ID or -1, tostring(itemObj), itemObj and tostring(itemObj.itemID) or "nil")
+						-- Check itemObj state
+						GBankClassic_Output:Debug("ITEM", "ItemString item %d: itemObj=%s, itemObj.itemID=%s", item.ID or -1, tostring(itemObj), itemObj and tostring(itemObj.itemID) or "nil")
 
 						if itemObj and itemObj.itemID and itemObj.itemID == item.ID then
 							-- Item object is valid, try ContinueOnItemLoad with error protection
-							GBankClassic_Output:Debug("ITEM", "ItemString Item %d PASSED validation, calling ContinueOnItemLoad", item.ID)
+							GBankClassic_Output:Debug("ITEM", "ItemString item %d passed validation, calling ContinueOnItemLoad", item.ID)
 							local success, err = pcall(function()
 								itemObj:ContinueOnItemLoad(function()
 									pendingAsyncLoads = pendingAsyncLoads - 1
 									local name = itemObj:GetItemName()
 									if name then
 										item.Link = string.format("|cffffffff|Hitem:%s|h[%s]|h|r", item.ItemString, name)
-										ThrottledUIRefresh()
+										throttledUIRefresh()
 									end
 								end)
 							end)
@@ -1082,7 +1007,7 @@ local function ProcessItemQueue()
 							end
 						else
 							-- Item object is nil or corrupted, skip
-							GBankClassic_Output:Debug("ITEM", "ItemString Item %d FAILED validation, skipping", item.ID or -1)
+							GBankClassic_Output:Debug("ITEM", "ItemString item %d failed validation, skipping", item.ID or -1)
 							pendingAsyncLoads = pendingAsyncLoads - 1
 						end
 					else
@@ -1096,19 +1021,19 @@ local function ProcessItemQueue()
 
 	-- Refresh UI if any items loaded synchronously in this batch
 	if loadedAnyInBatch then
-		ThrottledUIRefresh()
+		throttledUIRefresh()
 	end
 
 	-- Schedule next batch
 	if #itemReconstructQueue > 0 then
-		C_Timer.After(BATCH_DELAY, ProcessItemQueue)
+		After(BATCH_DELAY, processItemQueue)
 	else
 		isProcessingQueue = false
 	end
 end
 
 -- Reconstruct single item link (immediate, synchronous only)
-function GBankClassic_Guild:ReconstructItemLink(item)
+function Guild:ReconstructItemLink(item)
 	if not item or not item.ID or item.Link then
 		return
 	end
@@ -1129,7 +1054,8 @@ end
 
 -- Reconstruct link fields after receiving data
 -- Calls GetItemInfo() to recreate links from ItemID
-function GBankClassic_Guild:ReconstructItemLinks(items)
+-- Queued/batched to prevent stuttering
+function Guild:ReconstructItemLinks(items)
 	if not items then
 		return
 	end
@@ -1145,12 +1071,12 @@ function GBankClassic_Guild:ReconstructItemLinks(items)
 	-- Start processing queue if not already running
 	if not isProcessingQueue and #itemReconstructQueue > 0 then
 		isProcessingQueue = true
-		ProcessItemQueue()
+		processItemQueue()
 	end
 end
 
 -- Strip links from entire alt structure before transmission
-function GBankClassic_Guild:StripAltLinks(alt)
+function Guild:StripAltLinks(alt)
 	if not alt then
 		return nil
 	end
@@ -1190,20 +1116,17 @@ function GBankClassic_Guild:StripAltLinks(alt)
 end
 
 -- Strip links from delta changes structure (bandwidth optimization)
-function GBankClassic_Guild:StripDeltaLinks(delta)
+function Guild:StripDeltaLinks(delta)
 	return GBankClassic_DeltaComms:StripDeltaLinks(delta)
 end
 
 -- Ensure legacy fields (bank.items, bags.items) exist for backward compatibility with old clients
 -- New clients use alt.items, but old clients need bank.items and bags.items
--- IMPORTANT: This also ensures mail items are included in legacy fields for old clients
-function GBankClassic_Guild:EnsureLegacyFields(alt)
+-- This also ensures mail items are included in legacy fields for old clients
+function Guild:EnsureLegacyFields(alt)
 	if not alt or not alt.items then
 		return alt
 	end
-
-	-- Check if we have mail items that need to be added to legacy fields
-	local hasMailItems = alt.mail and alt.mail.items and next(alt.mail.items)
 
 	-- If no legacy fields exist, reconstruct from alt.items
 	if not alt.bank or not alt.bank.items then
@@ -1228,8 +1151,8 @@ function GBankClassic_Guild:EnsureLegacyFields(alt)
 		return alt
 	end
 
-	-- Legacy fields exist (from Bank.lua scan), but they don't include mail
-	-- DO NOT modify alt.bank.items directly - it corrupts the data!
+	-- Legacy fields exist, but they don't include mail
+	-- DO not modify alt.bank.items directly - it corrupts the data!
 	-- Old clients will see mail items via alt.mail field, or can aggregate themselves
 	-- If needed, create temporary copies with mail included only for transmission
 
@@ -1244,7 +1167,7 @@ function GBankClassic_Guild:EnsureLegacyFields(alt)
 	return alt
 end
 
-function GBankClassic_Guild:SendAltData(name, target)
+function Guild:SendAltData(name, target)
 	if not name then
 		return
 	end
@@ -1257,7 +1180,7 @@ function GBankClassic_Guild:SendAltData(name, target)
 	local channel = target and "WHISPER" or "GUILD"
     local dest = target
 
-	-- Version is ONLY set by Bank:Scan() when inventory actually changes
+	-- Version is only set by Bank:Scan() when inventory actually changes
 	-- No longer bump version here - that caused version drift from communication
 
 	local currentAlt = self.Info.alts[norm]
@@ -1272,7 +1195,7 @@ function GBankClassic_Guild:SendAltData(name, target)
 	local bagsCount = (currentAlt.bags and currentAlt.bags.items) and #currentAlt.bags.items or 0
 	GBankClassic_Output:Debug("SYNC", "Sending %s: alt.items=%d, alt.bank.items=%d (includes mail), alt.bags.items=%d", norm, itemsCount, bankCount, bagsCount)
 
-	-- DEBUG: Log sample counts from what we're about to send
+	-- Log sample counts from what we're about to send
 	if currentAlt.items and #currentAlt.items > 0 then
 		local sampleItems = {}
 		for i = 1, math.min(5, #currentAlt.items) do
@@ -1332,12 +1255,12 @@ function GBankClassic_Guild:SendAltData(name, target)
 		GBankClassic_Output:Debug("DELTA", "Sent delta update for %s via gbank-dd (no links)", norm)
 
 		-- Track metrics using the size of the format we're using
-		local serialized = deltaNoLinks
-		GBankClassic_Output:Debug("DELTA", "Final delta size: %d bytes", string.len(serialized or ""))
+		local totalSize = (deltaNoLinks and string.len(deltaNoLinks) or 0)
+		GBankClassic_Output:Debug("DELTA", "Final delta size: %d bytes total", totalSize)
 
 		-- Track metrics
 		if self.Info and self.Info.name then
-			GBankClassic_Database:RecordDeltaSent(self.Info.name, string.len(serialized or ""))
+			GBankClassic_Database:RecordDeltaSent(self.Info.name, totalSize)
 		end
 
 		-- Save delta to history for potential chain replay
@@ -1374,7 +1297,7 @@ function GBankClassic_Guild:SendAltData(name, target)
 		-- New format (without links)
 		local strippedAlt = self:StripAltLinks(currentAlt)
 		dataNoLinks = GBankClassic_Core:SerializeWithChecksum({ type = "alt", name = norm, alt = strippedAlt })
-		GBankClassic_Output:DebugComm("SENDING RESPONSE: gbank-d for %s (%d bytes)", norm, #dataNoLinks)
+		GBankClassic_Output:DebugComm("Sending response: gbank-d for %s (%d bytes)", norm, #dataNoLinks)
 		if channel == "WHISPER" and dest then
 			GBankClassic_Core:SendWhisper("gbank-d", dataNoLinks, dest, "NORMAL", OnChunkSent)
 		else
@@ -1415,7 +1338,7 @@ local SEND_RESULT = {
 	GeneralError = 9,
 }
 
-local function GetSendResultName(result)
+local function getSendResultName(result)
 	if result == SEND_RESULT.Success or result == true then
         return "Success"
 	elseif result == SEND_RESULT.AddonMessageThrottle then
@@ -1474,7 +1397,7 @@ function OnChunkSent(arg, bytesSent, totalBytes, sendResult)
 
 	-- Print error on failed send
 	if not isSuccess then
-		local resultStr = GetSendResultName(sendResult)
+		local resultStr = getSendResultName(sendResult)
 		GBankClassic_Output:Debug("CHUNK","chunk %d/%d failed: %s", SendStats.chunksSent, totalChunks, resultStr, "Aborting send due to failure")
 		SendStats.abort = true
 
@@ -1483,9 +1406,7 @@ function OnChunkSent(arg, bytesSent, totalBytes, sendResult)
 
 	-- Show progress at start
 	if SendStats.chunksSent == 1 then
-		if not GBankClassic_Options:IsSyncProgressMuted() then
-			GBankClassic_Output:Debug("CHUNK", "Sharing guild bank data: %d bytes in ~%d chunks...", totalBytes, totalChunks)
-		end
+		GBankClassic_Output:Debug("CHUNK", "Sharing guild bank data: %d bytes in ~%d chunks...", totalBytes, totalChunks)
 	end
 
 	-- Completion summary
@@ -1496,9 +1417,7 @@ function OnChunkSent(arg, bytesSent, totalBytes, sendResult)
 			summary = summary .. string.format(" | failures: %d, throttled: %d", SendStats.failures, SendStats.throttled)
 		end
 
-		if not GBankClassic_Options:IsSyncProgressMuted() then
-			GBankClassic_Output:Debug("CHUNK", summary)
-		end
+		GBankClassic_Output:Debug("CHUNK", summary)
 
 		-- Warn on failures
 		if SendStats.failures > 0 then
@@ -1515,14 +1434,14 @@ function OnChunkSent(arg, bytesSent, totalBytes, sendResult)
 	end
 end
 
-function GBankClassic_Guild:ReceiveAltData(name, alt, sender)
+function Guild:ReceiveAltData(name, alt, sender)
 	if not self.Info then
 		return ADOPTION_STATUS.IGNORED
 	end
 
 	-- Sanitize incoming alt data
 	local function sanitizeAlt(a)
-		if not a or _G.type(a) ~= "table" then
+		if not a or type(a) ~= "table" then
 			return nil
 		end
 
@@ -1530,7 +1449,7 @@ function GBankClassic_Guild:ReceiveAltData(name, alt, sender)
 		if a.items then
 			local cleaned = {}
 			for k, v in pairs(a.items) do
-				if v and _G.type(v) == "table" and v.ID then
+				if v and type(v) == "table" and v.ID then
 					table.insert(cleaned, v)
 				end
 			end
@@ -1538,10 +1457,10 @@ function GBankClassic_Guild:ReceiveAltData(name, alt, sender)
 		end
 
 		-- Sanitize bank items (array) - compact after removing invalids
-		if a.bank and _G.type(a.bank) == "table" and a.bank.items then
+		if a.bank and type(a.bank) == "table" and a.bank.items then
 			local cleaned = {}
 			for k, v in pairs(a.bank.items) do
-				if v and _G.type(v) == "table" and v.ID then
+				if v and type(v) == "table" and v.ID then
 					table.insert(cleaned, v)
 				end
 			end
@@ -1549,19 +1468,19 @@ function GBankClassic_Guild:ReceiveAltData(name, alt, sender)
 		end
 
 		-- Sanitize bag items (array) - compact after removing invalids
-		if a.bags and _G.type(a.bags) == "table" and a.bags.items then
+		if a.bags and type(a.bags) == "table" and a.bags.items then
 			local cleaned = {}
 			local beforeCount = 0
 			local validCount = 0
 			local invalidCount = 0
 			for k, v in pairs(a.bags.items) do
 				beforeCount = beforeCount + 1
-				if v and _G.type(v) == "table" and v.ID then
+				if v and type(v) == "table" and v.ID then
 					table.insert(cleaned, v)
 					validCount = validCount + 1
 				else
 					invalidCount = invalidCount + 1
-					GBankClassic_Output:Debug("SYNC", "  Sanitize: invalid bag item at [%s]: v=%s, _G.type=%s, ID=%s", tostring(k), tostring(v), _G.type(v), v and tostring(v.ID) or "nil")
+					GBankClassic_Output:Debug("SYNC", "  Sanitize: invalid bag item at [%s]: v=%s, type=%s, ID=%s", tostring(k), tostring(v), type(v), v and tostring(v.ID) or "nil")
 				end
 			end
 			GBankClassic_Output:Debug("SYNC", "Sanitized bags: before=%d, valid=%d, invalid=%d", beforeCount, validCount, invalidCount)
@@ -1576,28 +1495,16 @@ function GBankClassic_Guild:ReceiveAltData(name, alt, sender)
 		return ADOPTION_STATUS.INVALID
 	end
 
-	-- Debug: Log what we received
-	local function countItems(items)
-		if not items or _G.type(items) ~= "table" then
-			return 0
-		end
-		local count = 0
-		for _ in pairs(items) do
-			count = count + 1
-		end
-
-		return count
-	end
-
-	GBankClassic_Output:Debug("SYNC", "ReceiveAltData for %s: alt.items=%d, alt.bank.items=%d, alt.bags.items=%d", name, countItems(alt.items), (alt.bank and alt.bank.items) and countItems(alt.bank.items) or 0, (alt.bags and alt.bags.items) and countItems(alt.bags.items) or 0)
+	-- Log what we received
+	GBankClassic_Output:Debug("SYNC", "ReceiveAltData for %s: alt.items=%d, alt.bank.items=%d, alt.bags.items=%d", name, GBankClassic_Globals:Count(alt.items), (alt.bank and alt.bank.items) and GBankClassic_Globals:Count(alt.bank.items) or 0, (alt.bags and alt.bags.items) and GBankClassic_Globals:Count(alt.bags.items) or 0)
 
 	-- Backward compatibility: Compute alt.items from sources if missing
 	-- This handles data from players who haven't rescanned after the aggregation update
-	-- OLD STRUCTURE: Only bank and bags were synced (mail was local-only)
+	-- Previously, only bank and bags were synced (mail was local-only)
 
 	-- Check if alt.items has any content (handles both array and key-value formats)
 	local function hasAnyItems(items)
-		if not items or _G.type(items) ~= "table" then
+		if not items or type(items) ~= "table" then
 			return false
 		end
 
@@ -1612,7 +1519,7 @@ function GBankClassic_Guild:ReceiveAltData(name, alt, sender)
 
 		GBankClassic_Output:Debug("SYNC", "Reconstructing alt.items for %s: bank=%d, bags=%d", name, #bankItems, #bagItems)
 
-		-- Aggregate bank + bags ONLY (mail was never synced in old system)
+		-- Aggregate bank + bags only (mail was never synced in old system)
 		if #bankItems > 0 or #bagItems > 0 then
 			local aggregated = GBankClassic_Item:Aggregate(bankItems, bagItems)
 			alt.items = {}
@@ -1626,7 +1533,7 @@ function GBankClassic_Guild:ReceiveAltData(name, alt, sender)
 	else
 		-- alt.items exists, deduplicate and ensure array format
 		-- Items may have duplicates from corrupted syncs, so aggregate to dedupe
-		-- DEBUG: Log sample counts BEFORE deduplication
+		-- Log sample counts before deduplication
 		if alt.items and #alt.items > 0 then
 			local beforeSample = {}
 			for i = 1, math.min(5, #alt.items) do
@@ -1635,11 +1542,11 @@ function GBankClassic_Guild:ReceiveAltData(name, alt, sender)
 					table.insert(beforeSample, string.format("%s:%d", item.ID or "?", item.Count or 0))
 				end
 			end
-			GBankClassic_Output:Debug("SYNC", "BEFORE dedupe - First 5 items received: %s", table.concat(beforeSample, ", "))
+			GBankClassic_Output:Debug("SYNC", "Before dedupe - First 5 items received: %s", table.concat(beforeSample, ", "))
 		end
 
 		-- Check if we need to merge mail items into alt.items
-		-- Only merge if this is OLD data (no mailHash = created before mail sync existed)
+		-- Only merge if this is old data (no mailHash = created before mail sync existed)
 		-- If mailHash exists, alt.items already includes mail from sender's Bank:Scan()
 		local hasMailHash = alt.mailHash ~= nil
 		local mailItems = (alt.mail and alt.mail.items) or {}
@@ -1647,7 +1554,7 @@ function GBankClassic_Guild:ReceiveAltData(name, alt, sender)
 		local needsMailMerge = hasMailItems and not hasMailHash
 
 		if needsMailMerge then
-			GBankClassic_Output:Debug("SYNC", "OLD DATA: Merging %d mail items into alt.items for %s (no mailHash)", #mailItems, name)
+			GBankClassic_Output:Debug("SYNC", "Old data: Merging %d mail items into alt.items for %s (no mailHash)", #mailItems, name)
 			-- Aggregate alt.items with mail to ensure mail is included
 			local aggregated = GBankClassic_Item:Aggregate(alt.items, mailItems)
 			local arrayItems = {}
@@ -1658,7 +1565,7 @@ function GBankClassic_Guild:ReceiveAltData(name, alt, sender)
 			GBankClassic_Output:Debug("SYNC", "Merged alt.items for %s: %d items (including mail)", name, #alt.items)
 		else
 			if hasMailHash then
-				GBankClassic_Output:Debug("SYNC", "NEW DATA: alt.items already includes mail (mailHash present) for %s", name)
+				GBankClassic_Output:Debug("SYNC", "New data: alt.items already includes mail (mailHash present) for %s", name)
 			end
 			-- No mail merge needed, just deduplicate
 			local aggregated = GBankClassic_Item:Aggregate(alt.items, nil)
@@ -1670,7 +1577,7 @@ function GBankClassic_Guild:ReceiveAltData(name, alt, sender)
 			GBankClassic_Output:Debug("SYNC", "alt.items exists for %s, deduplicated and converted to array: %d items", name, #alt.items)
 		end
 
-		-- DEBUG: Log sample counts AFTER deduplication
+		-- Log sample counts after deduplication
 		if alt.items and #alt.items > 0 then
 			local afterSample = {}
 			for i = 1, math.min(5, #alt.items) do
@@ -1679,23 +1586,22 @@ function GBankClassic_Guild:ReceiveAltData(name, alt, sender)
 					table.insert(afterSample, string.format("%s:%d", item.ID or "?", item.Count or 0))
 				end
 			end
-			GBankClassic_Output:Debug("SYNC", "AFTER dedupe - First 5 items stored: %s", table.concat(afterSample, ", "))
+			GBankClassic_Output:Debug("SYNC", "After dedupe - First 5 items stored: %s", table.concat(afterSample, ", "))
 		end
 	end
 
-	local norm = self:NormalizeName(name)
+	local norm = self:NormalizeName(name) or ""
 	local existing = self.Info.alts[norm]
 	local senderNorm = sender and self:NormalizeName(sender) or nil
 
 	-- Guild bank alt protection logic
 	-- Rule 1: Never accept data about yourself (you are source of truth)
-	-- Rule 2: Guild bank alts only accept data about OTHER guild bank alts FROM that guild bank alt
+	-- Rule 2: Guild bank alts only accept data about other guild bank alts from that guild bank alt
 	-- Rule 3: Non-guild bank alts accept data from anyone
 	local player = UnitName("player") .. "-" .. GetNormalizedRealmName()
 	local playerNorm = self:NormalizeName(player)
 	local isOwnData = playerNorm == norm
 	local targetIsGuildBankAlt = self:IsBank(norm)
-	local senderIsGuildBankAlt = senderNorm and self:IsBank(senderNorm) or false
 	local receiverIsGuildBankAlt = self:IsBank(playerNorm)
 
 	-- Rule 1: Reject data about ourselves (we already have our own current data)
@@ -1735,6 +1641,7 @@ function GBankClassic_Guild:ReceiveAltData(name, alt, sender)
 				end
 			end
 		end
+		
 		return c
 	end
 
@@ -1752,6 +1659,7 @@ function GBankClassic_Guild:ReceiveAltData(name, alt, sender)
 	if self.Info.alts[name] and alt.version ~= nil and self.Info.alts[name].version ~= nil and alt.version < self.Info.alts[name].version then
 		return ADOPTION_STATUS.STALE
 	end
+	
 	if self.hasRequested then
 		if self.requestCount == nil then
 			self.requestCount = 0
@@ -1822,88 +1730,69 @@ end
 
 -- Protocol version helper functions
 
--- Check if this client uses the aggregated items format
-function GBankClassic_Guild:UsesAggregatedItemsFormat()
-	return true
-end
-
 -- Get peer protocol capabilities
-function GBankClassic_Guild:GetPeerCapabilities(sender)
+function Guild:GetPeerCapabilities(sender)
 	return GBankClassic_DeltaComms:GetPeerCapabilities(self.Info and self.Info.name, sender)
 end
 
 -- Compare two items for equality
-function GBankClassic_Guild:ItemsEqual(item1, item2)
+function Guild:ItemsEqual(item1, item2)
 	return GBankClassic_DeltaComms:ItemsEqual(item1, item2)
 end
 
 -- Extract only the fields that changed between two items
-function GBankClassic_Guild:GetChangedFields(oldItem, newItem)
+function Guild:GetChangedFields(oldItem, newItem)
 	return GBankClassic_DeltaComms:GetChangedFields(oldItem, newItem)
 end
 
 -- Build a slot-indexed lookup table from items array
-function GBankClassic_Guild:BuildItemIndex(items)
+function Guild:BuildItemIndex(items)
 	return GBankClassic_DeltaComms:BuildItemIndex(items)
 end
 
 -- Compute delta between old and new item sets
-function GBankClassic_Guild:ComputeItemDelta(oldItems, newItems)
+function Guild:ComputeItemDelta(oldItems, newItems)
 	return GBankClassic_DeltaComms:ComputeItemDelta(oldItems, newItems)
 end
 
 -- Compute full delta for an alt
-function GBankClassic_Guild:ComputeDelta(name, currentAlt)
+function Guild:ComputeDelta(name, currentAlt)
 	return GBankClassic_DeltaComms:ComputeDelta(self.Info and self.Info.name, name, currentAlt)
 end
 
 -- Estimate serialized size of a data structure
-function GBankClassic_Guild:EstimateSize(data)
+function Guild:EstimateSize(data)
 	return GBankClassic_DeltaComms:EstimateSize(data)
 end
 
 -- Check if delta has any actual changes
-function GBankClassic_Guild:DeltaHasChanges(delta)
+function Guild:DeltaHasChanges(delta)
 	return GBankClassic_DeltaComms:DeltaHasChanges(delta)
 end
 
 -- Apply item delta to an items table
-function GBankClassic_Guild:ApplyItemDelta(items, delta)
+function Guild:ApplyItemDelta(items, delta)
 	return GBankClassic_DeltaComms:ApplyItemDelta(items, delta)
 end
 
 -- Apply a delta to alt data
-function GBankClassic_Guild:ApplyDelta(name, deltaData, sender)
+function Guild:ApplyDelta(name, deltaData, sender)
 	return GBankClassic_DeltaComms:ApplyDelta(self.Info, name, deltaData, sender)
 end
 
--- Request a chain of deltas to catch up from an old version
-function GBankClassic_Guild:RequestDeltaChain(altName, fromVersion, toVersion, sender)
-	return GBankClassic_DeltaComms:RequestDeltaChain(self.Info and self.Info.name, altName, fromVersion, toVersion, sender)
-end
-
 -- Apply a chain of deltas sequentially
-function GBankClassic_Guild:ApplyDeltaChain(altName, deltaChain)
+function Guild:ApplyDeltaChain(altName, deltaChain)
 	return GBankClassic_DeltaComms:ApplyDeltaChain(self.Info, altName, deltaChain)
 end
 
-local function GetTableEntriesCount(a)
-    local b = 0
-    for c, d in pairs(a) do 
-        b = b + 1 
-    end
-
-    return b 
-end 
-
-function GBankClassic_Guild:Hello(type)
-	local addon_data = GBankClassic_Guild:GetVersion()
-	local current_data = GBankClassic_Guild.Info
+function Guild:Hello(type)
+	local addon_data = self:GetVersion()
+	local current_data = Guild.Info
 	if addon_data and current_data then
 		local roster_alts = ""
 		local guild_bank_alts = ""
-		local hello = "Hi! " .. GBankClassic_Guild:GetPlayer() .. " is using version " .. addon_data.addon .. "."
-		if GetTableEntriesCount(current_data.roster) > 0 and GetTableEntriesCount(current_data.alts) > 0 then
+		local hello = "Hi! " .. self:GetPlayer() .. " is using version " .. addon_data.addon .. "."
+		if GBankClassic_Globals:Count(current_data.roster) > 0 and GBankClassic_Globals:Count(current_data.alts) > 0 then
 			for _, v in pairs(current_data.roster.alts) do
 				if roster_alts ~= "" then
 					roster_alts = roster_alts .. ", "
@@ -1933,7 +1822,7 @@ function GBankClassic_Guild:Hello(type)
 				hello = hello .. "\n"
 				hello = hello
 					.. "I have guild bank data from "
-					.. GetTableEntriesCount(current_data.alts)
+					.. GBankClassic_Globals:Count(current_data.alts)
 					.. " alts"
 					.. guild_bank_alts
 					.. "."
@@ -1946,7 +1835,7 @@ function GBankClassic_Guild:Hello(type)
 		-- local fulfilled_count = 0
 		-- local pending_banks = {}
 		-- for _, req in pairs(current_data.requests or {}) do
-		-- 	local clean = GBankClassic_Guild:SanitizeRequest(req)
+		-- 	local clean = self:SanitizeRequest(req)
 		-- 	if clean and clean.item and clean.item ~= "" then
 		-- 		local qty = tonumber(clean.quantity or 0) or 0
 		-- 		local fulfilled = tonumber(clean.fulfilled or 0) or 0
@@ -1990,15 +1879,14 @@ function GBankClassic_Guild:Hello(type)
 	end
 end
 
-function GBankClassic_Guild:Wipe(type)
-    local guild = GBankClassic_Guild:GetGuild()
-    local CanViewOfficerNote = CanViewOfficerNote or C_GuildInfo.CanViewOfficerNote
+function Guild:Wipe(type)
+    local guild = self:GetGuild()
 	if not guild and not CanViewOfficerNote() then
 		return
 	end
 
     local wipe = "I wiped all addon data from " .. guild .. "."
-    GBankClassic_Guild:Reset(guild)
+    self:Reset(guild)
 
 	local data = GBankClassic_Core:SerializeWithChecksum(wipe)
     if type ~= "reply" then
@@ -2008,24 +1896,24 @@ function GBankClassic_Guild:Wipe(type)
     end
 end
 
-function GBankClassic_Guild:WipeMine(type)
-    local guild = GBankClassic_Guild:GetGuild()
+function Guild:WipeMine()
+    local guild = self:GetGuild()
 	if not guild then
 		return
 	end
     
-    GBankClassic_Guild:Reset(guild)
+    self:Reset(guild)
 end
 
-function GBankClassic_Guild:Share(type, requestsMode)
-    local guild = GBankClassic_Guild:GetGuild()
+function Guild:Share(type, requestsMode)
+    local guild = self:GetGuild()
 	if not guild then
 		return
 	end
 
     self.Info = GBankClassic_Database:Load(guild)
-    local player = GBankClassic_Guild:GetPlayer()
-	local normPlayer = GBankClassic_Guild:GetNormalizedPlayer(player)
+    local player = self:GetPlayer()
+	local normPlayer = self:GetNormalizedPlayer(player)
     local share = "I'm sharing my bank data. Share yours please."
 	local mode = requestsMode or "snapshot"
 
@@ -2037,12 +1925,12 @@ function GBankClassic_Guild:Share(type, requestsMode)
         end
     end
 
-	if self.Info.alts[normPlayer] and GBankClassic_Guild:IsBank(normPlayer) then
-		GBankClassic_Guild:SendAltData(normPlayer)
+	if self.Info.alts[normPlayer] and self:IsBank(normPlayer) then
+		self:SendAltData(normPlayer)
 	end
 
 	if mode == "snapshot" then
-		-- Share current requests state alongside bank data so everyone stays in sync
+		-- -- Share current requests state alongside bank data so everyone stays in sync
 		-- self:SendRequestsData()
 	elseif mode == "version" then
 		-- Lightweight ping; snapshots are sent only when queried.
@@ -2050,7 +1938,7 @@ function GBankClassic_Guild:Share(type, requestsMode)
 	end
 
 	-- Broadcast delta version with hashes for pull-based protocol
-	-- Send BOTH legacy and delta version broadcasts
+	-- Send both legacy and delta version broadcasts
 	if GBankClassic_Events and GBankClassic_Events.Sync then
 		GBankClassic_Events:Sync()
 	end
@@ -2060,25 +1948,23 @@ function GBankClassic_Guild:Share(type, requestsMode)
 
 	local data = GBankClassic_Core:SerializeWithChecksum(share)
 	if type ~= "reply" then
-		-- Use NORMAL priority for share announcement so users are notified quickly
-		-- Actual data transfers (deltas/snapshots) use BULK to avoid network spam
+		-- Use normal priority for share announcement so users are notified quickly
+		-- Actual data transfers (deltas/snapshots) use bulk to avoid network spam
 		GBankClassic_Core:SendCommMessage("gbank-s", data, "Guild", nil, "NORMAL")
 	else
-		-- TODO: decide to remove?
 		GBankClassic_Core:SendCommMessage("gbank-sr", data, "Guild", nil, "NORMAL")
 	end
 end
 
-function GBankClassic_Guild:AuthorRosterData()
+function Guild:AuthorRosterData()
 	if not self.Info then
 		return
 	end
 
     local info = self.Info
     local isBank = false
-    local banks = GBankClassic_Guild:GetBanks()
-    local player = GBankClassic_Guild:GetPlayer()
-    local CanViewOfficerNote = CanViewOfficerNote or C_GuildInfo.CanViewOfficerNote
+    local banks = self:GetBanks()
+    local player = self:GetPlayer()
     if banks then
         for _, v in pairs(banks) do
             if v == player then
@@ -2098,7 +1984,7 @@ function GBankClassic_Guild:AuthorRosterData()
 				info.roster.version = nil
 			end
 		end
-		GBankClassic_Guild:SendRosterData()
+		self:SendRosterData()
 		if banks then
 			local characterNames = {}
 			for _, bankChar in pairs(banks) do
@@ -2119,7 +2005,7 @@ function GBankClassic_Guild:AuthorRosterData()
 	end
 end
 
-function GBankClassic_Guild:SenderIsGM(player)
+function Guild:SenderIsGM(player)
 	if not player then
 		return false
 	end
@@ -2128,8 +2014,6 @@ function GBankClassic_Guild:SenderIsGM(player)
 		return false
 	end
 
-    local GetNumGuildMembers = GetNumGuildMembers or C_GuildInfo.GetNumGuildMembers
-    local GetGuildRosterInfo = GetGuildRosterInfo or C_GuildInfo.GetGuildRosterInfo
 	for i = 1, GetNumGuildMembers() do
 		local playerRealm, _, rankIndex = GetGuildRosterInfo(i)
 		if playerRealm then

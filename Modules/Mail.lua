@@ -1,7 +1,24 @@
-GBankClassic_Mail = {
+GBankClassic_Mail = GBankClassic_Mail or {
 	-- -- State for split operation
 	-- splitState = nil -- {bag, slot, amount, attachmentSlot, request}
 }
+
+local Mail = GBankClassic_Mail
+
+local Globals = GBankClassic_Globals
+local upvalues = Globals.GetUpvalues("MailFrame")
+local MailFrame = upvalues.MailFrame
+local upvalues = Globals.GetUpvalues("CheckInbox", "GetInboxNumItems", "GetInboxHeaderInfo", "GetInboxItemLink", "GetInboxItem", "TakeInboxItem", "TakeInboxMoney", "GetItemInfo")
+local CheckInbox = upvalues.CheckInbox
+local GetInboxNumItems = upvalues.GetInboxNumItems
+local GetInboxHeaderInfo = upvalues.GetInboxHeaderInfo
+local GetInboxItemLink = upvalues.GetInboxItemLink
+local GetInboxItem = upvalues.GetInboxItem
+local TakeInboxItem = upvalues.TakeInboxItem
+local TakeInboxMoney = upvalues.TakeInboxMoney
+local GetItemInfo = upvalues.GetItemInfo
+local upvalues = Globals.GetUpvalues("ATTACHMENTS_MAX_RECEIVE")
+local ATTACHMENTS_MAX_RECEIVE = upvalues.ATTACHMENTS_MAX_RECEIVE
 
 -- -- Initialize split stack popup dialog
 -- if not StaticPopupDialogs["GBANK_SPLIT_STACK"] then
@@ -10,32 +27,38 @@ GBankClassic_Mail = {
 -- 		button1 = "Split",
 -- 		button2 = "Cancel",
 -- 		OnAccept = function(self, data)
--- 			if not data then return end
+-- 			if not data then
+--              return
+--          end
+--
 -- 			ClearCursor()
 -- 			-- Find an empty bag slot to place the split items
 -- 			local emptyBag, emptySlot
 -- 			for bag = 0, 4 do
--- 				local numSlots = C_Container.GetContainerNumSlots(bag)
+-- 				local numSlots = GetContainerNumSlots(bag)
 -- 				for slot = 1, numSlots do
--- 					if not C_Container.GetContainerItemInfo(bag, slot) then
+-- 					if not GetContainerItemInfo(bag, slot) then
 -- 						emptyBag, emptySlot = bag, slot
 -- 						break
 -- 					end
 -- 				end
--- 				if emptyBag then break end
+-- 				if emptyBag then
+ --                 break
+--              end
 -- 			end
 -- 			if not emptyBag then
 -- 				return
 -- 			end
+
 -- 			-- Step 1: Split - puts amount on cursor
--- 			C_Container.SplitContainerItem(data.bag, data.slot, data.amount)
--- 			C_Timer.After(0.1, function()
+-- 			SplitContainerItem(data.bag, data.slot, data.amount)
+-- 			After(0.1, function()
 -- 				-- Step 2: Place split items into empty slot to "commit" the split
--- 				C_Container.PickupContainerItem(emptyBag, emptySlot)
--- 				C_Timer.After(0.05, function()
+-- 				PickupContainerItem(emptyBag, emptySlot)
+-- 				After(0.05, function()
 -- 					-- Done! The split stack is now in inventory
 -- 					if GBankClassic_UI_Requests and GBankClassic_UI_Requests.Window then
--- 						local message = string.format("Split %d %s complete. Click Fulfill again to attach items.",
+-- 						local message = string.format("Split %d %s complete. Click fulfill again to attach items.",
 -- 							data.amount, data.itemName)
 -- 						GBankClassic_UI_Requests.Window:SetStatusText(message)
 -- 						-- Refresh the request list to update the fulfill button icon
@@ -55,7 +78,7 @@ GBankClassic_Mail = {
 -- end
 
 -- Check if mailbox is actually open (uses frame state as ground truth)
-function GBankClassic_Mail:IsMailboxOpen()
+function Mail:IsMailboxOpen()
 	local frameOpen = MailFrame and MailFrame:IsShown() or false
 	-- Sync our flag with actual frame state
 	if self.isOpen ~= frameOpen then
@@ -65,19 +88,17 @@ function GBankClassic_Mail:IsMailboxOpen()
 	return frameOpen
 end
 
-function GBankClassic_Mail:Check()
+function Mail:Check()
     CheckInbox()
 end
 
-function GBankClassic_Mail:Scan()
+function Mail:Scan()
     if not GBankClassic_Options:GetDonationEnabled() then
 		return
 	end
-
-    if not GBankClassic_Mail.isOpen then
+    if not Mail.isOpen then
 		return
 	end
-    
 	if self.isScanning then
 		return
 	end
@@ -104,6 +125,7 @@ function GBankClassic_Mail:Scan()
             isBank = true
         end
     end
+
 	if not isBank then
 		return
 	end
@@ -119,17 +141,12 @@ function GBankClassic_Mail:Scan()
         for mailId = 1, numItems do
             local _, _, sender, _, money, CODAmount, _, itemCount, _, wasReturned, _, canReply, isGM = GetInboxHeaderInfo(mailId)
             if not sender then
-                GBankClassic_Mail:ResetScan()
+                self:ResetScan()
 
                 return
             end
 
-            if CODAmount == 0
-                    and not wasReturned
-                    and not isGM
-                    and canReply
-                    and not self.Roster[sender]
-                    and (money > 0 or (itemCount and itemCount > 0)) then
+            if CODAmount == 0 and not wasReturned and not isGM and canReply and not self.Roster[sender] and (money > 0 or (itemCount and itemCount > 0)) then
                 local hasNonUnique = nil
                 if itemCount and itemCount > 0 then
                     for attachmentIndex = 1, ATTACHMENTS_MAX_RECEIVE do
@@ -158,26 +175,27 @@ function GBankClassic_Mail:Scan()
 end
 
 -- -- Hook SendMail to update request fulfillment when sending items from bank alts
--- function GBankClassic_Mail:InitSendHook()
+-- function Mail:InitSendHook()
 -- 	if self.sendHooked then
 -- 		return
 -- 	end
+
 -- 	self.sendHooked = true
 
 -- 	hooksecurefunc("SendMail", function(recipient, subject, body)
--- 		GBankClassic_Mail:OnSendMail(recipient)
+-- 		self:OnSendMail(recipient)
 -- 	end)
 -- end
 
--- function GBankClassic_Mail:OnSendMail(recipient)
--- 	GBankClassic_Output:Debug("MAIL", "OnSendMail: HOOK FIRED for recipient=%s", tostring(recipient))
+-- function Mail:OnSendMail(recipient)
+-- 	GBankClassic_Output:Debug("MAIL", "OnSendMail: hook fired for recipient=%s", tostring(recipient))
 	
 -- 	-- If pendingSend was set recently by PrepareFulfillMail (within 10 seconds), keep it
 -- 	-- Otherwise, read items from mail attachments (fallback for non-fulfill mails)
 -- 	local now = GetTime()
 -- 	if self.pendingSend and self.pendingSendAt and (now - self.pendingSendAt) < 10 then
 -- 		GBankClassic_Output:Debug("MAIL", "OnSendMail: Using pendingSend from PrepareFulfillMail")
---
+
 -- 		return
 -- 	end
 	
@@ -189,7 +207,7 @@ end
 -- 	local items = {}
 
 -- 	for attachmentIndex = 1, ATTACHMENTS_MAX_SEND do
--- 		local itemName, itemID, texture, quantity = GetSendMailItem(attachmentIndex)
+-- 		local itemName, _, _, quantity = GetSendMailItem(attachmentIndex)
 -- 		if itemName and quantity and quantity > 0 then
 -- 			table.insert(items, { name = itemName, quantity = quantity })
 -- 		end
@@ -208,7 +226,7 @@ end
 
 -- 	if not sender or not GBankClassic_Guild:IsBank(sender) then
 -- 		GBankClassic_Output:Debug("MAIL", "OnSendMail: Sender %s is not a guild bank alt, skipping", tostring(sender))
---
+
 -- 		return
 -- 	end
 
@@ -222,60 +240,61 @@ end
 -- 	}
 -- 	self.pendingSendAt = GetTime()
 	
---	-- Log at INFO level so user can see manual sends are tracked
---	local itemList = {}
---	for _, item in ipairs(items) do
---		table.insert(itemList, string.format("%dx %s", item.quantity, item.name))
---	end
---	GBankClassic_Output:Info("Tracking manual mail to %s: %s", recipient, table.concat(itemList, ", "))
+-- 	-- Log at info level so user can see manual sends are tracked
+-- 	local itemList = {}
+-- 	for _, item in ipairs(items) do
+-- 		table.insert(itemList, string.format("%dx %s", item.quantity, item.name))
+-- 	end
+-- 	GBankClassic_Output:Info("Tracking manual mail to %s: %s", recipient, table.concat(itemList, ", "))
 -- end
 
--- function GBankClassic_Mail:ApplyPendingSend()
+-- function Mail:ApplyPendingSend()
 -- 	GBankClassic_Output:Debug("MAIL", "ApplyPendingSend: Called, pendingSend=%s", tostring(self.pendingSend ~= nil))
 -- 	local pending = self.pendingSend
 -- 	if not pending then
 -- 		GBankClassic_Output:Debug("MAIL", "ApplyPendingSend: No pendingSend, returning")
---
+
 -- 		return
 -- 	end
+
 -- 	self.pendingSend = nil
 -- 	self.pendingSendAt = nil
 
---	GBankClassic_Output:Info("Applying fulfillment for mail sent to %s...", pending.recipient)
+-- 	GBankClassic_Output:Info("Applying fulfillment for mail sent to %s...", pending.recipient)
 
 -- 	local totalApplied = 0
 -- 	for _, item in ipairs(pending.items) do
 -- 		local applied = GBankClassic_Guild:FulfillRequest(pending.sender, pending.recipient, item.name, item.quantity)
---		if applied > 0 then
---			GBankClassic_Output:Info("  Applied %dx %s toward %s's request", applied, item.name, pending.recipient)
---		end
+-- 		if applied > 0 then
+-- 			GBankClassic_Output:Info("  Applied %dx %s toward %s's request", applied, item.name, pending.recipient)
+-- 		end
 -- 		totalApplied = totalApplied + applied
 -- 	end
 
---	if totalApplied > 0 then
---		GBankClassic_Output:Info("Total fulfilled: %d item(s) for %s", totalApplied, pending.recipient)
---		GBankClassic_Guild:RefreshRequestsUI()
---	else
---		GBankClassic_Output:Info("No matching requests found for items sent to %s", pending.recipient)
---	end
+-- 	if totalApplied > 0 then
+-- 		GBankClassic_Output:Info("Total fulfilled: %d item(s) for %s", totalApplied, pending.recipient)
+-- 		GBankClassic_Guild:RefreshRequestsUI()
+-- 	else
+-- 		GBankClassic_Output:Info("No matching requests found for items sent to %s", pending.recipient)
+-- 	end
 -- end
 
-function GBankClassic_Mail:ResetScan()
+function Mail:ResetScan()
     -- We wait a second for the server to remove the item from the inbox before we take another
     GBankClassic_Core:ScheduleTimer(function(...)
-        GBankClassic_Mail:OnTimer()
+        self:OnTimer()
     end, 1)
 end
 
-function GBankClassic_Mail:OnTimer()
+function Mail:OnTimer()
     self.isScanning = false
-    GBankClassic_Mail:Scan()
+    self:Scan()
 end
 
-function GBankClassic_Mail:Open(mailId)
+function Mail:Open(mailId)
     local _, _, sender, _, money, _, _, itemCount = GetInboxHeaderInfo(mailId)
     if not sender then
-        GBankClassic_Mail:RetryOpen(mailId)
+        self:RetryOpen(mailId)
 
         return
     end
@@ -321,7 +340,7 @@ function GBankClassic_Mail:Open(mailId)
 
         TakeInboxMoney(mailId)
         if itemCount and itemCount > 0 then
-            GBankClassic_Mail:RetryOpen(mailId)
+            self:RetryOpen(mailId)
 
             return
         end
@@ -329,6 +348,7 @@ function GBankClassic_Mail:Open(mailId)
     if itemCount then
         if not GBankClassic_Bank:HasInventorySpace() then
             GBankClassic_Output:Warn("Inventory is full.")
+
             return
         end
 
@@ -336,9 +356,9 @@ function GBankClassic_Mail:Open(mailId)
             local link = GetInboxItemLink(mailId, attachmentIndex)
             if link then
                 local _, _, _, quantity, _ = GetInboxItem(mailId, attachmentIndex)
-                local name, _, quality, level, _, _, _, _, _, _, price = GetItemInfo(link)
+                local name, _, _, level, _, _, _, _, _, _, price = GetItemInfo(link)
                 if not name or level == nil then
-                    GBankClassic_Mail:RetryOpen(mailId)
+                    self:RetryOpen(mailId)
 
                     return
                 end
@@ -356,7 +376,7 @@ function GBankClassic_Mail:Open(mailId)
 
                     TakeInboxItem(mailId, attachmentIndex)
                     if itemCount > 1 then
-                        GBankClassic_Mail:RetryOpen(mailId)
+                        self:RetryOpen(mailId)
 
                         return
                     end
@@ -366,23 +386,23 @@ function GBankClassic_Mail:Open(mailId)
     end
 
     GBankClassic_UI_Mail:Close()
-    GBankClassic_Mail:ResetScan()
+    self:ResetScan()
 end
 
-function GBankClassic_Mail:RetryOpen(mailId)
+function Mail:RetryOpen(mailId)
     -- We wait a second for the server to remove the item from the inbox before we take another
     GBankClassic_Core:ScheduleTimer(function(...)
-        GBankClassic_Mail:OnRetryTimer(mailId)
+        self:OnRetryTimer(mailId)
     end, 1)
 end
 
-function GBankClassic_Mail:OnRetryTimer(mailId)
-    GBankClassic_Mail:Open(mailId)
+function Mail:OnRetryTimer(mailId)
+    self:Open(mailId)
 end
 
 -- -- Check if a request can be fulfilled by the current player
 -- -- Returns: canFulfill (boolean), reason (string), itemsInBags (number), smallestStack (number)
--- function GBankClassic_Mail:CanFulfillRequest(request, actor)
+-- function Mail:CanFulfillRequest(request, actor)
 -- 	local normActor = GBankClassic_Guild:NormalizeName(actor or GBankClassic_Guild:GetPlayer())
 
 -- 	-- Must be a bank alt
@@ -457,17 +477,18 @@ end
 -- 	if usableItems < qtyNeeded and totalInBags >= qtyNeeded then
 -- 		-- We have enough total, but need to split to fulfill
 -- 		-- Efficiency check: if we have any stack large enough to provide what we need,
--- 		-- prefer splitting from it rather than using multiple small stacks
+-- 		-- Prefer splitting from it rather than using multiple small stacks
 -- 		if largestStack and largestStack >= qtyNeeded then
 -- 			-- Can split exactly what we need from a single stack - more efficient
 -- 			local reason = string.format("Split %d from available stacks.", qtyNeeded)
+
 -- 			return true, reason, totalInBags, smallestStack
 -- 		end
 		
 -- 		local remaining = qtyNeeded - usableItems
 		
 -- 		-- Additional efficiency check: if using small partials requires a split,
--- 		-- check if using only the largest stacks would require similar or smaller effort
+-- 		-- Check if using only the largest stacks would require similar or smaller effort
 -- 		-- Example: [1,20,20,20,20,20] need 90 -> better to use 4×20+split(10) than 1+4×20+split(9)
 -- 		-- The trade-off: splitting 10 from one stack vs using a 1-stack + splitting 9
 -- 		if largestStack and largestStack > 1 and remaining > 0 then
@@ -503,12 +524,14 @@ end
 -- 		end
 		
 -- 		local reason = string.format("Splitting %d to fill the order.", remaining)
+
 -- 		return true, reason, totalInBags, smallestStack
 -- 	end
 
 -- 	-- If no stacks are small enough, we can split automatically
 -- 	if usableItems == 0 and smallestStack and smallestStack > qtyNeeded then
 -- 		local reason = string.format("Split from stack of %d.", smallestStack)
+
 -- 		return true, reason, totalInBags, smallestStack
 -- 	end
 
@@ -523,7 +546,7 @@ end
 
 -- -- Prepare mail to fulfill a request: sets recipient and attaches items
 -- -- Returns: success (boolean), message (string), attachedCount (number)
--- function GBankClassic_Mail:PrepareFulfillMail(request)
+-- function Mail:PrepareFulfillMail(request)
 -- 	if not self:IsMailboxOpen() then
 -- 		return false, "Mailbox is not open.", 0
 -- 	end
@@ -560,8 +583,8 @@ end
 -- 	end
 
 -- 	-- Attach items (up to ATTACHMENTS_MAX_SEND slots)
--- 	-- NOTE: Classic Era doesn't support programmatic stack splitting,
--- 	-- so we only attach stacks that won't exceed the needed quantity
+-- 	-- Classic Era doesn't support programmatic stack splitting,
+-- 	-- So we only attach stacks that won't exceed the needed quantity
 -- 	local attached = 0
 -- 	local attachmentSlot = 1
 -- 	local maxSlots = ATTACHMENTS_MAX_SEND or 12
@@ -569,7 +592,7 @@ end
 
 -- 	-- Sort items by stack size (largest first) - full stacks before partial stacks
 -- 	-- When counts are equal, maintain the original scan order (bottom-right to top-left in bags)
--- 	-- by adding an index to each item before sorting
+-- 	-- By adding an index to each item before sorting
 -- 	for i, item in ipairs(items) do
 -- 		item.originalIndex = i
 -- 	end
@@ -577,10 +600,11 @@ end
 -- 		if a.count == b.count then
 -- 			return a.originalIndex < b.originalIndex -- Maintain physical order for equal counts
 -- 		end
+
 -- 		return a.count > b.count
 -- 	end)
 
--- 	-- FIRST PASS: Calculate minimum useful stack size based on split requirement
+-- 	-- First pass: Calculate minimum useful stack size based on split requirement
 -- 	-- Strategy: Don't use stacks smaller than what we'll need to split
 -- 	-- Example: Need 95, have [20,20,20,20,14] → need to split 15, so exclude 14
 	
@@ -605,7 +629,7 @@ end
 -- 	-- Minimum stack size = the split amount (must be able to split that much from a stack)
 -- 	-- If no split needed, use min(5, qtyNeeded) to avoid filtering out perfectly sized stacks
 -- 	-- Example: Need 1 item → minStackSize should be 1, not 5
--- 	-- CRITICAL: Never set minStackSize higher than largestStack (fixes non-stackable items like bags)
+-- 	-- Never set minStackSize higher than largestStack (fixes non-stackable items like bags)
 -- 	local minStackSize = math.min(largestStack, wouldNeedToSplit > 0 and wouldNeedToSplit or math.min(5, qtyNeeded))
 	
 -- 	-- Build useful stacks list
@@ -616,18 +640,16 @@ end
 -- 		end
 -- 	end
 	
--- 	GBankClassic_Output:Debug("FULFILL", "Need %d, accumulated %d from large stacks, would split %d",
--- 		qtyNeeded, accumulated, wouldNeedToSplit)
--- 	GBankClassic_Output:Debug("FULFILL", "Filtered %d useful stacks from %d total (min size: %d)",
--- 		#usefulStacks, #items, minStackSize)
+-- 	GBankClassic_Output:Debug("FULFILL", "Need %d, accumulated %d from large stacks, would split %d", qtyNeeded, accumulated, wouldNeedToSplit)
+-- 	GBankClassic_Output:Debug("FULFILL", "Filtered %d useful stacks from %d total (min size: %d)", #usefulStacks, #items, minStackSize)
 
--- 	-- SECOND PASS: Run greedy algorithm on useful stacks only
+-- 	-- Second pass: Run greedy algorithm on useful stacks only
 -- 	local simulatedAttached = 0
 -- 	local skipStackIndex = nil -- Track which stack to skip during attachment for optimal fit
 -- 	local splitStackIndex = nil -- Track which stack we'll split from
 
 -- 	-- Greedy pass: accumulate items until we need more than a stack can provide
--- 	-- CRITICAL FIX: Process in TWO stages to prefer exact-fit stacks before splits
+-- 	-- Process in two stages to prefer exact-fit stacks before splits
 -- 	-- Stage 1: Accumulate all stacks that fit exactly without exceeding qtyNeeded
 -- 	for i, item in ipairs(usefulStacks) do
 -- 		if simulatedAttached >= qtyNeeded then
@@ -661,7 +683,7 @@ end
 	
 -- 	GBankClassic_Output:Debug("FULFILL", "Greedy result: attached=%d, splitStackIndex=%s", simulatedAttached, tostring(splitStackIndex))
 
--- 	-- If greedy didn't get exact match AND didn't find a split candidate, try skipping individual stacks to find better fit
+-- 	-- If greedy didn't get exact match and didn't find a split candidate, try skipping individual stacks to find better fit
 -- 	if simulatedAttached < qtyNeeded and totalInBags >= qtyNeeded and not skippedLargeStack then
 -- 		for skipIndex = 1, math.min(5, #items) do
 -- 			local testAttached = 0
@@ -676,7 +698,7 @@ end
 -- 						testAttached = testAttached + items[i].count
 -- 					elseif items[i].count >= remaining then
 -- 						-- This stack can provide the remaining amount - keep track of it
--- 						-- Continue iterating to find the LAST stack that can be split
+-- 						-- Continue iterating to find the last stack that can be split
 -- 						testSkippedLargeStack = items[i]
 -- 						testSplitStackIndex = i
 -- 					else
@@ -691,9 +713,7 @@ end
 -- 				skippedLargeStack = nil -- No split needed - found exact match!
 -- 				splitStackIndex = nil
 -- 				break
--- 			elseif testAttached > simulatedAttached or
--- 			       (testAttached == simulatedAttached and testSplitStackIndex and splitStackIndex and
--- 			        testSplitStackIndex > splitStackIndex) then
+-- 			elseif testAttached > simulatedAttached or (testAttached == simulatedAttached and testSplitStackIndex and splitStackIndex and testSplitStackIndex > splitStackIndex) then
 -- 				-- Better fit found, or same fit but with split from a later stack (preferred)
 -- 				simulatedAttached = testAttached
 -- 				skipStackIndex = skipIndex
@@ -703,7 +723,7 @@ end
 -- 		end
 -- 	end
 
--- 	-- If we need to split, show popup FIRST without attaching anything
+-- 	-- If we need to split, show popup first without attaching anything
 -- 	if skippedLargeStack then
 -- 		local remaining = qtyNeeded - simulatedAttached
 
@@ -721,7 +741,8 @@ end
 -- 			}
 -- 		end
 
--- 		local message = string.format("Click Split to prepare %d %s for mailing.", remaining, itemName)
+-- 		local message = string.format("Click split to prepare %d %s for mailing.", remaining, itemName)
+
 -- 		return false, message, 0
 -- 	end
 
@@ -741,7 +762,7 @@ end
 -- 			-- Attach full stacks that don't exceed what we need
 -- 			if item.count <= remaining then
 -- 				ClearCursor()
--- 				C_Container.PickupContainerItem(item.bag, item.slot)
+-- 				PickupContainerItem(item.bag, item.slot)
 -- 				ClickSendMailItemButton(attachmentSlot)
 
 -- 				attached = attached + item.count
@@ -752,17 +773,16 @@ end
 
 -- 	local message
 -- 	if attached >= qtyNeeded then
--- 		message = string.format("Attached %d %s for %s. Click Send to complete.",
--- 			attached, itemName, requester)
+-- 		message = string.format("Attached %d %s for %s. Click send to complete.", attached, itemName, requester)
 -- 	elseif attached > 0 then
--- 		message = string.format("Attached %d of %d %s (partial). Click Send, then fulfill again.",
--- 			attached, qtyNeeded, itemName)
+-- 		message = string.format("Attached %d of %d %s (partial). Click send, then fulfill again.", attached, qtyNeeded, itemName)
 -- 	else
 -- 		message = string.format("No %s found in bags.", itemName)
+
 -- 		return false, message, 0
 -- 	end
 	
--- 	-- Set pendingSend NOW (when items are attached), not in SendMail hook
+-- 	-- Set pendingSend now (when items are attached), not in SendMail hook
 -- 	-- This ensures pendingSend is set BEFORE MAIL_SEND_SUCCESS fires
 -- 	if attached > 0 then
 -- 		local sender = GBankClassic_Guild:GetNormalizedPlayer()
@@ -773,8 +793,7 @@ end
 -- 			items = {{ name = itemName, quantity = attached }}
 -- 		}
 -- 		self.pendingSendAt = GetTime()
--- 		GBankClassic_Output:Debug("MAIL", "PrepareFulfillMail: Set pendingSend for %s (%d %s)", 
--- 			tostring(normRecipient), attached, itemName)
+-- 		GBankClassic_Output:Debug("MAIL", "PrepareFulfillMail: Set pendingSend for %s (%d %s)", tostring(normRecipient), attached, itemName)
 -- 	end
 	
 -- 	return true, message, attached

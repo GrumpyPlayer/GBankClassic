@@ -1,27 +1,39 @@
-GBankClassic_UI_Inventory = {}
+GBankClassic_UI_Inventory = GBankClassic_UI_Inventory or {}
 
-function GBankClassic_UI_Inventory:Init()
+local UI_Inventory = GBankClassic_UI_Inventory
+
+local Globals = GBankClassic_Globals
+local upvalues = Globals.GetUpvalues("date")
+local date = upvalues.date
+local upvalues = Globals.GetUpvalues("GetServerTime", "GetCoinTextureString", "SecondsToTime", "IsShiftKeyDown", "IsControlKeyDown")
+local GetServerTime = upvalues.GetServerTime
+local GetCoinTextureString = upvalues.GetCoinTextureString
+local SecondsToTime = upvalues.SecondsToTime
+local IsShiftKeyDown = upvalues.IsShiftKeyDown
+local IsControlKeyDown = upvalues.IsControlKeyDown
+
+function UI_Inventory:Init()
     self:DrawWindow()
 end
 
-local function QueryEmpty()
+local function queryEmpty()
 	local now = GetServerTime()
-	local last = GBankClassic_UI_Inventory.last_empty_sync or 0
+	local last = UI_Inventory.last_empty_sync or 0
 	if now - last > 30 then
-		GBankClassic_UI_Inventory.last_empty_sync = now
+		UI_Inventory.last_empty_sync = now
 		GBankClassic_Guild:Share()
 	end
 end
 
-local function OnClose(_)
-    GBankClassic_UI_Inventory.isOpen = false
-    GBankClassic_UI_Inventory.Window:Hide()
+local function onClose(_)
+    UI_Inventory.isOpen = false
+    UI_Inventory.Window:Hide()
     GBankClassic_UI_Donations:Close()
     -- GBankClassic_UI_Requests:Close()
     GBankClassic_UI_Search:Close()
 end
 
-function GBankClassic_UI_Inventory:Toggle()
+function UI_Inventory:Toggle()
     if self.isOpen then
         self:Close()
     else
@@ -29,7 +41,7 @@ function GBankClassic_UI_Inventory:Toggle()
     end
 end
 
-function GBankClassic_UI_Inventory:Open()
+function UI_Inventory:Open()
 	if self.isOpen then
 		return
 	end
@@ -53,22 +65,21 @@ function GBankClassic_UI_Inventory:Open()
     end
 end
 
-function GBankClassic_UI_Inventory:Close()
+function UI_Inventory:Close()
 	if not self.isOpen then
 		return
 	end
-    
 	if not self.Window then
 		return
 	end
 
-    OnClose(self.Window)
+    onClose(self.Window)
 end
 
-function GBankClassic_UI_Inventory:DrawWindow()
+function UI_Inventory:DrawWindow()
     local window = GBankClassic_UI:Create("Frame")
     window:Hide()
-    window:SetCallback("OnClose", OnClose)
+    window:SetCallback("OnClose", onClose)
     window:SetTitle("GBankClassic")
     window:SetLayout("Flow")
     window:SetWidth(550)
@@ -141,13 +152,14 @@ function GBankClassic_UI_Inventory:DrawWindow()
     self.TabGroup = tabGroup
 end
 
-function GBankClassic_UI_Inventory:DrawContent()
+function UI_Inventory:DrawContent()
     local info = GBankClassic_Guild.Info
 	local roster_alts = GBankClassic_Guild:GetRosterAlts()
 	if not info or not roster_alts then
-		QueryEmpty()
-		OnClose()
+		queryEmpty()
+		onClose()
 		GBankClassic_Output:Response("Database is empty; wait for sync.")
+
 		return
 	end
 
@@ -172,7 +184,7 @@ function GBankClassic_UI_Inventory:DrawContent()
     for _, player in pairs(players) do
 		local norm = GBankClassic_Guild:NormalizeName(player)
 		local alt = info.alts[norm]
-        if alt and _G.type(alt) == "table" then
+        if alt and type(alt) == "table" then
             if not first_tab then
                 first_tab = player
             end
@@ -193,8 +205,8 @@ function GBankClassic_UI_Inventory:DrawContent()
     end
 
 	if #tabs == 0 then
-		QueryEmpty()
-		OnClose()
+		queryEmpty()
+		onClose()
 		GBankClassic_Output:Response("Database is empty; wait for sync.")
 
 		return
@@ -203,8 +215,13 @@ function GBankClassic_UI_Inventory:DrawContent()
     self.TabGroup:SetTabs(tabs)
 
 	local percent = total_slots > 0 and (slots / total_slots) or 0
-	local color = GBankClassic_UI_Inventory:GetPercentColor(percent)
-	local defaultStatus = string.format("%s    |c%s%d/%d|r", GetCoinTextureString(total_gold), color, slots, total_slots)
+	local color = self:GetPercentColor(percent)
+    local defaultStatus
+    if slots > 0 and total_slots > 0 then
+	    defaultStatus = string.format("%s    |c%s%d/%d|r", GetCoinTextureString(total_gold), color, slots, total_slots)
+    else
+	    defaultStatus = string.format("%s    |c%s|r", GetCoinTextureString(total_gold), color)
+    end
     self.Window:SetStatusText(defaultStatus)
 
     self.Window:SetCallback("OnEnterStatusBar", function(_)
@@ -228,12 +245,7 @@ function GBankClassic_UI_Inventory:DrawContent()
         end
 
 		-- Add mail item count if available
-		local mailCount = 0
-		if alt.mail and alt.mail.items then
-			for _ in pairs(alt.mail.items) do
-				mailCount = mailCount + 1
-			end
-		end
+		local mailCount = alt.mail and alt.mail.items and GBankClassic_Globals:Count(alt.mail.items) or 0
 
         local money = 0
         if alt.money then
@@ -241,14 +253,19 @@ function GBankClassic_UI_Inventory:DrawContent()
         end
 
 		local percent = slot_total > 0 and (slot_count / slot_total) or 0
-		local color = GBankClassic_UI_Inventory:GetPercentColor(percent)
+		local color = self:GetPercentColor(percent)
 		local mailText = ""
 		if mailCount > 0 then
 			local age = GBankClassic_MailInventory:GetMailDataAge(alt)
 			local ageText = age and (" (" .. SecondsToTime(age) .. " ago)") or ""
 			mailText = string.format("    |cff87ceeb✉ %d item%s%s|r", mailCount, mailCount > 1 and "s" or "", ageText)
 		end
-        local status = string.format("As of %s    %s    |c%s%d/%d|r%s", datetime, GetCoinTextureString(money), color, slot_count, slot_total, mailText)
+        local status
+        if slot_count > 0 and slot_total > 0 then
+            status = string.format("As of %s    %s    |c%s%d/%d|r%s", datetime, GetCoinTextureString(money), color, slot_count, slot_total, mailText)
+        else
+            status = string.format("As of %s    %s    |c%s|r%s", datetime, GetCoinTextureString(money), color, mailText)
+        end
         self.Window:SetStatusText(status)
     end)
 
@@ -295,7 +312,7 @@ function GBankClassic_UI_Inventory:DrawContent()
             local items = {}
             
             if alt.items and next(alt.items) ~= nil then
-                -- alt.items exists - use it directly (may be array or key-value)
+                -- Use alt.items directly (may be array or key-value)
                 for _, item in pairs(alt.items) do
                     table.insert(items, item)
                 end
@@ -319,7 +336,7 @@ function GBankClassic_UI_Inventory:DrawContent()
             GBankClassic_Output:Debug("INVENTORY", "Inventory tab %s: aggregated to %d unique items", tab, #items)
             
             if items and #items > 0 then
-                -- Debug: Check for duplicate item IDs with different links
+                -- Check for duplicate item IDs with different links
                 local itemsByID = {}
                 for _, item in pairs(items) do
                     if item and item.ID then
@@ -331,7 +348,7 @@ function GBankClassic_UI_Inventory:DrawContent()
                 end
                 for itemID, entries in pairs(itemsByID) do
                     if #entries > 1 then
-                        GBankClassic_Output:Debug("INVENTORY", "DUPLICATE ITEM ID %d found with %d different entries:", itemID, #entries)
+                        GBankClassic_Output:Debug("INVENTORY", "Duplicate item ID %d found with %d different entries:", itemID, #entries)
                         for i, entry in ipairs(entries) do
                             GBankClassic_Output:Debug("INVENTORY", "  Entry %d: count=%d, link=%s", i, entry.Count, entry.Link or "nil")
                         end
@@ -361,6 +378,7 @@ function GBankClassic_UI_Inventory:DrawContent()
                             itemWidget:SetCallback("OnClick", function(widget, event)
                                 if IsShiftKeyDown() or IsControlKeyDown() then
                                     GBankClassic_UI:EventHandler(widget, event)
+
                                     return
                                 end
                                 -- GBankClassic_UI_Search:ShowRequestDialog(item, tab)
@@ -384,7 +402,7 @@ function GBankClassic_UI_Inventory:DrawContent()
 	end
 end
 
-function GBankClassic_UI_Inventory:GetPercentColor(percent)
+function UI_Inventory:GetPercentColor(percent)
     local color = nil
     if percent <= 0.25 then
         color = "ffffffff"
@@ -397,5 +415,6 @@ function GBankClassic_UI_Inventory:GetPercentColor(percent)
     elseif percent > 0.9 then
         color = "ffff0000"
     end
+    
     return color
 end
