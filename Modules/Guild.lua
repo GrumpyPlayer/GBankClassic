@@ -1630,30 +1630,11 @@ function Guild:ReceiveAltData(name, alt, sender)
 		return ADOPTION_STATUS.STALE
 	end
 
-	-- Accept incoming if newer version
-	-- If same version, accept the alt with more items
-	local function itemCount(a)
-		local c = 0
-			if a and a.items then
-				for _, v in pairs(a.items) do
-				if v and v.ID then
-					c = c + 1
-				end
-			end
-		end
-		
-		return c
-	end
-
 	if existing and existing.version and alt.version and alt.version < existing.version then
 		-- Incoming is older; ignore
 		return ADOPTION_STATUS.STALE
 	elseif existing and existing.version and alt.version and alt.version == existing.version then
 		-- Tie-breaker: always accept
-		-- -- Tie-breaker: choose the one with more items
-		-- if itemCount(alt) <= itemCount(existing) then
-		-- 	return ADOPTION_STATUS.STALE
-		-- end
 	end
 
 	-- Check against existing alt data, but only if version exists
