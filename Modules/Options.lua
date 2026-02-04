@@ -9,21 +9,20 @@ local upvalues = Globals.GetUpvalues("Settings")
 local Settings = upvalues.Settings
 
 function Options:Init()
-	local defaults = {
-		char = {
-			minimap = { enabled = true },
-			combat = { hide = true },
-			bank = { donations = true },
-			framePositions = {},
-		},
-		global = {
-			bank = { report = true, logLevel = LOG_LEVEL.INFO, commDebug = false },
-			-- requests = {
-			-- 	maxRequestPercent = 100,  -- Maximum % of available items that can be requested (100 = no limit)
-			-- },
-		},
-	}
-	self.db = LibStub("AceDB-3.0"):New("GBankClassicOptionDB", defaults)
+    self.db = LibStub("AceDB-3.0"):New("GBankClassicOptionDB")
+    self.db.char = self.db.char or {}
+    self.db.char.minimap = self.db.char.minimap or { enabled = true }
+    self.db.char.combat = self.db.char.combat or { hide = true }
+    self.db.char.bank = self.db.char.bank or { donations = true }
+    self.db.char.bank['donations'] = (self.db.char.bank['donations'] == nil) and true or self.db.char.bank['donations']
+    self.db.char.framePositions = self.db.char.framePositions or {}
+    self.db.global = self.db.global or {}
+    self.db.global.bank = self.db.global.bank or { report = true, logLevel = LOG_LEVEL.INFO, commDebug = false }
+	self.db.global.bank["report"] = self.db.global.bank["report"] or true
+	self.db.global.bank["logLevel"] = self.db.global.bank["logLevel"] or LOG_LEVEL.INFO
+	self.db.global.bank["commDebug"] = self.db.global.bank["commDebug"] or false
+	-- self.db.global.requests = self.db.global.requests or { maxRequestPercent = 100}
+	-- self.db.global.requests["maxRequestPercent"] = self.db.global.requests["maxRequestPercent"] or 100
 	
 	-- Migrate from old shutup toggle to new logLevel
 	if self.db.global.bank["shutup"] ~= nil then
@@ -31,12 +30,6 @@ function Options:Init()
 			self.db.global.bank["logLevel"] = LOG_LEVEL.RESPONSE
 		end
 		self.db.global.bank["shutup"] = nil
-	end
-	if self.db.global.bank["logLevel"] == nil then
-		self.db.global.bank["logLevel"] = LOG_LEVEL.INFO
-	end
-	if self.db.global.bank["commDebug"] == nil then
-		self.db.global.bank["commDebug"] = false
 	end
 
     -- Initialize
