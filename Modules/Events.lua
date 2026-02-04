@@ -363,8 +363,9 @@ function Events:BAG_UPDATE(_)
 		return
 	end
 	
-    bagUpdateTimer = NewTimer(2, function()
-        GBankClassic_Bank:Scan()
+    bagUpdateTimer = NewTimer(5, function()
+		GBankClassic_Bank:OnUpdateStart()
+		GBankClassic_Bank:OnUpdateStop()
         bagUpdateTimer = nil
     end)
 end
