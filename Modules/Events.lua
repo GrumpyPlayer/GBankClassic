@@ -158,6 +158,7 @@ end
 -- For all players
 function Events:PLAYER_LOGIN(_)
 	GBankClassic_Guild:GetPlayer()
+	GBankClassic_Guild:CleanupMalformedAlts()
 end
 
 function Events:PLAYER_ENTERING_WORLD(_)

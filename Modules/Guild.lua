@@ -330,6 +330,36 @@ function Guild:CleanupMalformedAlts()
             end
         end
         self.Info.roster.alts = new_alts
+
+		-- Remove data for characters that are no longer on the roster
+		local roster = self.Info.roster.alts
+		local deltaSnapshots = self.Info.deltaSnapshots
+		local deltaHistory = self.Info.deltaHistory
+		local alts = self.Info.alts
+
+		-- Build a lookup set from roster values (guild bank alts)
+		local rosterSet = {}
+		for _, playerName in pairs(roster) do
+			rosterSet[playerName] = true
+		end
+
+		-- Helper function to clean tables based on roster
+		local function cleanTable(tbl)
+			local keysToRemove = {}
+			for playerName in pairs(tbl) do
+				if not rosterSet[playerName] then
+					table.insert(keysToRemove, playerName)
+				end
+			end
+			for _, playerName in ipairs(keysToRemove) do
+				tbl[playerName] = nil
+			end
+		end
+
+		-- Clean the tables
+		cleanTable(deltaSnapshots)
+		cleanTable(deltaHistory)
+		cleanTable(alts)
     end
 
     return cleaned
