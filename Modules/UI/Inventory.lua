@@ -232,7 +232,7 @@ function UI_Inventory:DrawContent()
             return
         end
 
-        local datetime = date("%Y-%m-%d %H:%M:%S", alt.version)
+        local datetime = date("%b %d, %Y %H:%M", alt.version)
         local slot_count = 0
         local slot_total = 0
         if alt.bank and alt.bank.slots then
@@ -255,10 +255,9 @@ function UI_Inventory:DrawContent()
 		local percent = slot_total > 0 and (slot_count / slot_total) or 0
 		local color = self:GetPercentColor(percent)
 		local mailText = ""
+        local mailIcon = "|TInterface\\Icons\\INV_Letter_15:12:12:0:0|t"
 		if mailCount > 0 then
-			local age = GBankClassic_MailInventory:GetMailDataAge(alt)
-			local ageText = age and (" (" .. SecondsToTime(age) .. " ago)") or ""
-			mailText = string.format("    |cff87ceeb✉ %d item%s%s|r", mailCount, mailCount > 1 and "s" or "", ageText)
+			mailText = string.format("    |cff87ceeb%s %d item%s|r", mailIcon, mailCount, mailCount > 1 and "s" or "")
 		end
         local status
         if slot_count > 0 and slot_total > 0 then

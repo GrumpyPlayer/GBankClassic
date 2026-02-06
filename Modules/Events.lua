@@ -29,33 +29,58 @@ function Events:RegisterEvents()
 		return
 	end
 
+	-- For all players
 	self:RegisterEvent("PLAYER_LOGIN")
-	self:RegisterEvent("PLAYER_LOGOUT")
 	self:RegisterEvent("PLAYER_ENTERING_WORLD")
 	self:RegisterEvent("GUILD_RANKS_UPDATE")
-    self:RegisterEvent("GUILD_ROSTER_UPDATE")
-    self:RegisterEvent("BANKFRAME_OPENED")
-    self:RegisterEvent("BANKFRAME_CLOSED")
-    self:RegisterEvent("MAIL_SHOW")
-    self:RegisterEvent("MAIL_INBOX_UPDATE")
-    self:RegisterEvent("MAIL_CLOSED")
-    self:RegisterEvent("TRADE_SHOW")
-    self:RegisterEvent("TRADE_CLOSED")
-    self:RegisterEvent("AUCTION_HOUSE_SHOW")
-    self:RegisterEvent("AUCTION_HOUSE_CLOSED")
-    self:RegisterEvent("MERCHANT_SHOW")
-    self:RegisterEvent("MERCHANT_CLOSED")
-    self:RegisterEvent("BAG_UPDATE")
-    self:RegisterEvent("PLAYER_REGEN_DISABLED")
+	self:RegisterEvent("GUILD_ROSTER_UPDATE")
+	self:RegisterEvent("PLAYER_REGEN_DISABLED")
+	self:RegisterEvent("MAIL_SHOW")
+	self:RegisterEvent("MAIL_CLOSED")
 	-- self:RegisterEvent("MAIL_SEND_SUCCESS")
+
+	-- For guild bank alts
+	local player = GBankClassic_Guild:GetNormalizedPlayer()
+	if GBankClassic_Guild:IsBank(player) then
+		self:RegisterEvent("BAG_UPDATE")
+		self:RegisterEvent("BANKFRAME_OPENED")
+		self:RegisterEvent("BANKFRAME_CLOSED")
+		self:RegisterEvent("AUCTION_HOUSE_SHOW")
+		self:RegisterEvent("AUCTION_HOUSE_CLOSED")
+		self:RegisterEvent("MERCHANT_SHOW")
+		self:RegisterEvent("MERCHANT_CLOSED")
+		self:RegisterEvent("TRADE_SHOW")
+		self:RegisterEvent("TRADE_CLOSED")
+		self:RegisterEvent("CHAT_MSG_LOOT")
+		self:RegisterEvent("PLAYER_MONEY")
+
+		-- When you shift-click a mail from the inbox
+		hooksecurefunc("AutoLootMailItem", function(mailId)
+			GBankClassic_Output:Debug("DONATION", "AutoLootMailItem function fired")
+			GBankClassic_Mail:ProcessDonation(mailId)
+		end)
+
+		-- When you manually click on a single mail attachment
+		-- When you click "Open All" from the inbox
+		hooksecurefunc("TakeInboxItem", function(mailId, attachmentIndex)
+			GBankClassic_Output:Debug("DONATION", "TakeInboxItem function fired")
+			GBankClassic_Mail:ProcessItemDonation(mailId, attachmentIndex)
+		end)
+
+		-- Any time money is taken from mails
+		hooksecurefunc("TakeInboxMoney", function(mailId)
+			GBankClassic_Output:Debug("DONATION", "TakeInboxMoney function fired")
+			GBankClassic_Mail:ProcessMoneyDonation(mailId)
+		end)
+	end
 
     hooksecurefunc("ChatEdit_InsertLink", function(link)
         GBankClassic_UI:OnInsertLink(link)
     end)
 
 	-- -- Hook MailFrame visibility changes directly for more reliable detection
-	-- if MailFrame and not MailFrame.gbankHooked then
-	-- 	MailFrame.gbankHooked = true
+	-- if MailFrame and not MailFrame.isGBankHooked then
+	-- 	MailFrame.isGBankHooked = true
 	-- 	MailFrame:HookScript("OnShow", function()
 	-- 		GBankClassic_Mail.isOpen = true
 	-- 		After(0.1, function()
@@ -75,8 +100,8 @@ function Events:RegisterEvents()
 	-- end
 
 	-- -- Hook the send mail tab to auto-open requests window for bank alts
-	-- if MailFrameTab2 and not MailFrameTab2.gbankHooked then
-	-- 	MailFrameTab2.gbankHooked = true
+	-- if MailFrameTab2 and not MailFrameTab2.isGBankHooked then
+	-- 	MailFrameTab2.isGBankHooked = true
 	-- 	MailFrameTab2:HookScript("OnClick", function()
 	-- 		local player = GBankClassic_Guild:GetNormalizedPlayer()
 	-- 		if player and GBankClassic_Guild:IsBank(player) then
@@ -104,25 +129,195 @@ function Events:UnregisterEvents()
 
     GBankClassic_Bank.eventsRegistered = false
 
+	-- For all players
 	self:UnregisterEvent("PLAYER_LOGIN")
-	self:UnregisterEvent("PLAYER_LOGOUT")
 	self:UnregisterEvent("PLAYER_ENTERING_WORLD")
 	self:UnregisterEvent("GUILD_RANKS_UPDATE")
-    self:UnregisterEvent("GUILD_ROSTER_UPDATE")
-    self:UnregisterEvent("BANKFRAME_OPENED")
-    self:UnregisterEvent("BANKFRAME_CLOSED")
-    self:UnregisterEvent("MAIL_SHOW")
-    self:UnregisterEvent("MAIL_INBOX_UPDATE")
-    self:UnregisterEvent("MAIL_CLOSED")
-    self:UnregisterEvent("TRADE_SHOW")
-    self:UnregisterEvent("TRADE_CLOSED")
-    self:UnregisterEvent("AUCTION_HOUSE_SHOW")
-    self:UnregisterEvent("AUCTION_HOUSE_CLOSED")
-    self:UnregisterEvent("MERCHANT_SHOW")
-    self:UnregisterEvent("MERCHANT_CLOSED")
-    self:UnregisterEvent("BAG_UPDATE")
-    self:UnregisterEvent("PLAYER_REGEN_DISABLED")
+	self:UnregisterEvent("GUILD_ROSTER_UPDATE")
+	self:UnregisterEvent("PLAYER_REGEN_DISABLED")
+	self:UnregisterEvent("MAIL_SHOW")
+	self:UnregisterEvent("MAIL_CLOSED")
 	-- self:UnregisterEvent("MAIL_SEND_SUCCESS")
+
+	-- For guild bank alts
+	if GBankClassic_Guild:IsBank() then
+		self:UnregisterEvent("BAG_UPDATE")
+		self:UnregisterEvent("BANKFRAME_OPENED")
+		self:UnregisterEvent("BANKFRAME_CLOSED")
+		self:UnregisterEvent("AUCTION_HOUSE_SHOW")
+		self:UnregisterEvent("AUCTION_HOUSE_CLOSED")
+		self:UnregisterEvent("MERCHANT_SHOW")
+		self:UnregisterEvent("MERCHANT_CLOSED")
+		self:UnregisterEvent("TRADE_SHOW")
+		self:UnregisterEvent("TRADE_CLOSED")
+		self:UnregisterEvent("CHAT_MSG_LOOT")
+		self:UnregisterEvent("PLAYER_MONEY")
+	end
+end
+
+-- For all players
+function Events:PLAYER_LOGIN(_)
+	GBankClassic_Guild:GetPlayer()
+end
+
+function Events:PLAYER_ENTERING_WORLD(_)
+	GuildRoster()
+	GBankClassic_Guild:RefreshOnlineCache()
+end
+
+function Events:GUILD_RANKS_UPDATE(_)
+	local guild = GBankClassic_Guild:GetGuild()
+	if not guild then
+		return
+	end
+
+	if GBankClassic_Guild:Init(guild) then
+		GBankClassic_Options:InitGuild()
+
+		if IsInRaid() then
+			GBankClassic_Output:Debug("EVENTS", "GUILD_RANKS_UPDATE: ignoring guild ranks cleanup (in raid)")
+
+			return
+		end
+        
+		local cleaned = GBankClassic_Guild:CleanupMalformedAlts()
+		if cleaned and cleaned > 0 then
+			GBankClassic_Output:Info("Cleaned %d malformed alt entries from saved database", cleaned)
+			GBankClassic_Output:Debug("EVENTS", "GUILD_RANKS_UPDATE:", "Cleaned %d malformed alt entries from saved database", cleaned)
+		end
+        
+        if GBankClassic_UI_Inventory.isOpen then
+            GBankClassic_UI_Inventory:DrawContent()
+        end
+		if GBankClassic_UI_Donations.isOpen then
+			GBankClassic_UI_Donations:DrawContent()
+		end
+	end
+end
+
+function Events:GUILD_ROSTER_UPDATE(_)
+	GBankClassic_Guild:RefreshOnlineCache()
+	GBankClassic_Guild:InvalidateBanksCache()
+	GBankClassic_Guild:RebuildGuildBankAltsRoster()
+	GBankClassic_DeltaComms:ClearOfflineErrorCounters(GBankClassic_Guild.Info and GBankClassic_Guild.Info.name)
+	-- GBankClassic_Guild:RefreshRequestsUI()
+end
+
+function Events:PLAYER_REGEN_DISABLED(_)
+    if GBankClassic_Options:GetCombatHide() then
+        GBankClassic_UI_Inventory:Close()
+    end
+end
+
+function Events:MAIL_SHOW(_)
+	GBankClassic_Output:Debug("MAIL", "MAIL_SHOW event fired")
+
+    GBankClassic_Bank:OnUpdateStart()
+	GBankClassic_MailInventory.hasUpdated = true
+	GBankClassic_Output:Debug("MAIL", "MailInventory.hasUpdated set to %s", tostring(GBankClassic_MailInventory.hasUpdated))
+    GBankClassic_Mail.isOpen = true
+	-- GBankClassic_Mail:InitSendHook()
+    GBankClassic_Mail:Check()
+	
+	if not MailFrame.isGBankHooked then
+		MailFrame:HookScript("OnHide", function()
+			GBankClassic_Output:Debug("MAIL", "MailFrame OnHide fired (mailbox closed)")
+			self:MAIL_CLOSED()
+		end)
+		MailFrame.isGBankHooked = true
+		GBankClassic_Output:Debug("MAIL", "Hooked MailFrame OnHide")
+	end
+end
+
+function Events:MAIL_CLOSED(_)
+	GBankClassic_Output:Debug("MAIL", "MAIL_CLOSED event fired")
+
+    if GBankClassic_Mail.donationItemRegistry then
+        table.wipe(GBankClassic_Mail.donationItemRegistry)
+    end
+    if GBankClassic_Mail.itemDonationVerificationQueue then
+        table.wipe(GBankClassic_Mail.itemDonationVerificationQueue)
+    end
+	GBankClassic_Mail.isGoldDonationPending = nil
+	GBankClassic_Mail.goldBalanceBeforeDonation = nil
+    GBankClassic_Mail.isOpen = false
+
+	-- GBankClassic_Output:Debug("MAIL", "Calling Bank:OnUpdateStart()")
+    -- GBankClassic_Bank:OnUpdateStart()
+	-- GBankClassic_Output:Debug("MAIL", "Bank:OnUpdateStart() completed")
+	GBankClassic_Output:Debug("MAIL", "Calling Bank:OnUpdateStop()")
+    GBankClassic_Bank:OnUpdateStop()
+	GBankClassic_Output:Debug("MAIL", "Bank:OnUpdateStop() completed")
+
+    -- GBankClassic_UI_Mail:Close()
+	-- -- Refresh requests UI to update fulfill button states
+	-- -- Delay slightly to ensure MailFrame state is updated
+	-- After(0.1, function()
+	-- 	if GBankClassic_UI_Requests.isOpen then
+	-- 		GBankClassic_UI_Requests:DrawContent()
+	-- 	end
+	-- end)
+end
+
+-- function Events:MAIL_SEND_SUCCESS(_)
+-- 	GBankClassic_Output:Debug("MAIL", "MAIL_SEND_SUCCESS event fired")
+-- 	GBankClassic_Mail:InitSendHook()
+-- 	GBankClassic_Mail:ApplyPendingSend()
+-- end
+
+-- For guild bank alts
+function Events:BAG_UPDATE(_)
+    if bagUpdateTimer then
+		return
+	end
+	
+    bagUpdateTimer = NewTimer(5, function()
+		GBankClassic_Bank:OnUpdateStart()
+		GBankClassic_Bank:OnUpdateStop()
+        bagUpdateTimer = nil
+    end)
+end
+
+function Events:BANKFRAME_OPENED(_)
+    GBankClassic_Bank:OnUpdateStart()
+end
+
+function Events:BANKFRAME_CLOSED(_)
+    GBankClassic_Bank:OnUpdateStop()
+end
+
+function Events:AUCTION_HOUSE_SHOW(_)
+    GBankClassic_Bank:OnUpdateStart()
+end
+
+function Events:AUCTION_HOUSE_CLOSED(_)
+    GBankClassic_Bank:OnUpdateStop()
+end
+
+function Events:MERCHANT_SHOW(_)
+    GBankClassic_Bank:OnUpdateStart()
+end
+
+function Events:MERCHANT_CLOSED(_)
+    GBankClassic_Bank:OnUpdateStop()
+end
+
+function Events:TRADE_SHOW(_)
+	GBankClassic_Bank:OnUpdateStart()
+end
+
+function Events:TRADE_CLOSED(_)
+	GBankClassic_Bank:OnUpdateStop()
+end
+
+function Events:CHAT_MSG_LOOT(_, message)
+	GBankClassic_Output:Debug("DONATION", "CHAT_MSG_LOOT event fired")
+	GBankClassic_Mail:ProcessPossibleItemDonation(message)
+end
+
+function Events:PLAYER_MONEY(_)
+	GBankClassic_Output:Debug("DONATION", "PLAYER_MONEY event fired")
+	GBankClassic_Mail:ProcessPossibleMoneyDonation()
 end
 
 function Events:SetTimer()
@@ -162,7 +357,6 @@ function Events:Sync(priority)
 	end
 
 	local data = GBankClassic_Core:SerializeWithChecksum(version)
-	-- Use provided priority or default to BULK for automatic timer-based syncs
 	GBankClassic_Core:SendCommMessage("gbank-v", data, "Guild", nil, priority or "BULK")
 end
 
@@ -190,188 +384,8 @@ function Events:SyncDeltaVersion(priority)
 	-- gbank-dv2 for new clients (with aggregated items hash)
 	local data = GBankClassic_Core:SerializeWithChecksum(version)
 	GBankClassic_Core:SendCommMessage("gbank-dv2", data, "Guild", nil, priority or "NORMAL")
-	
+
 	-- Old clients will compute hash from their legacy alt.bank/alt.bags structure
 	-- New clients ignore gbank-dv, so no conflict
 	GBankClassic_Core:SendCommMessage("gbank-dv", data, "Guild", nil, priority or "NORMAL")
-end
-
-function Events:PLAYER_LOGIN(_)
-	GBankClassic_Guild:GetPlayer()
-end
-
-function Events:PLAYER_LOGOUT(_)
-	-- Check if mail field exists before logout
-	local player = GBankClassic_Guild:GetNormalizedPlayer()
-	GBankClassic_Output:Debug("MAIL", "========================================")
-	GBankClassic_Output:Debug("MAIL", "Checking mail at logout for: %s", player)
-	if GBankClassic_Guild.Info and GBankClassic_Guild.Info.alts and GBankClassic_Guild.Info.alts[player] then
-		local alt = GBankClassic_Guild.Info.alts[player]
-		if alt.mail then
-			local mailCount = alt.mail.items and #alt.mail.items or 0
-			
-			GBankClassic_Output:Debug("MAIL", "Mail field exists with %d items", mailCount)
-			GBankClassic_Output:Debug("MAIL", "  version: %s (type: %s)", tostring(alt.mail.version), type(alt.mail.version))
-			GBankClassic_Output:Debug("MAIL", "  lastScan: %s (type: %s)", tostring(alt.mail.lastScan), type(alt.mail.lastScan))
-			GBankClassic_Output:Debug("MAIL", "  slots type: %s", type(alt.mail.slots))
-			if alt.mail.slots then
-				GBankClassic_Output:Debug("MAIL", "  slots.count: %s", tostring(alt.mail.slots.count))
-			end
-			-- Check for metatables or functions that would prevent serialization
-			if getmetatable(alt.mail) then
-				GBankClassic_Output:Debug("MAIL", "WARNING: alt.mail has a metatable!")
-			end
-		else
-			GBankClassic_Output:Debug("MAIL", "Mail field missing!")
-		end
-	else
-		GBankClassic_Output:Debug("MAIL", "Alt data not found")
-	end
-	GBankClassic_Output:Debug("MAIL", "========================================")
-end
-
-function Events:PLAYER_ENTERING_WORLD(_)
-    -- Request initial guild roster update on world enter
-	GuildRoster()
-	
-	-- Initialize cache immediately in case GUILD_ROSTER_UPDATE is delayed
-	GBankClassic_Guild:RefreshOnlineCache()
-end
-
-function Events:GUILD_RANKS_UPDATE(_)
-	local guild = GBankClassic_Guild:GetGuild()
-	if not guild then
-		return
-	end
-
-	-- Load guild data and perform a one-time cleanup of malformed alt entries
-	if GBankClassic_Guild:Init(guild) then
-		GBankClassic_Options:InitGuild()
-
-		if IsInRaid() then
-			GBankClassic_Output:Debug("EVENTS", "GUILD_RANKS_UPDATE: ignoring guild ranks cleanup (in raid)")
-
-			return
-		end
-        
-		local cleaned = GBankClassic_Guild:CleanupMalformedAlts()
-		if cleaned and cleaned > 0 then
-			GBankClassic_Output:Info("Cleaned %d malformed alt entries from saved database", cleaned)
-		end
-        
-        if GBankClassic_UI_Inventory.isOpen then
-            GBankClassic_UI_Inventory:DrawContent()
-        end
-	end
-end
-
-function Events:GUILD_ROSTER_UPDATE(_)
-    -- Refresh online members cache when roster updates
-	GBankClassic_Guild:RefreshOnlineCache()
-	-- Invalidate banks cache when roster updates
-	GBankClassic_Guild:InvalidateBanksCache()
-	-- Rebuild guild bank alts roster from guild notes (local only, no network communication)
-	GBankClassic_Guild:RebuildGuildBankAltsRoster()
-	-- Clear delta error counters for offline players
-	GBankClassic_DeltaComms:ClearOfflineErrorCounters(GBankClassic_Guild.Info and GBankClassic_Guild.Info.name)
-	-- -- Refresh the requests UI to update guild bank alt controls (like highlight checkbox)
-	-- GBankClassic_Guild:RefreshRequestsUI()
-end
-
-function Events:BANKFRAME_OPENED(_)
-    GBankClassic_Bank:OnUpdateStart()
-end
-
-function Events:BANKFRAME_CLOSED(_)
-    GBankClassic_Bank:OnUpdateStop()
-end
-
-function Events:MAIL_SHOW(_)
-	GBankClassic_Output:Debug("MAIL", "MAIL_SHOW event fired")
-    GBankClassic_Bank:OnUpdateStart()
-	GBankClassic_MailInventory.hasUpdated = true
-	GBankClassic_Output:Debug("MAIL", "MailInventory.hasUpdated set to %s", tostring(GBankClassic_MailInventory.hasUpdated))
-    GBankClassic_Mail.isOpen = true
-	-- GBankClassic_Mail:InitSendHook()
-    GBankClassic_Mail:Check()
-	
-	-- Hook MailFrame OnHide to detect when mail closes (MAIL_CLOSED event may not fire reliably)
-	if not MailFrame.GBankHooked then
-		MailFrame:HookScript("OnHide", function()
-			GBankClassic_Output:Debug("MAIL", "MailFrame OnHide fired (mailbox closed)")
-			self:MAIL_CLOSED()
-		end)
-		MailFrame.GBankHooked = true
-		GBankClassic_Output:Debug("MAIL", "Hooked MailFrame OnHide")
-	end
-end
-
-function Events:MAIL_INBOX_UPDATE(_)
-    GBankClassic_Mail:Scan()
-end
-
-function Events:MAIL_CLOSED(_)
-	GBankClassic_Output:Debug("MAIL", "MAIL_CLOSED event fired")
-    GBankClassic_Mail.isOpen = false
-    GBankClassic_Mail.isScanning = false
-	GBankClassic_Output:Debug("MAIL", "Calling Bank:OnUpdateStop()")
-    GBankClassic_Bank:OnUpdateStop()
-	GBankClassic_Output:Debug("MAIL", "Bank:OnUpdateStop() completed")
-    GBankClassic_UI_Mail:Close()
-	-- -- Refresh requests UI to update fulfill button states
-	-- -- Delay slightly to ensure MailFrame state is updated
-	-- After(0.1, function()
-	-- 	if GBankClassic_UI_Requests.isOpen then
-	-- 		GBankClassic_UI_Requests:DrawContent()
-	-- 	end
-	-- end)
-end
-
--- function Events:MAIL_SEND_SUCCESS(_)
--- 	GBankClassic_Output:Debug("MAIL", "MAIL_SEND_SUCCESS event fired")
--- 	-- Safety: ensure hook is registered when mail UI is opened
--- 	GBankClassic_Mail:InitSendHook()
--- 	GBankClassic_Mail:ApplyPendingSend()
--- end
-
-function Events:TRADE_SHOW(_)
-    GBankClassic_Bank:OnUpdateStart()
-end
-
-function Events:TRADE_CLOSED(_)
-    GBankClassic_Bank:OnUpdateStop()
-end
-
-function Events:AUCTION_HOUSE_SHOW(_)
-    GBankClassic_Bank:OnUpdateStart()
-end
-
-function Events:AUCTION_HOUSE_CLOSED(_)
-    GBankClassic_Bank:OnUpdateStop()
-end
-
-function Events:MERCHANT_SHOW(_)
-    GBankClassic_Bank:OnUpdateStart()
-end
-
-function Events:MERCHANT_CLOSED(_)
-    GBankClassic_Bank:OnUpdateStop()
-end
-
-function Events:BAG_UPDATE(_)
-    if bagUpdateTimer then
-		return
-	end
-	
-    bagUpdateTimer = NewTimer(5, function()
-		GBankClassic_Bank:OnUpdateStart()
-		GBankClassic_Bank:OnUpdateStop()
-        bagUpdateTimer = nil
-    end)
-end
-
-function Events:PLAYER_REGEN_DISABLED(_)
-    if GBankClassic_Options:GetCombatHide() then
-        GBankClassic_UI_Inventory:Close()
-    end
 end

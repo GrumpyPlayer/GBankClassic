@@ -32,7 +32,6 @@ Modules/Options.lua
 Modules/UI.lua
 Modules/UI/Donations.lua
 Modules/UI/Inventory.lua
-Modules/UI/Mail.lua
 Modules/UI/Minimap.lua
 Modules/UI/Requests.lua
 Modules/UI/Search.lua

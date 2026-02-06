@@ -718,8 +718,6 @@ function Guild:RefreshOnlineCache()
 	end
 
 	local count = GBankClassic_Globals:Count(self.onlineMembers)
-	-- TODO, one or the other
-	GBankClassic_Output:Debug("CACHE", "Refreshed online cache: %d members online", count)
 	GBankClassic_Output:Debug("ROSTER", "Refreshed online cache: %d members online", count)
 end
 
@@ -1109,7 +1107,8 @@ function Guild:StripAltLinks(alt)
 		items = strippedItems,
 		bank = strippedBank,
 		bags = strippedBags,
-		mail = alt.mail
+		mail = alt.mail,
+		ledger = alt.ledger
 	}
 
 	return stripped

@@ -186,16 +186,16 @@ function Options:Init()
 							return GBankClassic_Output:IsCategoryEnabled("CHUNK")
 						end,
 					},
-					["cache"] = {
+					["donation"] = {
 						order = 15,
 						type = "toggle",
 						width = "full",
-						name = "CACHE - Cache operations (guild roster cache, etc.)",
+						name = "DONATION - Donation ledger operations",
 						set = function(_, v)
-							GBankClassic_Output:SetCategoryEnabled("CACHE", v)
+							GBankClassic_Output:SetCategoryEnabled("DONATION", v)
 						end,
 						get = function()
-							return GBankClassic_Output:IsCategoryEnabled("CACHE")
+							return GBankClassic_Output:IsCategoryEnabled("DONATION")
 						end,
 					},
 					["whisper"] = {

@@ -27,7 +27,6 @@ function UI:Init()
     GBankClassic_UI_Donations:Init()
 	-- GBankClassic_UI_Requests:Init()
     GBankClassic_UI_Search:Init()
-    GBankClassic_UI_Mail:Init()
 end
 
 function UI:Controller()
@@ -124,7 +123,7 @@ function UI:DrawItem(item, parent, size, height, imageSize, imageHeight, labelXO
             self:HideTooltip()
         end)
         slot:SetCallback("OnClick", function(self, event)
-            self:EventHandler(self, event)
+            UI:EventHandler(self, event)
         end)
         frame:RegisterForDrag("LeftButton")
         frame:SetScript("OnDragStart", function(_)

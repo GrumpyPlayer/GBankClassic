@@ -16,7 +16,7 @@ function Database:Init()
 				DELTA = false,
 				SYNC = false,
 				CHUNK = false,
-				CACHE = false,
+				DONATION = false,
 				WHISPER = false,
 				-- REQUESTS = false,
 				UI = false,

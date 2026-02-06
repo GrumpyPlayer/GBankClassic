@@ -3,8 +3,11 @@ GBankClassic_UI_Donations = GBankClassic_UI_Donations or {}
 local UI_Donations = GBankClassic_UI_Donations
 
 local Globals = GBankClassic_Globals
-local upvalues = Globals.GetUpvalues("GetClassColor")
+local upvalues = Globals.GetUpvalues("GetClassColor", "GetCoinTextureString")
 local GetClassColor = upvalues.GetClassColor
+local GetCoinTextureString = upvalues.GetCoinTextureString
+local upvalues = Globals.GetUpvalues("GameTooltip")
+local GameTooltip = upvalues.GameTooltip
 
 function UI_Donations:Init()
     self:DrawWindow()
@@ -151,18 +154,27 @@ function UI_Donations:DrawContent()
     self.Content:AddChild(header)
 
     header = GBankClassic_UI:Create("Label")
-    header:SetText("Name")
+    header:SetText("Top 30 donors")
     self.Content:AddChild(header)
 
     header = GBankClassic_UI:Create("Label")
-    header:SetText("Score")
+    header:SetText("Vendor value")
     self.Content:AddChild(header)
+    header.frame:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText("Total value to sell to a vendor", 1, 1, 1, 1, true)
+        GameTooltip:AddLine("Items with no sell price are valued at 1 copper for the donation ledger", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    header.frame:SetScript("OnLeave", function(self)
+        GameTooltip:Hide()
+    end)
 
     local count = 0
     for _, v in pairs(scoreboard) do
         count = count + 1
 
-        if count <= 25 then
+        if count <= 30 then
             local rank = GBankClassic_UI:Create("Label")
             local formatString = " %d)"
             if count < 10 then
@@ -177,14 +189,16 @@ function UI_Donations:DrawContent()
                 _, _, _, color = GetClassColor(class)
             end
             local contributor = GBankClassic_UI:Create("Label")
-            contributor:SetText(string.format("|c%s%s|r", color, v.player))
+            contributor:SetText(string.format("|c%s %s|r", color, v.player))
             self.Content:AddChild(contributor)
 
             local score = GBankClassic_UI:Create("Label")
-            score:SetText(string.format("|c%s%d|r", color, math.ceil(v.score)))
+            local totalCopper = math.floor(v.score * 10000 + 0.5)
+            score:SetText(string.format("|c%s %s|r", color, GetCoinTextureString(totalCopper)))
             self.Content:AddChild(score)
         end
     end
 
-    self.Window:SetStatusText(count .. " Total")
+    local plural = (count ~= 1 and "s" or "")
+    self.Window:SetStatusText(count .. " total donor" .. plural)
 end

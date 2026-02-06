@@ -8,17 +8,25 @@ local Mail = GBankClassic_Mail
 local Globals = GBankClassic_Globals
 local upvalues = Globals.GetUpvalues("MailFrame")
 local MailFrame = upvalues.MailFrame
-local upvalues = Globals.GetUpvalues("CheckInbox", "GetInboxNumItems", "GetInboxHeaderInfo", "GetInboxItemLink", "GetInboxItem", "TakeInboxItem", "TakeInboxMoney", "GetItemInfo")
+local upvalues = Globals.GetUpvalues("CheckInbox", "GetInboxHeaderInfo", "GetInboxItemLink", "GetInboxItem", "GetItemInfo", "GetMoney", "GetCoinTextureString")
 local CheckInbox = upvalues.CheckInbox
-local GetInboxNumItems = upvalues.GetInboxNumItems
 local GetInboxHeaderInfo = upvalues.GetInboxHeaderInfo
 local GetInboxItemLink = upvalues.GetInboxItemLink
 local GetInboxItem = upvalues.GetInboxItem
-local TakeInboxItem = upvalues.TakeInboxItem
-local TakeInboxMoney = upvalues.TakeInboxMoney
 local GetItemInfo = upvalues.GetItemInfo
-local upvalues = Globals.GetUpvalues("ATTACHMENTS_MAX_RECEIVE")
+local GetMoney = upvalues.GetMoney
+local GetCoinTextureString = upvalues.GetCoinTextureString
+local upvalues = Globals.GetUpvalues("ATTACHMENTS_MAX_RECEIVE", "LOOT_ITEM_SELF_MULTIPLE", "LOOT_ITEM_SELF", "LOOT_ITEM_PUSHED_SELF_MULTIPLE", "LOOT_ITEM_PUSHED_SELF")
 local ATTACHMENTS_MAX_RECEIVE = upvalues.ATTACHMENTS_MAX_RECEIVE
+local LOOT_ITEM_SELF_MULTIPLE = upvalues.LOOT_ITEM_SELF_MULTIPLE
+local LOOT_ITEM_SELF = upvalues.LOOT_ITEM_SELF
+local LOOT_ITEM_PUSHED_SELF_MULTIPLE = upvalues.LOOT_ITEM_PUSHED_SELF_MULTIPLE
+local LOOT_ITEM_PUSHED_SELF = upvalues.LOOT_ITEM_PUSHED_SELF
+
+Mail.donationItemRegistry = {}
+Mail.itemDonationVerificationQueue = {}
+Mail.isGoldDonationPending = nil
+Mail.goldBalanceBeforeDonation = nil
 
 -- -- Initialize split stack popup dialog
 -- if not StaticPopupDialogs["GBANK_SPLIT_STACK"] then
@@ -77,10 +85,8 @@ local ATTACHMENTS_MAX_RECEIVE = upvalues.ATTACHMENTS_MAX_RECEIVE
 -- 	}
 -- end
 
--- Check if mailbox is actually open (uses frame state as ground truth)
 function Mail:IsMailboxOpen()
 	local frameOpen = MailFrame and MailFrame:IsShown() or false
-	-- Sync our flag with actual frame state
 	if self.isOpen ~= frameOpen then
 		self.isOpen = frameOpen
 	end
@@ -92,85 +98,205 @@ function Mail:Check()
     CheckInbox()
 end
 
-function Mail:Scan()
-    if not GBankClassic_Options:GetDonationEnabled() then
-		return
-	end
-    if not Mail.isOpen then
-		return
-	end
-	if self.isScanning then
-		return
-	end
+-- Helper to update the donation ledger
+function Mail:RecordDonationInLedger(sender, itemLink, quantity, money, isMoney)
+    if not sender then
+        return
+    end
+    
+    local senderNorm = GBankClassic_Guild:GetNormalizedPlayer(sender)
+    if self.Roster and self.Roster[senderNorm] then
+        GBankClassic_Output:Debug("DONATION", "Only items and money sent by non-guild bank alts are consider a donation")
 
-    local info = GBankClassic_Guild.Info
-	if not info then
-		return
-	end
-
-	local player = GBankClassic_Guild:GetNormalizedPlayer()
-    local isBank = false
-    local banks = GBankClassic_Guild:GetBanks()
-	if banks == nil then
-		return
-	end
-
-	self.Roster = self.Roster or {}
-    for _, v in pairs(banks) do
-		local norm = GBankClassic_Guild:NormalizeName(v)
-		if self.Roster and norm then
-			self.Roster[norm] = true
-		end
-        if norm == player then
-            isBank = true
-        end
+        return
     end
 
-	if not isBank then
-		return
-	end
-	if not GBankClassic_Options:GetBankEnabled() then
-		return
-	end
+    local playerNorm = GBankClassic_Guild:GetNormalizedPlayer()
+    local info = GBankClassic_Guild.Info
+    if not info or not info.alts or not info.alts[playerNorm] then
+        return
+    end
+    
+    if not info.alts[playerNorm].ledger then
+        info.alts[playerNorm].ledger = {}
+    end
+    local ledger = info.alts[playerNorm].ledger
 
-    self.isScanning = true
+    if isMoney then
+        GBankClassic_Output:Debug("DONATION", "Proceeding to record money donation in ledger of %s by %s to the donation ledger", GetCoinTextureString(money), senderNorm)
+        if money and money > 0 then
+            local score = money / 10000
+            if GBankClassic_Options:GetBankReporting() then
+                GBankClassic_Output:Info("Donation of %s received from %s", GetCoinTextureString(money), senderNorm)
+            end
+            ledger[senderNorm] = (ledger[senderNorm] or 0) + score
+        end
+    else
+        GBankClassic_Output:Debug("DONATION", "Proceeding to record item donation in ledger of %sx %s by %s to the donation ledger", quantity, itemLink, senderNorm)
+        if itemLink and quantity then
+            local name, _, _, level, _, _, _, _, _, _, price = GetItemInfo(itemLink)
+            if name and level and not GBankClassic_Item:IsUnique(itemLink) then
+                local effectivePrice = (price and price > 0) and price or 1
+                local score = (effectivePrice * quantity) / 10000
+                if GBankClassic_Options:GetBankReporting() then
+                    GBankClassic_Output:Info("Donation of %s x%d received from %s (vendor value recorded as %s)", itemLink, quantity, senderNorm, GetCoinTextureString((effectivePrice * quantity)))
+                end
+                ledger[senderNorm] = (ledger[senderNorm] or 0) + score
+            end
+        end
+    end
+end
 
-    local numItems = GetInboxNumItems()
+-- Helper to extract informatiom from a mail
+function Mail:ProcessMail(mailId, attachmentIndex)
+    local _, _, sender, _, moneyString, _, daysLeft, itemCount, _, wasReturned, _, _, isGM = GetInboxHeaderInfo(mailId)
+    local money = tonumber(moneyString) or 0
 
-    if numItems > 0 then
-        for mailId = 1, numItems do
-            local _, _, sender, _, money, CODAmount, _, itemCount, _, wasReturned, _, canReply, isGM = GetInboxHeaderInfo(mailId)
-            if not sender then
-                self:ResetScan()
+    if not sender or wasReturned or isGM then
+        GBankClassic_Output:Debug("DONATION", "Processing aborted - invalid mail state")
+
+        return 
+    end
+
+    local key, itemLink, itemID, quantity
+    if attachmentIndex then
+        itemLink = GetInboxItemLink(mailId, attachmentIndex)
+        if itemLink then
+            itemID = itemLink:match("item:(%d+)")
+            quantity = select(4, GetInboxItem(mailId, attachmentIndex)) or 1
+
+            if not (itemLink and itemID) or quantity <= 0 then 
+                GBankClassic_Output:Debug("DONATION", "Processing aborted - invalid item")
+
+                return 
+            end
+
+            -- Create a truly unique key for this mail attachment
+            -- The daysLeft field is the "secret sauce" (it's a float that is unique to that mail)
+            key = string.format("%s-%.12f-%d-%d-%d-%d", sender, daysLeft or 0, attachmentIndex, quantity)
+
+            -- Check if we have already scored this specific mail attachment
+            if self.donationItemRegistry[key] then
+                GBankClassic_Output:Debug("DONATION", "Prevented duplicate scoring for key = %s due to mail shifting", key)
 
                 return
             end
 
-            if CODAmount == 0 and not wasReturned and not isGM and canReply and not self.Roster[sender] and (money > 0 or (itemCount and itemCount > 0)) then
-                local hasNonUnique = nil
-                if itemCount and itemCount > 0 then
-                    for attachmentIndex = 1, ATTACHMENTS_MAX_RECEIVE do
-                        local link = GetInboxItemLink(mailId, attachmentIndex)
-                        if link then
-                            local isUnique = GBankClassic_Item:IsUnique(link)
-                            if not isUnique then
-                                hasNonUnique = true
-                                break
-                            elseif hasNonUnique == nil then
-                                hasNonUnique = false
-                            end
-                        end
-                    end
-                end
-
-                if hasNonUnique == nil or hasNonUnique then
-                    GBankClassic_UI_Mail:SetMailId(mailId)
-                    GBankClassic_UI_Mail:Open()
-
-                    return
-                end
-            end
+            -- Proceed and mark the key as recorded
+            GBankClassic_Output:Debug("DONATION", "Updating donationItemRegistry key = %s", key)
+            self.donationItemRegistry[key] = true
         end
+    end
+
+    return sender, key, money, itemLink, itemID, quantity, itemCount
+end
+
+-- When you shift-click a mail from the inbox
+function Mail:ProcessDonation(mailId)
+    GBankClassic_Output:Debug("DONATION", "Processing donated mail for mailId %s", mailId)
+
+    local sender, _, money, _, _, _, itemCount = self:ProcessMail(mailId)
+    
+    -- Handle money
+    if sender and money then
+        self:ProcessMoneyDonation(mailId)
+    end
+
+    -- Handle items
+    if sender and itemCount and itemCount > 0 then
+        for attachmentIndex = 1, ATTACHMENTS_MAX_RECEIVE do
+            self:ProcessItemDonation(mailId, attachmentIndex)
+        end
+    end
+end
+
+-- When you manually click on a single mail attachment
+-- When you click "Open All" from the inbox
+function Mail:ProcessItemDonation(mailId, attachmentIndex)
+    local sender, key, _, itemLink, itemID, quantity = self:ProcessMail(mailId, attachmentIndex)
+    if sender and key and itemLink and itemID and quantity then
+        GBankClassic_Output:Debug("DONATION", "Updating itemDonationVerificationQueue for sender = %s, item = %s, quantity = %s, key = %s", sender, itemLink, quantity, key)
+        table.insert(self.itemDonationVerificationQueue, { sender = sender, link = itemLink, qty = quantity, itemID = itemID })
+    end
+end
+
+-- Any time money is taken from mails
+function Mail:ProcessMoneyDonation(mailId)
+    local sender, _, money = Mail:ProcessMail(mailId)
+    if sender and money then
+        GBankClassic_Output:Debug("DONATION", "Updating isGoldDonationPending for sender = %s, amount = %s", sender, money)
+        self.isGoldDonationPending = { sender = sender, amount = money }
+        self.goldBalanceBeforeDonation = GetMoney()
+    end
+end
+
+-- When the CHAT_MSG_LOOT event is fired
+function Mail:ProcessPossibleItemDonation(message)
+    local queue = self.itemDonationVerificationQueue
+    if not queue or #queue == 0 then
+        return
+    end
+
+	GBankClassic_Output:Debug("DONATION", "Processing possible item donation for message = %s", message)
+
+    -- Extract item ID in case we run into item link formatting differences
+    local itemID = tonumber(message:match("|Hitem:(%d+):"))
+	-- "You receive loot: [Item]x2"
+	local itemLink, amountString = strmatch(message, string.gsub(string.gsub(LOOT_ITEM_SELF_MULTIPLE, "%%s", "(.+)"), "%%d", "(%%d+)"));
+	if not itemLink then
+ 		-- "You receive loot: [Item]"
+    	itemLink = message:match(LOOT_ITEM_SELF:gsub("%%s", "(.+)"));
+		if not itemLink then
+			-- "You receive item: [Item]x2"
+			itemLink, amountString = strmatch(message, string.gsub(string.gsub(LOOT_ITEM_PUSHED_SELF_MULTIPLE, "%%s", "(.+)"), "%%d", "(%%d+)"));
+			if not itemLink then
+	 			-- "You receive item: [Item]"
+				itemLink = message:match(LOOT_ITEM_PUSHED_SELF:gsub("%%s", "(.+)"));
+			end
+    	end
+    end
+	local amount = tonumber(amountString) or 1
+
+    if itemID and itemLink and itemLink:find("|Hitem:") then
+	    GBankClassic_Output:Debug("DONATION", "Donation identified of %sx %s (ID %s)", amount, itemLink, itemID)
+    else
+        GBankClassic_Output:Debug("DONATION", "ERROR: Failed to parse donation item from message: %s", message)
+    end
+
+    -- Server sends loot messages in same order items are looted
+    -- Queue is FIFO: first matching entry is the correct one to remove
+    for i = 1, #queue do
+        local pending = queue[i]
+		local idMatch = pending.itemID and itemID and pending.itemID == itemID
+		local linkMatch = pending.link == itemLink
+        if pending.sender and (idMatch or linkMatch) and pending.qty == amount then
+            GBankClassic_Output:Debug("DONATION", "Committing a donation of %sx %s by %s to the donation ledger", pending.qty, pending.link, pending.sender)
+            self:RecordDonationInLedger(pending.sender, pending.link, pending.qty, nil, false)
+            table.remove(queue, i)
+
+            return
+        end
+    end
+
+    GBankClassic_Output:Debug("DONATION", "ERROR: No match identified in the itemDonationVerificationQueue queue for message")
+end
+
+-- When the PLAYER_MONEY event is fired
+function Mail:ProcessPossibleMoneyDonation()
+    if not self.isGoldDonationPending or not self.goldBalanceBeforeDonation then
+
+        return
+    end
+
+    local currentMoney = GetMoney()
+    local delta = currentMoney - self.goldBalanceBeforeDonation
+    if currentMoney > self.goldBalanceBeforeDonation then
+        GBankClassic_Output:Debug("DONATION", "Committing a donation of %s by %s to the donation ledger", self.isGoldDonationPending.amount, self.isGoldDonationPending.sender)
+        self:RecordDonationInLedger(self.isGoldDonationPending.sender, nil, nil, self.isGoldDonationPending.amount, true)
+        self.isGoldDonationPending = nil
+        self.goldBalanceBeforeDonation = nil
+    else
+        GBankClassic_Output:Debug("DONATION", "Processing of money donation failed (currentMoney = %s, delta = %s, goldBalanceBeforeDonation = %s, check = %s)", currentMoney, delta, self.goldBalanceBeforeDonation, currentMoney > self.goldBalanceBeforeDonation)
     end
 end
 
@@ -278,127 +404,6 @@ end
 -- 		GBankClassic_Output:Info("No matching requests found for items sent to %s", pending.recipient)
 -- 	end
 -- end
-
-function Mail:ResetScan()
-    -- We wait a second for the server to remove the item from the inbox before we take another
-    GBankClassic_Core:ScheduleTimer(function(...)
-        self:OnTimer()
-    end, 1)
-end
-
-function Mail:OnTimer()
-    self.isScanning = false
-    self:Scan()
-end
-
-function Mail:Open(mailId)
-    local _, _, sender, _, money, _, _, itemCount = GetInboxHeaderInfo(mailId)
-    if not sender then
-        self:RetryOpen(mailId)
-
-        return
-    end
-
-    local info = GBankClassic_Guild.Info
-	if not info then
-		return
-	end
-
-	local player = GBankClassic_Guild:GetPlayer()
-	local norm = GBankClassic_Guild:GetNormalizedPlayer(player)
-
-	if not info.alts then
-		info.alts = {}
-	end
-	if info.alts and not info.alts[norm] then
-		info.alts[norm] = {}
-	end
-
-    local alt = info.alts[norm]
-    if not alt.ledger then
-        alt.ledger = {}
-    end
-    local ledger = alt.ledger
-
-    local current_score = 0
-    if ledger[sender] then
-        current_score = ledger[sender]
-    end
-
-    local score = 0
-    if money > 0 then
-        -- Convert from copper to gold
-        score = money / 10000
-
-        if GBankClassic_Options:GetBankReporting() then
-            GBankClassic_Output:Info("Received %s gold from %s", score, sender)
-        end
-
-        if GBankClassic_UI_Mail.ScoreMail and not self.Roster[sender] then
-            ledger[sender] = current_score + score
-        end
-
-        TakeInboxMoney(mailId)
-        if itemCount and itemCount > 0 then
-            self:RetryOpen(mailId)
-
-            return
-        end
-    end
-    if itemCount then
-        if not GBankClassic_Bank:HasInventorySpace() then
-            GBankClassic_Output:Warn("Inventory is full.")
-
-            return
-        end
-
-        for attachmentIndex = 1, ATTACHMENTS_MAX_RECEIVE do
-            local link = GetInboxItemLink(mailId, attachmentIndex)
-            if link then
-                local _, _, _, quantity, _ = GetInboxItem(mailId, attachmentIndex)
-                local name, _, _, level, _, _, _, _, _, _, price = GetItemInfo(link)
-                if not name or level == nil then
-                    self:RetryOpen(mailId)
-
-                    return
-                end
-
-                if not GBankClassic_Item:IsUnique(link) then
-                    score = ((price + 1) / 10000) * quantity
-
-                    if GBankClassic_Options:GetBankReporting() then
-                        GBankClassic_Output:Info("Received %s (%d) from %s", name, quantity, sender)
-                    end
-
-                    if GBankClassic_UI_Mail.ScoreMail and not self.Roster[sender] then
-                        ledger[sender] = current_score + score
-                    end
-
-                    TakeInboxItem(mailId, attachmentIndex)
-                    if itemCount > 1 then
-                        self:RetryOpen(mailId)
-
-                        return
-                    end
-                end
-            end
-        end
-    end
-
-    GBankClassic_UI_Mail:Close()
-    self:ResetScan()
-end
-
-function Mail:RetryOpen(mailId)
-    -- We wait a second for the server to remove the item from the inbox before we take another
-    GBankClassic_Core:ScheduleTimer(function(...)
-        self:OnRetryTimer(mailId)
-    end, 1)
-end
-
-function Mail:OnRetryTimer(mailId)
-    self:Open(mailId)
-end
 
 -- -- Check if a request can be fulfilled by the current player
 -- -- Returns: canFulfill (boolean), reason (string), itemsInBags (number), smallestStack (number)

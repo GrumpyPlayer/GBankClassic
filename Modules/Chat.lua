@@ -1257,7 +1257,7 @@ local COMMAND_REGISTRY = {
 			local i = 0
 			for k, v in pairs(GBankClassic_Guild.Info.alts) do
 				i = i + 1
-				GBankClassic_Output:Response(i, tostring(k), type(v))
+				GBankClassic_Output:Response("[%d] %s = %s", i, tostring(k), type(v))
 				if i >= 200 then
 					GBankClassic_Output:Response("Truncated at 200 entries")
 					break

@@ -36,6 +36,7 @@ function Output:SetCategoryEnabled(category, enabled)
 	if not GBankClassic_Database or not GBankClassic_Database.db then
 		return
 	end
+	
 	GBankClassic_Database.db.global.debugCategories[category] = enabled
 end
 
@@ -257,7 +258,7 @@ local function log(level, prefix, fmt, ...)
 
 	local message
 	local numArgs = select("#", ...)
-	if numArgs > 0 and fmt:find("%%") then
+	if numArgs > 0 and type(fmt) == "string" and fmt:find("%%") then
 		-- Format string detected, use string.format
 		message = string.format(fmt, ...)
 	elseif numArgs > 0 then
@@ -269,7 +270,7 @@ local function log(level, prefix, fmt, ...)
 		end
 		message = table.concat(parts, " ")
 	else
-		message = fmt
+		message = tostring(fmt)
 	end
 
 	-- If debug level and we have a debug frame, use it
