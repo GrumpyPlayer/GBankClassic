@@ -4,8 +4,8 @@ local Items = GBankClassic_Item
 
 -- Item classes that require link to be preserved (for suffix differentiation)
 local ITEM_CLASSES_NEEDING_LINK = {
-	[2] = true, -- Weapon
-	[4] = true, -- Armor (chest, legs, trinkets, rings, necks, etc)
+	[Enum.ItemClass.Weapon] = true,
+	[Enum.ItemClass.Armor] = true,
 }
 
 local Globals = GBankClassic_Globals
@@ -29,7 +29,7 @@ function Items:NeedsLink(itemLink)
         return false
     end
 
-	local _, _, _, _, _, itemClass = GetItemInfo(itemLink)
+	local itemClass = select(12, GetItemInfo(itemLink))
 
 	return ITEM_CLASSES_NEEDING_LINK[itemClass] == true
 end

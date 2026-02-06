@@ -950,6 +950,10 @@ function Guild:StripItemLinks(items)
 			if itemString then
 				strippedItem.ItemString = itemString
 			end
+         
+			if GBankClassic_Item:NeedsLink(item.Link) then
+				strippedItem.Link = item.Link
+			end
 		end
 
 		table.insert(stripped, strippedItem)
