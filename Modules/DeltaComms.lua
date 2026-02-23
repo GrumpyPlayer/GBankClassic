@@ -58,6 +58,14 @@ function DeltaComms:ValidateDeltaStructure(delta)
 		end
 	end
 
+	-- Validate aggregated items delta if present (NEW)
+	if changes.items then
+		local valid, err = self:ValidateItemDelta(changes.items)
+		if not valid then
+			return false, "invalid items delta: " .. err
+		end
+	end
+
 	return true
 end
 
@@ -279,6 +287,15 @@ function DeltaComms:StripDeltaLinks(delta)
 			added = stripItemArray(delta.changes.bags.added),
 			modified = stripItemArray(delta.changes.bags.modified),
 			removed = stripItemArray(delta.changes.bags.removed)
+		}
+	end
+
+	-- Strip links from aggregated items changes (NEW)
+	if delta.changes.items then
+		strippedDelta.changes.items = {
+			added = stripItemArray(delta.changes.items.added),
+			modified = stripItemArray(delta.changes.items.modified),
+			removed = stripItemArray(delta.changes.items.removed)
 		}
 	end
 
@@ -504,7 +521,8 @@ function DeltaComms:ApplyItemDelta(items, delta)
 	-- Add new items
 	if delta.added then
 		for _, item in ipairs(delta.added) do
-			if item and item.ID and item.Link then
+				-- Match by ID only (link field removed)
+			if item and item.ID then
 				table.insert(items, item)
 			end
 		end
@@ -513,9 +531,25 @@ function DeltaComms:ApplyItemDelta(items, delta)
 	-- Modify existing items
 	if delta.modified then
 		for _, changes in ipairs(delta.modified) do
-			if changes and changes.ID and changes.Link then
-				local key = tostring(changes.ID) .. changes.Link
-				local existingItem = itemsByKey[key]
+				-- Match by ID only (link field removed)
+			if changes and changes.ID then
+				local existingItem = nil
+				
+				-- Try exact match with link first (for gear/weapons with suffixes)
+				if changes.Link then
+					local key = tostring(changes.ID) .. changes.Link
+					existingItem = itemsByKey[key]
+				end
+
+				-- Fallback: Match by ID if link was stripped to save bandwidth
+				if not existingItem then
+					for _, item in ipairs(items) do
+						if item.ID == changes.ID then
+							existingItem = item
+							break
+						end
+					end
+				end
 
 				if existingItem then
 					-- Apply changed fields to existing item
@@ -689,7 +723,8 @@ function DeltaComms:ApplyDeltaChain(guildInfo, altName, deltaChain)
 			type = "alt-delta",
 			name = altName,
 			version = deltaEntry.version,
-			changes = deltaEntry.delta
+			-- Properly target the nested changes table, avoiding double-nesting
+			changes = deltaEntry.delta and deltaEntry.delta.changes or nil
 		}
 
 		local status = self:ApplyDelta(guildInfo, altName, deltaData)
