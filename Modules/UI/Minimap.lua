@@ -5,8 +5,9 @@ local UI_Minimap = GBankClassic_UI_Minimap
 local Globals = GBankClassic_Globals
 local upvalues = Globals.GetUpvalues("LibStub")
 local LibStub = upvalues.LibStub
-local upvalues = Globals.GetUpvalues("IsShiftKeyDown")
+local upvalues = Globals.GetUpvalues("IsShiftKeyDown", "IsControlKeyDown")
 local IsShiftKeyDown = upvalues.IsShiftKeyDown
+local IsControlKeyDown = upvalues.IsControlKeyDown
 local upvalues = Globals.GetUpvalues("GameTooltip", "WorldFrame")
 local GameTooltip = upvalues.GameTooltip
 local WorldFrame = upvalues.WorldFrame
@@ -26,6 +27,8 @@ function UI_Minimap:Init()
         OnClick = function(_, b)
             if IsShiftKeyDown() then
                 GBankClassic_Options:Open()
+            elseif IsControlKeyDown() then
+                GBankClassic_Chat:RestoreUI()
             else
                 GBankClassic_UI_Inventory:Toggle()
             end
@@ -54,5 +57,6 @@ function UI_Minimap:ShowTooltip()
     GameTooltip:AddLine("GBankClassic")
     GameTooltip:AddDoubleLine("Click", "Inventory", 1, 1, 1)
     GameTooltip:AddDoubleLine("Shift-Click", "Options", 1, 1, 1)
+    GameTooltip:AddDoubleLine("Ctrl-Click", "Restore default UI", 1, 1, 1)
     GameTooltip:Show()
 end

@@ -28,6 +28,8 @@ function Database:Init()
 				ITEM = false,
 				-- FULFILL = false,
 				SEARCH = false,
+				QUERIES = false,
+				REPLIES = false,
 			},
 		},
 	})
@@ -143,7 +145,8 @@ function Database:Load(name)
 								table.insert(beforeSample, string.format("%s:%d", item.ID or "?", item.Count or 0))
 							end
 						end
-						GBankClassic_Output:Debug("DATABASE", "Before clear - guild bank alt %s alt.items: %s", name, table.concat(beforeSample, ", "))
+						GBankClassic_Output:Debug("DATABASE", "Recalculation of aggregated alt.items (from bank, bags, and mail) starting for guild bank alt %s.", name)
+						GBankClassic_Output:Debug("DATABASE", "Sampling (before recalculation) for guild bank alt %s of alt.items: %s.", name, table.concat(beforeSample, ", "))
 					end
 
 					alt.items = nil -- Clear corrupted data
@@ -158,10 +161,10 @@ function Database:Load(name)
 								table.insert(afterSample, string.format("%s:%d", item.ID or "?", item.Count or 0))
 							end
 						end
-						GBankClassic_Output:Debug("DATABASE", "After recalc - guild bank alt %s alt.items: %s", name, table.concat(afterSample, ", "))
+						GBankClassic_Output:Debug("DATABASE", "Sampling (after recalculation) for guild bank alt %s of alt.items: %s.", name, table.concat(afterSample, ", "))
 					end
 
-					GBankClassic_Output:Debug("DATABASE", "Forced recalculation for guild bank alt %s from bank/bags/mail", name)
+					GBankClassic_Output:Debug("DATABASE", "Completed recalculation of aggregated alt.items for guild bank alt %s.", name)
 				elseif alt.items then
 					-- Synced alt - force deduplicate
 					-- Do not merge mail here - alt.items from sync already includes mail from sender's scan

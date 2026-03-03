@@ -72,11 +72,15 @@ local GetGuildInfo = GetGuildInfo
 local GetNumGuildMembers = GetNumGuildMembers or C_GuildInfo.GetNumGuildMembers
 local GetGuildRosterInfo = GetGuildRosterInfo or C_GuildInfo.GetGuildRosterInfo
 local CanViewOfficerNote = CanViewOfficerNote or C_GuildInfo.CanViewOfficerNote
+local GuildControlGetNumRanks = GuildControlGetNumRanks or C_GuildInfo.GuildControlGetNumRanks
+local GuildControlGetRankFlags = GuildControlGetRankFlags or C_GuildInfo.GuildControlGetRankFlags
 Globals.GuildRoster = GuildRoster
 Globals.GetGuildInfo = GetGuildInfo
 Globals.GetNumGuildMembers = GetNumGuildMembers
 Globals.GetGuildRosterInfo = GetGuildRosterInfo
 Globals.CanViewOfficerNote = CanViewOfficerNote
+Globals.GuildControlGetNumRanks = GuildControlGetNumRanks
+Globals.GuildControlGetRankFlags = GuildControlGetRankFlags
 local GetItemNameByID = GetItemNameByID or C_Item.GetItemNameByID
 local GetItemInfo = GetItemInfo or C_Item.GetItemInfo
 local GetItemInfoInstant = GetItemInfoInstant or C_Item.GetItemInfoInstant
@@ -128,9 +132,11 @@ Globals.SecondsToTime = SecondsToTime
 local After = After or C_Timer.After
 local NewTicker = NewTicker or C_Timer.NewTicker
 local NewTimer = NewTimer or C_Timer.NewTimer
+local IsAddOnLoaded = IsAddOnLoaded or C_AddOns.IsAddOnLoaded
 Globals.After = After
 Globals.NewTicker = NewTicker
 Globals.NewTimer = NewTimer
+Globals.IsAddOnLoaded = IsAddOnLoaded
 
 -- WoW global tables
 local GameFontNormal = GameFontNormal
@@ -185,9 +191,7 @@ function Globals.GetUpvalues(...)
     return result
 end
 
--- Helpers
-
--- Generic helpers to count entries in tables
+-- Helper function to count entries in tables
 function Globals:CountTableEntries(tbl)
     if not tbl or type(tbl) ~= "table" then
         return 0
@@ -201,7 +205,7 @@ function Globals:CountTableEntries(tbl)
     return n
 end
 
--- Generic helpers to count entries in array
+-- Helper function to count entries in array
 function Globals:CountArrayEntries(tbl)
     if not tbl or type(tbl) ~= "table" then
         return 0

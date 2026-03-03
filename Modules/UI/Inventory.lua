@@ -53,6 +53,9 @@ function UI_Inventory:Open()
     end
     self.Window:Show()
 
+	-- Ensure window stays within screen bounds
+	GBankClassic_UI:ClampFrameToScreen(self.Window)
+
     self:DrawContent()
 
 	-- Perform full sync (same as /bank sync command)
@@ -274,6 +277,9 @@ function UI_Inventory:DrawContent()
 
     self.TabGroup:SetCallback("OnGroupSelected", function(group)
         local tab = group.localstatus.selected
+        self.currentTab = tab
+        self.tabLoaded = false
+        GBankClassic_Output:Debug("INVENTORY", "Loading tab %s", tab)
 
         self.TabGroup:ReleaseChildren()
 
@@ -302,6 +308,9 @@ function UI_Inventory:DrawContent()
             scroll:SetFullHeight(true)
             scroll:SetFullWidth(true)
             g:AddChild(scroll)
+
+            -- Track scroll container to prevent race conditions
+            scroll.callbackProcessed = false
             
             local normTab = GBankClassic_Guild:NormalizeName(tab)
             local alt = info.alts[normTab]
@@ -333,6 +342,12 @@ function UI_Inventory:DrawContent()
             end
             
             GBankClassic_Output:Debug("INVENTORY", "Inventory tab %s: aggregated to %d unique items", tab, #items)
+
+            -- Show loading indicator immediately
+            local loadingLabel = GBankClassic_UI:Create("Label")
+            loadingLabel:SetText("|cff808080Please wait...|r")
+            loadingLabel:SetFullWidth(true)
+            scroll:AddChild(loadingLabel)
             
             if items and #items > 0 then
                 -- Check for duplicate item IDs with different links
@@ -364,8 +379,27 @@ function UI_Inventory:DrawContent()
                     end
                 end
                 
+                local selectedTab = tab
                 GBankClassic_Item:GetItems(validItems, function(list)
+                    -- Prevent callback from running twice on same scroll container
+                    if scroll.callbackProcessed then
+                        GBankClassic_Output:Debug("INVENTORY", "Ignoring duplicate callback for tab %s", tab)
+
+                        return
+                    end
+
+                    -- Verify we're still on the same tab (user may have switched)
+                    if self.currentTab ~= selectedTab then
+                        GBankClassic_Output:Debug("INVENTORY", "Ignoring callback for old tab %s (now on %s)", selectedTab, self.currentTab)
+
+                        return
+                    end
+
+                    scroll.callbackProcessed = true
+                    self.tabLoaded = true
+
                     GBankClassic_Output:Debug("INVENTORY", "Inventory tab %s: GetItems callback received %d items", tab, list and #list or 0)
+                    scroll:ReleaseChildren()
                     GBankClassic_Item:Sort(list)
 
                     for _, item in pairs(list) do
@@ -394,11 +428,30 @@ function UI_Inventory:DrawContent()
 	local currentTab = self.TabGroup.localstatus and self.TabGroup.localstatus.selected
 	if currentTab and info.alts[currentTab] then
 		-- Preserve current selection if it's still valid
-		self.TabGroup:SelectTab(currentTab)
+        -- Don't call SelectTab if it's already the current tab (prevents reload on sync)
+        -- The tab is already displayed, no need to trigger OnGroupSelected again
+        if self.currentTab ~= currentTab then
+            self.TabGroup:SelectTab(currentTab)
+        end
 	else
 		-- No current selection or invalid tab, select first tab
 		self.TabGroup:SelectTab(first_tab)
 	end
+end
+
+function UI_Inventory:RefreshCurrentTab()
+    local group = self.TabGroup
+    if not group then
+        return
+    end
+
+    local current = group.localstatus.selected
+    if not current then
+        return
+    end
+
+    group:ReleaseChildren()
+    group:Fire("OnGroupSelected", current)
 end
 
 function UI_Inventory:GetPercentColor(percent)

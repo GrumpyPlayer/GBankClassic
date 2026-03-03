@@ -48,11 +48,12 @@ function Core:SendWhisper(prefix, text, target, prio, callbackFn, callbackArg)
     -- Send the whisper
     self:SendCommMessage(prefix, text, "WHISPER", nameOnly, prio, callbackFn, callbackArg)
     
+    -- The player is online and whisper was sent
     return true
 end
 
+-- Called when the addon is loaded
 function Core:OnInitialize()
-    -- Called when the addon is loaded
     GBankClassic_Database:Init()
     GBankClassic_Chat:Init()
     GBankClassic_Options:Init()
@@ -64,19 +65,19 @@ function Core:OnInitialize()
     -- end
 end
 
+-- Called when the addon is enabled
 function Core:OnEnable()
-    -- Called when the addon is enabled
     GBankClassic_Events:RegisterEvents()
 end
 
+-- Called when the addon is disabled
 function Core:OnDisable()
-    -- Called when the addon is disabled
     GBankClassic_Events:UnregisterEvents()
 end
 
 -- Checksum implementation for message integrity
 -- Uses a simple but effective hash that detects corruption
-local function computeChecksum(str)
+function Core:Checksum(str)
     if not str or type(str) ~= "string" then
         return 0
     end
@@ -94,11 +95,6 @@ local function computeChecksum(str)
     return sum
 end
 
--- Expose as public method for DeltaComms
-function Core:Checksum(str)
-    return computeChecksum(str)
-end
-
 -- Serialize data with appended checksum for integrity verification
 function Core:SerializeWithChecksum(data)
     local serialized = self:Serialize(data)
@@ -106,9 +102,7 @@ function Core:SerializeWithChecksum(data)
         return nil
     end
 
-    local checksum = computeChecksum(serialized)
-    
-    return serialized .. CHECKSUM_SEPARATOR .. tostring(checksum)
+    local checksum = self:Checksum(serialized)
 end
 
 -- Deserialize data and verify checksum; returns success, data (or nil, error)
@@ -117,8 +111,15 @@ function Core:DeserializeWithChecksum(message)
         return false, "invalid message"
     end
 
-    -- Find the checksum separator from the end
-    local sepPos = string.find(message, CHECKSUM_SEPARATOR, 1, true)
+    -- Find the checksum separator from the end (payload may contain separator)
+    local sepPos = nil
+    local sepByte = string.byte(CHECKSUM_SEPARATOR)
+    for i = #message, 1, -1 do
+        if string.byte(message, i) == sepByte then
+            sepPos = i
+            break
+        end
+    end
     if not sepPos then
         -- No checksum found - fall back to regular deserialize for backwards compatibility
         return self:Deserialize(message)
@@ -132,7 +133,7 @@ function Core:DeserializeWithChecksum(message)
         return false, "invalid checksum format"
     end
 
-    local actualChecksum = computeChecksum(serialized)
+    local actualChecksum = self:Checksum(serialized)
     if actualChecksum ~= expectedChecksum then
         return false, "checksum mismatch (expected " .. expectedChecksum .. ", got " .. actualChecksum .. ")"
     end

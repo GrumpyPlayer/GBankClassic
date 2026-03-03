@@ -127,7 +127,7 @@ function Mail:RecordDonationInLedger(sender, itemLink, quantity, money, isMoney)
         if money and money > 0 then
             local score = money / 10000
             if GBankClassic_Options:GetBankReporting() then
-                GBankClassic_Output:Info("Donation of %s received from %s", GetCoinTextureString(money), senderNorm)
+                GBankClassic_Output:Info("Donation of %s received from %s.", GetCoinTextureString(money), senderNorm)
             end
             ledger[senderNorm] = (ledger[senderNorm] or 0) + score
         end
@@ -139,7 +139,7 @@ function Mail:RecordDonationInLedger(sender, itemLink, quantity, money, isMoney)
                 local effectivePrice = (price and price > 0) and price or 1
                 local score = (effectivePrice * quantity) / 10000
                 if GBankClassic_Options:GetBankReporting() then
-                    GBankClassic_Output:Info("Donation of %s x%d received from %s (vendor value recorded as %s)", itemLink, quantity, senderNorm, GetCoinTextureString((effectivePrice * quantity)))
+                    GBankClassic_Output:Info("Donation of %s x%d received from %s (vendor value recorded as %s).", itemLink, quantity, senderNorm, GetCoinTextureString((effectivePrice * quantity)))
                 end
                 ledger[senderNorm] = (ledger[senderNorm] or 0) + score
             end

@@ -181,6 +181,7 @@ function Bank:Scan()
 	alt.money = money
 
 	-- Scan mail inventory if mail was accessed
+	local mailWasScanned = false
 	GBankClassic_Output:Debug("MAIL", "Bank:Scan() for player '%s', hasUpdated=%s", player, tostring(GBankClassic_MailInventory.hasUpdated))
 	
 	if GBankClassic_MailInventory.hasUpdated then
@@ -200,6 +201,7 @@ function Bank:Scan()
 			GBankClassic_Output:Debug("MAIL", "Replacing mail data for '%s': old=%d items, new=%d items", player, previousItemCount, itemCount)
 			
 			alt.mail = mailData
+			mailWasScanned = true
 			GBankClassic_Output:Debug("MAIL", "Assigned alt.mail with %d items, version=%s, lastScan=%s", #mailData.items, tostring(mailData.version), tostring(mailData.lastScan))
 			
 			-- Verify assignment worked
@@ -208,18 +210,16 @@ function Bank:Scan()
 			else
 				GBankClassic_Output:Debug("MAIL", "ERROR: alt.mail is nil after assignment!")
 			end
+			GBankClassic_Output:Debug("MAIL", "Clearing hasUpdated flag after successful scan")
+			GBankClassic_MailInventory.hasUpdated = false
 		end
-		
-		GBankClassic_Output:Debug("MAIL", "Clearing hasUpdated flag after scan")
-		GBankClassic_MailInventory.hasUpdated = false
 	end
 
 	-- Aggregate bank + bags + mail into alt.items for sync and display
 	local bankItems = (alt.bank and alt.bank.items) or {}
 	local bagItems = (alt.bags and alt.bags.items) or {}
 	local mailItems = (alt.mail and alt.mail.items) or {}
-	
-	-- Log sample counts from SOURCE arrays before aggregation
+	-- Log sample counts from source arrays before aggregation
 	if #bankItems > 0 then
 		local bankSample = {}
 		for i = 1, math.min(3, #bankItems) do
@@ -305,6 +305,39 @@ function Bank:Scan()
 	else
 		-- No changes detected, preserve existing version
 		GBankClassic_Output:Debug("SYNC", "No inventory changes for %s, version unchanged (hash: %s)", player, tostring(currentHash))
+	end
+
+	-- Compute mailHash for mail-specific change detection
+	-- This allows receivers to detect when mail data exists and has changed
+	-- mailHash is computed whenever mail is scanned (even if empty) to track all mail state changes
+	-- nil mailHash = "never scanned mail" vs hash value = "mail scanned" (could be empty or full)
+	if alt.mail and alt.mail.items then
+		local currentMailHash = GBankClassic_DeltaComms:ComputeInventoryHash(alt.mail.items, nil, nil, money)
+		local previousMailHash = alt.mailHash
+
+		if mailWasScanned then
+			-- Mail was scanned this session - always update hash (even if empty)
+			alt.mailHash = currentMailHash
+			GBankClassic_Output:Debug("MAIL", "Mail hash updated for %s: %s (%d items, scanned=%s)", player, tostring(currentMailHash), #alt.mail.items, tostring(mailWasScanned))
+		else
+			-- Mail wasn't scanned - preserve existing hash
+			GBankClassic_Output:Debug("MAIL", "Mail not scanned for %s, preserving mailHash=%s (%d items)", player, tostring(alt.mailHash), #alt.mail.items)
+		end
+		
+	else
+		-- No mail data structure (mail was never scanned this session)
+		if mailWasScanned then
+			-- Mail was scanned but is empty - set hash to 0 (explicitly "scanned empty")
+			alt.mailHash = 0
+			GBankClassic_Output:Debug("MAIL", "Mail scanned but empty for %s, mailHash=0", player)
+		else
+			-- Keep previous mailHash if it exists to preserve data across sessions
+			GBankClassic_Output:Debug("MAIL", "Mail not scanned this session for %s, preserving existing mailHash", player)
+			-- Initialize to 0
+			if not alt.mailHash then
+				alt.mailHash = 0
+			end
+		end
 	end
 
 	if not info.alts then
@@ -434,7 +467,7 @@ function Bank:RecalculateAggregatedItems(alt)
 	
 	local mailItems = {}
 	if alt.mail and alt.mail.items then
-		GBankClassic_Output:Debug("MAIL", "Before dedupe: mail has %d entries", #alt.mail.items)
+		GBankClassic_Output:Debug("DATABASE", "Before mail deduplication: %d items.", #alt.mail.items)
 		-- Check for duplicates before deduplication
 		local mailByID = {}
 		for i, item in ipairs(alt.mail.items) do
@@ -447,9 +480,9 @@ function Bank:RecalculateAggregatedItems(alt)
 		end
 		for itemID, entries in pairs(mailByID) do
 			if #entries > 1 then
-				GBankClassic_Output:Debug("MAIL", "Before dedupe: mail item ID %d has %d entries", itemID, #entries)
+				GBankClassic_Output:Debug("DATABASE", "Before mail deduplication: item ID %d has %d entries.", itemID, #entries)
 				for _, entry in ipairs(entries) do
-					GBankClassic_Output:Debug("MAIL", "  index=%d count=%d link=%s", entry.index, entry.Count, entry.Link or "nil")
+					GBankClassic_Output:Debug("DATABASE", "  index=%d, count=%d, link=%s", entry.index, entry.Count, entry.Link or "nil")
 				end
 			end
 		end
@@ -459,17 +492,17 @@ function Bank:RecalculateAggregatedItems(alt)
 		for _, item in pairs(deduped) do
 			table.insert(mailItems, item)
 		end
-		GBankClassic_Output:Debug("MAIL", "After dedupe: mail has %d entries", #mailItems)
+		GBankClassic_Output:Debug("DATABASE", "After mail deduplication: %d unique items.", #mailItems)
 		-- Write deduplicated mail items back to source to fix SV file
 		alt.mail.items = mailItems
 	end
 	
 	-- Aggregate all three sources
-	GBankClassic_Output:Debug("INVENTORY", "Aggregating: bank=%d, bags=%d, mail=%d", #bankItems, #bagItems, #mailItems)
+	GBankClassic_Output:Debug("DATABASE", "Before aggregation of items: bank=%d, bags=%d, and mail=%d.", #bankItems, #bagItems, #mailItems)
 	local aggregated = GBankClassic_Item:Aggregate(bankItems, bagItems)
-	GBankClassic_Output:Debug("INVENTORY", "After bank+bags aggregate: %d unique items", GBankClassic_Globals:Count(aggregated))
+	GBankClassic_Output:Debug("DATABASE", "After aggregating bank + bags: %d unique items.", GBankClassic_Globals:Count(aggregated))
 	aggregated = GBankClassic_Item:Aggregate(aggregated, mailItems)
-	GBankClassic_Output:Debug("INVENTORY", "After adding mail: %d unique items", GBankClassic_Globals:Count(aggregated))
+	GBankClassic_Output:Debug("DATABASE", "After adding mail: %d unique items.", GBankClassic_Globals:Count(aggregated))
 	
 	-- Convert back to array format
 	alt.items = {}
@@ -479,5 +512,5 @@ function Bank:RecalculateAggregatedItems(alt)
 		end
 	end
 	
-	GBankClassic_Output:Debug("INVENTORY", "Recalculated aggregated items: bank=%d, bags=%d, mail=%d, total=%d", #bankItems, #bagItems, #mailItems, #alt.items)
+	GBankClassic_Output:Debug("DATABASE", "After aggregation of items: bank=%d, bags=%d, mail=%d, total=%d", #bankItems, #bagItems, #mailItems, #alt.items)
 end

@@ -1,14 +1,15 @@
 local Globals = GBankClassic_Globals
+local upvalues = Globals.GetUpvalues("debugprofilestop")
+local debugprofilestop = upvalues.debugprofilestop
 local upvalues = Globals.GetUpvalues("LibStub")
 local LibStub = upvalues.LibStub
-local upvalues = Globals.GetUpvalues("CreateFrame", "IsShiftKeyDown", "ChatEdit_InsertLink", "IsControlKeyDown", "DressUpItemLink", "PickupItem", "GetItemInfo", "GetItemQualityColor", "GameTooltip_SetDefaultAnchor")
+local upvalues = Globals.GetUpvalues("CreateFrame", "IsShiftKeyDown", "ChatEdit_InsertLink", "IsControlKeyDown", "DressUpItemLink", "PickupItem", "GetItemQualityColor", "GameTooltip_SetDefaultAnchor")
 local CreateFrame = upvalues.CreateFrame
 local IsShiftKeyDown = upvalues.IsShiftKeyDown
 local ChatEdit_InsertLink = upvalues.ChatEdit_InsertLink
 local IsControlKeyDown = upvalues.IsControlKeyDown
 local DressUpItemLink = upvalues.DressUpItemLink
 local PickupItem = upvalues.PickupItem
-local GetItemInfo = upvalues.GetItemInfo
 local GetItemQualityColor = upvalues.GetItemQualityColor
 local GameTooltip_SetDefaultAnchor = upvalues.GameTooltip_SetDefaultAnchor
 local upvalues = Globals.GetUpvalues("UIParent", "UISpecialFrames", "WorldFrame", "GameTooltip")
@@ -18,6 +19,11 @@ local WorldFrame = upvalues.WorldFrame
 local GameTooltip = upvalues.GameTooltip
 
 GBankClassic_UI = LibStub("AceGUI-3.0")
+
+-- Tooltip throttling to prevent performance issues
+GBankClassic_UI.tooltipThrottle = 0
+GBankClassic_UI.TOOLTIP_THROTTLE_MS = 50 -- 50ms between tooltip updates
+GBankClassic_UI.currentTooltipLink = nil
 
 local UI = GBankClassic_UI
 
@@ -106,8 +112,8 @@ function UI:DrawItem(item, parent, size, height, imageSize, imageHeight, labelXO
 		GBankClassic_Guild:ReconstructItemLink(item)
 	end
 
-	-- Get icon if available, otherwise try to fetch from item ID
-	local icon = (item.Info and item.Info.icon) or select(10, GetItemInfo(item.ID or 0))
+    -- Icon already loaded by GetItems (via GetItemInfoInstant for linked items, GetItemInfo for non-linked)
+    local icon = item.Info and item.Info.icon
 	if icon then
 		slot:SetImage(icon)
 	end
@@ -153,13 +159,24 @@ function UI:ShowItemTooltip(link)
     if not link then
         return
     end
-    
+
+-- Throttle tooltip updates to prevent performance issues
+    local now = debugprofilestop()
+    if self.currentTooltipLink == link and (now - self.tooltipThrottle) < self.TOOLTIP_THROTTLE_MS then
+        return
+    end
+
+    self.tooltipThrottle = now
+    self.currentTooltipLink = link
+
     GameTooltip:SetOwner(WorldFrame, "ANCHOR_CURSOR")
     GameTooltip:SetHyperlink(link)
     GameTooltip:Show()
 end
 
 function UI:HideTooltip()
+    self.currentTooltipLink = nil
+    self.tooltipThrottle = nil
     GameTooltip:Hide()
     GameTooltip_SetDefaultAnchor(GameTooltip, UIParent)
 end
@@ -169,4 +186,54 @@ function UI:OnInsertLink(link)
         GBankClassic_UI_Search.SearchText = link
         GBankClassic_UI_Search:DrawContent()
     end
+end
+
+-- Clamp a frame to stay within screen boundaries
+function GBankClassic_UI:ClampFrameToScreen(frame)
+	if not frame then
+		return
+	end
+
+	-- Get the actual frame object (handle both AceGUI widgets and raw frames)
+	local actualFrame = frame.frame or frame
+	if not actualFrame or not actualFrame.GetRect then
+		return
+	end
+
+	-- Get frame dimensions
+	local left, bottom, width, height = actualFrame:GetRect()
+	if not left or not bottom or not width or not height then
+		return
+	end
+
+	local right = left + width
+	local top = bottom + height
+
+	-- Get screen dimensions
+	local screenWidth = UIParent:GetWidth()
+	local screenHeight = UIParent:GetHeight()
+
+	-- Calculate adjustments needed
+	local xOffset = 0
+	local yOffset = 0
+
+	-- Check horizontal bounds
+	if left < 0 then
+		xOffset = -left
+	elseif right > screenWidth then
+		xOffset = screenWidth - right
+	end
+
+	-- Check vertical bounds
+	if bottom < 0 then
+		yOffset = -bottom
+	elseif top > screenHeight then
+		yOffset = screenHeight - top
+	end
+
+	-- Apply adjustments if needed
+	if xOffset ~= 0 or yOffset ~= 0 then
+		actualFrame:ClearAllPoints()
+		actualFrame:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", left + xOffset, bottom + yOffset)
+	end
 end

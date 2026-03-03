@@ -9,11 +9,12 @@ local ITEM_CLASSES_NEEDING_LINK = {
 }
 
 local Globals = GBankClassic_Globals
-local upvalues = Globals.GetUpvalues("GetItemInfo", "GetTime", "GetItemInventoryTypeByID", "CreateFrame")
+local upvalues = Globals.GetUpvalues("GetItemInfo", "GetTime", "GetItemInventoryTypeByID", "CreateFrame", "GetItemInfoInstant")
 local GetItemInfo = upvalues.GetItemInfo
 local GetTime = upvalues.GetTime
 local GetItemInventoryTypeByID = upvalues.GetItemInventoryTypeByID
 local CreateFrame = upvalues.CreateFrame
+local GetItemInfoInstant = upvalues.GetItemInfoInstant
 local upvalues = Globals.GetUpvalues("Item")
 local Item = upvalues.Item
 local upvalues = Globals.GetUpvalues("UIParent")
@@ -22,16 +23,25 @@ local upvalues = Globals.GetUpvalues("ITEM_UNIQUE")
 local ITEM_UNIQUE = upvalues.ITEM_UNIQUE
 
 -- Check if an item needs its link preserved based on item class
--- Gear (weapons/armor) can have random suffixes, so link is required
--- Consumables and trade goods don't vary, so link can be stripped
 function Items:NeedsLink(itemLink)
 	if not itemLink then
         return false
     end
 
-	local itemClass = select(12, GetItemInfo(itemLink))
+   	local classID = select(12, GetItemInfo(itemLink))
 
-	return ITEM_CLASSES_NEEDING_LINK[itemClass] == true
+	-- If item isn't cached, preserve the link to avoid losing suffix data
+	if classID == nil then
+		return true
+	end
+
+	-- Gear (weapons/armor) can have random suffixes, so link is required
+	if ITEM_CLASSES_NEEDING_LINK[classID] == true then
+		return true
+	end
+	
+	-- Other items don't vary, so link can be stripped
+	return false
 end
 
 -- Get normalized item key for deduplication (strips unique instance ID)
@@ -98,6 +108,7 @@ function Items:GetItems(items, callback)
     local count = 0
 	local processed = 0 -- Track total items processed (success + failures)
 	local callbackFired = false -- Ensure callback only fires once
+	local pendingAsync = 0 -- Track items waiting for async load
 
     -- If there are no valid items to load, return an empty list immediately
     if total == 0 then
@@ -105,31 +116,11 @@ function Items:GetItems(items, callback)
 
         return
     end
-
-	-- Throttle UI refreshes to prevent stuttering when many items load async
-	local lastUIRefresh = 0
-	local function throttledUIRefresh()
-		local now = GetTime()
-		if now - lastUIRefresh < 0.5 then -- Throttle to max once per 0.5 seconds
-			return
-		end
-		lastUIRefresh = now
-
-		-- Only refresh if UI is actually open
-		if GBankClassic_UI_Inventory and GBankClassic_UI_Inventory.isOpen then
-			GBankClassic_UI_Inventory:DrawContent()
-		end
-		if GBankClassic_UI_Search and GBankClassic_UI_Search.isOpen then
-			GBankClassic_UI_Search:DrawContent()
-		end
-	end
 	
 	local function checkComplete()
-		if not callbackFired and processed >= total then
+		if not callbackFired and processed >= total and pendingAsync == 0 then
 			callbackFired = true
 			callback(list)
-		elseif processed == total then
-			throttledUIRefresh()
 		end
 	end
 
@@ -158,83 +149,99 @@ function Items:GetItems(items, callback)
 				processed = processed + 1
 				checkComplete()
 			else
-				-- Check if item data is already cached (fast path)
-				local itemInfo = GetItemInfo(capturedItemID)
-				if itemInfo then
-					-- Item data is cached, use it directly
-					GBankClassic_Output:Debug("ITEM", "Item %d already cached", capturedItemID)
-					capturedItem.Info = self:GetInfo(capturedItemID, capturedItemLink)
+
+				if capturedItemLink then
+					GBankClassic_Output:Debug("ITEM", "Item %d has link, using directly", capturedItemID)
+					if not capturedItem.Info then
+						local _, _, _, _, iconID = GetItemInfoInstant(capturedItemLink)
+						if iconID then
+							capturedItem.Info = { icon = iconID, name = capturedItemLink:match("%[(.-)%]") or ("Item " .. tostring(capturedItemID))}
+						end
+					end
 					table.insert(list, capturedItem)
 					count = count + 1
 					processed = processed + 1
-					checkComplete()
 				else
-					-- Item not cached, need async load
-					GBankClassic_Output:Debug("ITEM", "Item %d not cached, calling CreateFromItemID", capturedItemID)
-					
-					local success, itemData = pcall(Item.CreateFromItemID, Item, capturedItemID)
-					GBankClassic_Output:Debug("ITEM", "CreateFromItemID result: success=%s, itemData=%s, type=%s", tostring(success), tostring(itemData), type(itemData))
-					
-					if not success then
-						GBankClassic_Output:Debug("ITEM", "CreateFromItemID pcall failed: %s", tostring(itemData))
+					-- Check if item data is already cached (fast path)
+					local name, _, rarity, level, _, _, _, _, _, icon, price, itemClassId, itemSubClassId = GetItemInfo(capturedItemID)
+					if name then
+						GBankClassic_Output:Debug("ITEM", "Item %d already cached", capturedItemID)
+						local equip = GetItemInventoryTypeByID(capturedItemID)
+						capturedItem.Info = { class = itemClassId, subClass = itemSubClassId, equipId = equip, rarity = rarity, name = name, level = level, price = price, icon = icon }
+						table.insert(list, capturedItem)
+						count = count + 1
 						processed = processed + 1
-						checkComplete()
-					elseif not itemData then
-						GBankClassic_Output:Debug("ITEM", "CreateFromItemID returned nil")
-						processed = processed + 1
-						checkComplete()
-					elseif type(itemData) ~= "table" then
-						GBankClassic_Output:Debug("ITEM", "CreateFromItemID returned non-table: %s", type(itemData))
-						processed = processed + 1
-						checkComplete()
 					else
-						-- Got an item object, now inspect its internal state
-						GBankClassic_Output:Debug("ITEM", "Inspecting item object for ID %d", capturedItemID)
+						-- Item not cached, need async load
+						GBankClassic_Output:Debug("ITEM", "Item %d not cached, calling CreateFromItemID", capturedItemID)
+						pendingAsync = pendingAsync + 1
 						
-						-- Try to access internal fields safely
-						local objectItemID = nil
-						local accessSuccess = pcall(function()
-							objectItemID = itemData.itemID
-						end)
-						GBankClassic_Output:Debug("ITEM", "Internal field access: accessSuccess=%s, itemData.itemID=%s, type=%s", tostring(accessSuccess), tostring(objectItemID), type(objectItemID))
+						local success, itemData = pcall(Item.CreateFromItemID, Item, capturedItemID)
+						GBankClassic_Output:Debug("ITEM", "CreateFromItemID result: success=%s, itemData=%s, type=%s", tostring(success), tostring(itemData), type(itemData))
 						
-						-- Check if itemID matches what we expect
-						if not accessSuccess then
-							GBankClassic_Output:Debug("ITEM", "Cannot access itemData.itemID (protected?)")
+						if not success then
+							GBankClassic_Output:Debug("ITEM", "CreateFromItemID pcall failed: %s", tostring(itemData))
 							processed = processed + 1
 							checkComplete()
-						elseif objectItemID == nil then
-							GBankClassic_Output:Debug("ITEM", "ERROR: itemData.itemID is nil for requested ID %d", capturedItemID)
+						elseif not itemData then
+							GBankClassic_Output:Debug("ITEM", "CreateFromItemID returned nil")
 							processed = processed + 1
 							checkComplete()
-						elseif type(objectItemID) ~= "number" then
-							GBankClassic_Output:Debug("ITEM", "itemData.itemID is not a number: %s", type(objectItemID))
-							processed = processed + 1
-							checkComplete()
-						elseif objectItemID ~= capturedItemID then
-							GBankClassic_Output:Debug("ITEM", "itemData.itemID mismatch: expected %d, got %d", capturedItemID, objectItemID)
+						elseif type(itemData) ~= "table" then
+							GBankClassic_Output:Debug("ITEM", "CreateFromItemID returned non-table: %s", type(itemData))
 							processed = processed + 1
 							checkComplete()
 						else
-							-- Everything looks good, try ContinueOnItemLoad
-							GBankClassic_Output:Debug("ITEM", "Item object valid (itemID=%d), calling ContinueOnItemLoad", objectItemID)
+							-- Got an item object, now inspect its internal state
+							GBankClassic_Output:Debug("ITEM", "Inspecting item object for ID %d", capturedItemID)
 							
-							local callbackSuccess, callbackError = pcall(function()
-								itemData:ContinueOnItemLoad(function()
-									GBankClassic_Output:Debug("ITEM", "ContinueOnItemLoad callback fired for ID %d", capturedItemID)
-									capturedItem.Info = self:GetInfo(capturedItemID, capturedItemLink)
-									table.insert(list, capturedItem)
-									count = count + 1
-									checkComplete()
-								end)
+							-- Try to access internal fields safely
+							local objectItemID = nil
+							local accessSuccess = pcall(function()
+								objectItemID = itemData.itemID
 							end)
-							GBankClassic_Output:Debug("ITEM", "ContinueOnItemLoad pcall result: success=%s, error=%s", tostring(callbackSuccess), tostring(callbackError))
+							GBankClassic_Output:Debug("ITEM", "Internal field access: accessSuccess=%s, itemData.itemID=%s, type=%s", tostring(accessSuccess), tostring(objectItemID), type(objectItemID))
 							
-							processed = processed + 1
-							
-							if not callbackSuccess then
-								GBankClassic_Output:Debug("ITEM", "ContinueOnItemLoad pcall failed for ID %d: %s", capturedItemID, tostring(callbackError))
+							-- Check if itemID matches what we expect
+							if not accessSuccess then
+								GBankClassic_Output:Debug("ITEM", "Cannot access itemData.itemID (protected?)")
+								processed = processed + 1
 								checkComplete()
+							elseif objectItemID == nil then
+								GBankClassic_Output:Debug("ITEM", "ERROR: itemData.itemID is nil for requested ID %d", capturedItemID)
+								processed = processed + 1
+								checkComplete()
+							elseif type(objectItemID) ~= "number" then
+								GBankClassic_Output:Debug("ITEM", "itemData.itemID is not a number: %s", type(objectItemID))
+								processed = processed + 1
+								checkComplete()
+							elseif objectItemID ~= capturedItemID then
+								GBankClassic_Output:Debug("ITEM", "itemData.itemID mismatch: expected %d, got %d", capturedItemID, objectItemID)
+								processed = processed + 1
+								checkComplete()
+							else
+								-- Everything looks good, try ContinueOnItemLoad
+								GBankClassic_Output:Debug("ITEM", "Item object valid (itemID=%d), calling ContinueOnItemLoad", objectItemID)
+								
+								local callbackSuccess, callbackError = pcall(function()
+									itemData:ContinueOnItemLoad(function()
+										GBankClassic_Output:Debug("ITEM", "ContinueOnItemLoad callback fired for ID %d", capturedItemID)
+										capturedItem.Info = self:GetInfo(capturedItemID, capturedItemLink)
+										table.insert(list, capturedItem)
+										count = count + 1
+										pendingAsync = pendingAsync - 1
+										checkComplete()
+									end)
+								end)
+								GBankClassic_Output:Debug("ITEM", "ContinueOnItemLoad pcall result: success=%s, error=%s", tostring(callbackSuccess), tostring(callbackError))
+								
+								processed = processed + 1
+								
+								if not callbackSuccess then
+									GBankClassic_Output:Debug("ITEM", "ContinueOnItemLoad pcall failed for ID %d: %s", capturedItemID, tostring(callbackError))
+									pendingAsync = pendingAsync - 1
+									checkComplete()
+								end
 							end
 						end
 					end
@@ -242,6 +249,9 @@ function Items:GetItems(items, callback)
 			end
 		end
 	end
+	
+	-- After processing all items, check if we can fire callback (handles case where all items had links and were processed synchronously)
+	checkComplete()
 end
 
 function Items:GetInfo(id, link)
@@ -280,6 +290,23 @@ local function basicSort(a, b)
 end
 
 function Items:Sort(items)
+	-- Ensure all items have the required fields for sorting
+	for _, item in ipairs(items) do
+		if not item.Info then
+			-- Create minimal
+			item.Info = { class = 0, subClass = 0, equipId = 0, rarity = 1, name = item.Link and item.Link:match("%[(.-)%]") or ("Item " .. tostring(item.ID or "?")), level = 1, price = 0, icon = 134400 }
+		elseif not item.Info.class then
+			-- Missing sort fields, add defaults
+			item.Info.class = item.Info.class or 0
+			item.Info.subClass = item.Info.subClass or 0
+			item.Info.equipId = item.Info.equipId or 0
+			item.Info.rarity = item.Info.rarity or 1
+			item.Info.level = item.Info.level or 1
+			item.Info.price = item.Info.price or 0
+			item.Info.name = item.Info.name or (item.Link and item.Link:match("%[(.-)%]")) or ("Item " .. tostring(item.ID or "?"))
+		end
+	end
+
     table.sort(items, function(a, b)
         if a.Info.rarity ~= b.Info.rarity and a.Info.rarity and b.Info.rarity then
             return a.Info.rarity < b.Info.rarity
@@ -287,7 +314,7 @@ function Items:Sort(items)
         if a.Info.class ~= b.Info.class then
             return (a.Info.class or 99) < (b.Info.class or 99)
         end
-        if a.Info.equipId > 0 then
+        if (a.Info.equipId or 0) > 0 then
             if a.Info.equipId == b.Info.equipId then
                 return basicSort(a, b)
             end
@@ -305,111 +332,102 @@ end
 
 function Items:Aggregate(a, b)
     local items = {}
-	-- Build ID index to avoid O(n²) lookups for linkless deduplication
-	local itemsByID = {}
+    -- Build ID index to avoid O(n²) lookups for linkless deduplication
+    local itemsByID = {}
+    local itemsByKey = {} -- Track by full key to prevent duplicates
+	-- Track which IDs have been seen to handle hash table to array conversion
+    local seenIDs = {}
+
+    local function processItem(v)
+        if not v or not v.ID then
+            -- Skip malformed entries (missing required ID field)
+            return
+        end
+
+        -- Ensure Count is set
+        v.Count = v.Count or 1
+
+        -- Use normalized key (strips unique instance ID) for deduplication
+        -- This allows identical items with different instance IDs to merge
+        local itemKey = v.Link and self:GetItemKey(v.Link) or ""
+        local key = tostring(v.ID) .. ":" .. itemKey
+
+        -- Skip if we already have this exact key
+        if itemsByKey[key] then
+            local existingItem = itemsByKey[key]
+            existingItem.Count = (existingItem.Count or 1) + (v.Count or 1)
+            existingItem.Link = existingItem.Link or v.Link
+
+            return
+        end
+
+        -- If no link, also check if there's an existing entry with same ID but with link
+        -- This handles deduplication between linked (bank/bags) and linkless (mail) items
+        if not v.Link and itemKey == "" then
+            -- Use ID index for O(1) lookup instead of O(n) iteration
+            local idStr = tostring(v.ID)
+            local existingKeys = itemsByID[idStr]
+            if existingKeys and #existingKeys > 0 then
+                -- Found item(s) with same ID - merge into first entry
+                local existingKey = existingKeys[1]
+                local existingItem = items[existingKey]
+                local itemCount = existingItem.Count or 1
+                local vCount = v.Count or 1
+                existingItem.Count = itemCount + vCount
+                existingItem.Link = existingItem.Link or v.Link
+                key = existingKey
+            end
+        end
+
+        if key and not itemsByKey[key] then
+            -- Ensure stored item has count field
+            items[key] = { ID = v.ID, Count = v.Count or 1, Link = v.Link }
+            itemsByKey[key] = items[key]
+            -- Add to ID index
+            local idStr = tostring(v.ID)
+            if not itemsByID[idStr] then
+                itemsByID[idStr] = {}
+            end
+            table.insert(itemsByID[idStr], key)
+            seenIDs[v.ID] = true
+        end
+    end
+
     if a then
-        for _, v in pairs(a) do
-			if not v or not v.ID then
-				-- Skip malformed entries (missing required ID field)
-            else
-				-- Use normalized key (strips unique instance ID) for deduplication
-				-- This allows identical items with different instance IDs to merge
-				local itemKey = self:GetItemKey(v.Link)
-				local key
-				key = tostring(v.ID) .. itemKey
-				
-				-- If no link, also check if there's an existing entry with same ID but with link
-				-- This handles deduplication between linked (bank/bags) and linkless (mail) items
-				if not v.Link and itemKey == "" then
-					-- Use ID index for O(1) lookup instead of O(n) iteration
-					local idStr = tostring(v.ID)
-					local existingKeys = itemsByID[idStr]
-					if existingKeys and #existingKeys > 0 then
-						-- Found item(s) with same ID - merge into first entry
-						local existingKey = existingKeys[1]
-						local existingItem = items[existingKey]
-						local itemCount = existingItem.Count or 1
-						local vCount = v.Count or 1
-						existingItem.Count = itemCount + vCount
-						existingItem.Link = existingItem.Link or v.Link
-						key = nil -- Signal that we already merged
-					end
-				end
-				
-				if key then
-					if items[key] then
-						local item = items[key]
-						-- Defensive: use default value if count is missing
-						local itemCount = item.Count or 1
-						local vCount = v.Count or 1
-						items[key] = { ID = item.ID, Count = itemCount + vCount, Link = item.Link or v.Link }
-					else
-						-- Ensure stored item has count field
-						items[key] = { ID = v.ID, Count = v.Count or 1, Link = v.Link }
-						-- Add to ID index
-						local idStr = tostring(v.ID)
-						if not itemsByID[idStr] then
-							itemsByID[idStr] = {}
-						end
-						table.insert(itemsByID[idStr], key)
-					end
-				end
-			end
-		end
-	end
+		-- Handle both array and hash table formats
+        if type(a) == "table" and a[1] then
+            for _, v in ipairs(a) do
+				processItem(v)
+            end
+        else
+            for _, v in pairs(a) do
+				processItem(v)
+            end
+        end
+    end
 
     if b then
-        for _, v in pairs(b) do
-			if not v or not v.ID then
-				-- Skip malformed entries (missing required ID field)
-            else
-				-- Use normalized key (strips unique instance ID) for deduplication
-				-- This allows identical items with different instance IDs to merge
-				local itemKey = self:GetItemKey(v.Link)
-				local key
-				key = tostring(v.ID) .. itemKey
-				
-				-- If no link, also check if there's an existing entry with same ID but with link
-				-- This handles deduplication between linked (bank/bags) and linkless (mail) items
-				if not v.Link and itemKey == "" then
-					-- Use ID index for O(1) lookup instead of O(n) iteration
-					local idStr = tostring(v.ID)
-					local existingKeys = itemsByID[idStr]
-					if existingKeys and #existingKeys > 0 then
-						-- Found item(s) with same ID - merge into first entry
-						local existingKey = existingKeys[1]
-						local existingItem = items[existingKey]
-						local itemCount = existingItem.Count or 1
-						local vCount = v.Count or 1
-						existingItem.Count = itemCount + vCount
-						existingItem.Link = existingItem.Link or v.Link
-						key = nil -- Signal that we already merged
-					end
-				end
-				
-				if key then
-					if items[key] then
-						local item = items[key]
-						-- Defensive: use default value if count is missing
-						local itemCount = item.Count or 1
-						local vCount = v.Count or 1
-						items[key] = { ID = item.ID, Count = itemCount + vCount, Link = item.Link or v.Link }
-					else
-						-- Ensure stored item has count field
-						items[key] = { ID = v.ID, Count = v.Count or 1, Link = v.Link }
-						-- Add to ID index
-						local idStr = tostring(v.ID)
-						if not itemsByID[idStr] then
-							itemsByID[idStr] = {}
-						end
-						table.insert(itemsByID[idStr], key)
-					end
-				end
-			end
-		end
-	end
+		-- Handle both array and hash table formats
+        if type(b) == "table" and b[1] then
+            for _, v in ipairs(b) do
+                processItem(v)
+            end
+		else
+            for _, v in pairs(b) do
+                processItem(v)
+            end
+        end
+    end
 
-    return items
+    -- Convert hash table to array for return value
+    local result = {}
+    for _, item in pairs(items) do
+        if item and item.ID then
+            table.insert(result, item)
+        end
+    end
+
+    return result
 end
 
 function Items:IsUnique(link)

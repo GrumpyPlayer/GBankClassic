@@ -14,9 +14,10 @@ Guild.tempDeltaErrors = {
 local PENDING_SYNC_TTL_SECONDS = 180
 
 local Globals = GBankClassic_Globals
-local upvalues = Globals.GetUpvalues("wipe")
+local upvalues = Globals.GetUpvalues("wipe", "debugprofilestop")
 local wipe = upvalues.wipe
-local upvalues = Globals.GetUpvalues("GetNormalizedRealmName", "UnitName", "NewTicker", "IsInGuild", "GetGuildInfo", "GetNumGuildMembers", "GetGuildRosterInfo", "GetAddOnMetadata", "GetServerTime", "GetTime", "GetItemInfo", "After", "debugprofilestop", "CanViewOfficerNote")
+local debugprofilestop = upvalues.debugprofilestop
+local upvalues = Globals.GetUpvalues("GetNormalizedRealmName", "UnitName", "NewTicker", "IsInGuild", "GetGuildInfo", "GetNumGuildMembers", "GetGuildRosterInfo", "GetAddOnMetadata", "GetServerTime", "GetTime", "GetItemInfo", "After", "CanViewOfficerNote", "GuildRoster", "GuildControlGetNumRanks", "GuildControlGetRankFlags")
 local GetNormalizedRealmName = upvalues.GetNormalizedRealmName
 local UnitName = upvalues.UnitName
 local NewTicker = upvalues.NewTicker
@@ -29,8 +30,10 @@ local GetServerTime = upvalues.GetServerTime
 local GetTime = upvalues.GetTime
 local GetItemInfo = upvalues.GetItemInfo
 local After = upvalues.After
-local debugprofilestop = upvalues.debugprofilestop
 local CanViewOfficerNote = upvalues.CanViewOfficerNote
+local GuildRoster = upvalues.GuildRoster
+local GuildControlGetNumRanks = upvalues.GuildControlGetNumRanks
+local GuildControlGetRankFlags = upvalues.GuildControlGetRankFlags
 local upvalues = Globals.GetUpvalues("Item")
 local Item = upvalues.Item
 
@@ -942,18 +945,9 @@ function Guild:StripItemLinks(items)
 			ID = item.ID,
 			Count = item.Count
 		}
-
-		-- Preserve itemString for items with unique stats (suffixes, enchants, etc.)
-		-- Extract from link if available: |Hitem:itemString|h[Name]|h
-		if item.Link then
-			local itemString = string.match(item.Link, "item:([^|]+)")
-			if itemString then
-				strippedItem.ItemString = itemString
-			end
-         
-			if GBankClassic_Item:NeedsLink(item.Link) then
-				strippedItem.Link = item.Link
-			end
+		-- Preserve link (weapons/armor)
+		if item.Link and GBankClassic_Item:NeedsLink(item.Link) then
+			strippedItem.Link = item.Link
 		end
 
 		table.insert(stripped, strippedItem)
@@ -963,7 +957,7 @@ function Guild:StripItemLinks(items)
 end
 
 -- Reconstruct link fields after receiving data
--- Calls GetItemInfo() to recreate links from ItemID or ItemString
+-- Calls GetItemInfo() to recreate links from ItemID
 -- Throttle UI refreshes to prevent stuttering when many items load async
 local lastUIRefresh = 0
 local function throttledUIRefresh()
@@ -977,6 +971,7 @@ local function throttledUIRefresh()
 	-- Only refresh if UI is actually open
 	if GBankClassic_UI_Inventory and GBankClassic_UI_Inventory.isOpen then
 		GBankClassic_UI_Inventory:DrawContent()
+		GBankClassic_UI_Inventory:RefreshCurrentTab()
 	end
 	if GBankClassic_UI_Search and GBankClassic_UI_Search.isOpen then
 		GBankClassic_UI_Search:DrawContent()
@@ -1005,47 +1000,44 @@ local function processItemQueue()
 	for i = 1, processCount do
 		local item = table.remove(itemReconstructQueue, 1)
 		if item and item.ID and not item.Link then
-			-- If we have an ItemString, use it to reconstruct full link
-			if item.ItemString then
-				local itemName = GetItemInfo(item.ID)
-				if itemName then
-					item.Link = string.format("|cffffffff|Hitem:%s|h[%s]|h|r", item.ItemString, itemName)
-					loadedAnyInBatch = true
-				else
-					-- Item not in cache - only start async if under limit
-					if pendingAsyncLoads < MAX_CONCURRENT_ASYNC then
-						pendingAsyncLoads = pendingAsyncLoads + 1
-						local itemObj = Item:CreateFromItemID(item.ID)
+			local itemLink = select(2, GetItemInfo(item.ID))
+			if itemLink then
+				item.Link = itemLink
+				loadedAnyInBatch = true
+			else
+				-- Item not in cache - only start async if under limit
+				if pendingAsyncLoads < MAX_CONCURRENT_ASYNC then
+					pendingAsyncLoads = pendingAsyncLoads + 1
+					local itemObj = Item:CreateFromItemID(item.ID)
 
-						-- Check itemObj state
-						GBankClassic_Output:Debug("ITEM", "ItemString item %d: itemObj=%s, itemObj.itemID=%s", item.ID or -1, tostring(itemObj), itemObj and tostring(itemObj.itemID) or "nil")
+					-- Check itemObj state
+					GBankClassic_Output:Debug("ITEM", "Loading item %d: itemObj=%s, itemObj.itemID=%s", item.ID or -1, tostring(itemObj), itemObj and tostring(itemObj.itemID) or "nil")
 
-						if itemObj and itemObj.itemID and itemObj.itemID == item.ID then
-							-- Item object is valid, try ContinueOnItemLoad with error protection
-							GBankClassic_Output:Debug("ITEM", "ItemString item %d passed validation, calling ContinueOnItemLoad", item.ID)
-							local success, err = pcall(function()
-								itemObj:ContinueOnItemLoad(function()
-									pendingAsyncLoads = pendingAsyncLoads - 1
-									local name = itemObj:GetItemName()
-									if name then
-										item.Link = string.format("|cffffffff|Hitem:%s|h[%s]|h|r", item.ItemString, name)
-										throttledUIRefresh()
-									end
-								end)
-							end)
-							if not success then
-								GBankClassic_Output:Debug("ITEM", "ContinueOnItemLoad crashed for ItemString item %d: %s", item.ID, tostring(err))
+					if itemObj and itemObj.itemID and itemObj.itemID == item.ID then
+						-- Item object is valid, try ContinueOnItemLoad with error protection
+						GBankClassic_Output:Debug("ITEM", "Item %d passed validation, calling ContinueOnItemLoad", item.ID)
+						local success, err = pcall(function()
+							itemObj:ContinueOnItemLoad(function()
 								pendingAsyncLoads = pendingAsyncLoads - 1
-							end
-						else
-							-- Item object is nil or corrupted, skip
-							GBankClassic_Output:Debug("ITEM", "ItemString item %d failed validation, skipping", item.ID or -1)
+								local link = itemObj:GetItemLink()
+								if link then
+									item.Link = link
+									throttledUIRefresh()
+								end
+							end)
+						end)
+						if not success then
+							GBankClassic_Output:Debug("ITEM", "ContinueOnItemLoad crashed for item %d: %s", item.ID, tostring(err))
 							pendingAsyncLoads = pendingAsyncLoads - 1
 						end
 					else
-						-- Too many pending, requeue for later
-						table.insert(itemReconstructQueue, item)
+						-- Item object is nil or corrupted, skip
+						GBankClassic_Output:Debug("ITEM", "Item %d failed validation, skipping", item.ID or -1)
+						pendingAsyncLoads = pendingAsyncLoads - 1
 					end
+				else
+					-- Too many pending, requeue for later
+					table.insert(itemReconstructQueue, item)
 				end
 			end
 		end
@@ -1071,16 +1063,9 @@ function Guild:ReconstructItemLink(item)
 	end
 
 	-- Try synchronous reconstruction from cache only
-	if item.ItemString then
-		local itemName = GetItemInfo(item.ID)
-		if itemName then
-			item.Link = string.format("|cffffffff|Hitem:%s|h[%s]|h|r", item.ItemString, itemName)
-		end
-	else
-		local itemLink = select(2, GetItemInfo(item.ID))
-		if itemLink then
-			item.Link = itemLink
-		end
+	local itemLink = select(2, GetItemInfo(item.ID))
+	if itemLink then
+		item.Link = itemLink
 	end
 end
 
@@ -1478,6 +1463,9 @@ function Guild:ReceiveAltData(name, alt, sender)
 			return nil
 		end
 
+		-- Log mailHash upon receiving alt data
+		GBankClassic_Output:Debug("SYNC", "ReceiveAltData for %s: received mailHash=%s", name, tostring(a.mailHash))
+
 		-- Sanitize alt.items (array)
 		if a.items then
 			local cleaned = {}
@@ -1704,6 +1692,9 @@ function Guild:ReceiveAltData(name, alt, sender)
 	self.Info.alts[norm] = alt
 	GBankClassic_Output:Debug("MAIL", "Overwrote self.Info.alts[%s], mail field now: %s", norm, alt.mail and "EXISTS" or "GONE")
 
+	-- Log mailHash after storing to verify it persisted
+	GBankClassic_Output:Debug("SYNC", "Stored alt data for %s: mailHash=%s", norm, tostring(self.Info.alts[norm].mailHash))
+
 	-- Restore preserved mail if we had it locally and incoming sync doesn't have it
 	-- This handles backward compatibility: new clients preserve mail when receiving from old clients
 	if existingMail and not incomingHasMail then
@@ -1734,7 +1725,8 @@ function Guild:ReceiveAltData(name, alt, sender)
 
 	-- Reconstruct links for items (bandwidth optimization)
 	if alt.items then
-		self:ReconstructItemLinks(alt.bags.items)
+		self:ReconstructItemLinks(alt.items)
+		throttledUIRefresh()
 	end
 
 	-- Reset error count on successful full sync

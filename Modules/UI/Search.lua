@@ -166,6 +166,10 @@ end
 -- 		self.RequestDialog.frame:SetPoint("TOPRIGHT", self.Window.frame, "TOPLEFT", -10, 0)
 -- 	end
 -- 	self.RequestDialog:Show()
+
+	-- -- Ensure dialog stays within screen bounds
+	-- GBankClassic_UI:ClampFrameToScreen(self.RequestDialog)
+
 -- 	self.RequestDialog:DoLayout()
 -- 	if self.RequestDialog.QuantityInput.editbox and self.RequestDialog.QuantityInput.editbox.SetFocus then
 -- 		self.RequestDialog.QuantityInput.editbox:SetFocus()
@@ -292,11 +296,16 @@ function UI_Search:Open()
         self:DrawWindow()
     end
 
-	-- Build search data only when search UI is opened
-	-- Performed here to avoid blocking initial window open
-	if not self.searchDataBuilt then
+	-- Rebuild search data when guild roster version changes
+	-- Track roster version to detect when new data arrives (after /wipe, sync, etc.)
+	local currentVersion = GBankClassic_Guild.Info and GBankClassic_Guild.Info.roster and GBankClassic_Guild.Info.roster.version or 0
+	local needsRebuild = not self.searchDataBuilt or (self.lastRosterVersion ~= currentVersion)
+    -- TODO: Problem: roster.version only changes when guild bank alts change, not when inventory syncs. Search data may become stale.
+	if needsRebuild then
+		GBankClassic_Output:Debug("SEARCH", "Rebuilding search data (version changed: %s -> %s)", tostring(self.lastRosterVersion or "nil"), tostring(currentVersion))
 		self:BuildSearchData()
 		self.searchDataBuilt = true
+		self.lastRosterVersion = currentVersion
 	end
 
     self.Window:Show()
@@ -304,6 +313,9 @@ function UI_Search:Open()
         self.Window:ClearAllPoints()
         self.Window:SetPoint("TOPRIGHT", GBankClassic_UI_Inventory.Window.frame, "TOPLEFT", 0, 0)
     end
+
+	-- Ensure window stays within screen bounds
+	GBankClassic_UI:ClampFrameToScreen(self.Window)
 
     self:DrawContent()
 
@@ -446,13 +458,7 @@ function UI_Search:BuildSearchData()
 				if alt.bags then
 					items = GBankClassic_Item:Aggregate(items, alt.bags.items)
 				end
-				-- Include mail items (now in array format like bank/bags)
-				if alt.mail and alt.mail.items then
-					local mailItemCount = GBankClassic_Globals:Count(alt.mail.items)
-					GBankClassic_Output:Debug("SEARCH", "Search corpus: aggregating mail for %s (%d unique items)", player, mailItemCount)
-					-- Mail items are now in array format, not key-value
-					items = GBankClassic_Item:Aggregate(items, alt.mail.items)
-				end
+                -- Don't aggregate mail separately, it's already in alt.items
 			end
         end
     end
@@ -479,6 +485,8 @@ function UI_Search:BuildSearchData()
 	GBankClassic_Output:Debug("SEARCH", "Passing %d valid items to GetItems (%d invalid skipped)", #validItems, invalidCount)
 	
 	GBankClassic_Item:GetItems(validItems, function(list)
+		local listCount = GBankClassic_Globals:Count(list)
+		GBankClassic_Output:Debug("SEARCH", "GetItems callback fired with %d items", listCount)
         for _, v in pairs(list) do
             -- Skip malformed list entries
 			if v and v.ID and v.Info and v.Info.name then
@@ -518,12 +526,7 @@ function UI_Search:BuildSearchData()
 					if alt.bags then
 						altItems = GBankClassic_Item:Aggregate(altItems, alt.bags.items)
 					end
-					-- Include mail items (now in array format like bank/bags)
-					if alt.mail and alt.mail.items then
-						GBankClassic_Output:Debug("SEARCH", "Search results: aggregating mail for %s (%d unique items)", player, #alt.mail.items)
-						-- Mail items are now in array format, not key-value
-						altItems = GBankClassic_Item:Aggregate(altItems, alt.mail.items)
-					end
+					-- Don't aggregate mail separately, it's already in alt.items
 				end
             end
 
@@ -667,11 +670,8 @@ function UI_Search:DrawContent()
 
 	GBankClassic_Output:Debug("SEARCH", "Search complete: matched %d names, displayed %d result widgets", matchedNames, count)
 
-    local status = count .. " Result"
-    if count > 1 then
-        status = status .. "s"
-    end
-    self.Window:SetStatusText(status)
+    local plural = (count ~= 1 and "s" or "")
+    self.Window:SetStatusText(count .. " result" .. plural)
 
     self.Results:DoLayout()
 end

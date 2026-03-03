@@ -126,16 +126,16 @@ function Options:Init()
 						type = "description",
 						name = "Enable specific debug categories to filter output. Categories are only active when log level is set to 'Debug'.",
 					},
-					["roster"] = {
+					["chunk"] = {
 						order = 10,
 						type = "toggle",
 						width = "full",
-						name = "ROSTER - Guild roster updates, online/offline tracking",
+						name = "CHUNK - Data synchronization operations specific to chunk sending",
 						set = function(_, v)
-							GBankClassic_Output:SetCategoryEnabled("ROSTER", v)
+							GBankClassic_Output:SetCategoryEnabled("CHUNK", v)
 						end,
 						get = function()
-							return GBankClassic_Output:IsCategoryEnabled("ROSTER")
+							return GBankClassic_Output:IsCategoryEnabled("CHUNK")
 						end,
 					},
 					["comms"] = {
@@ -150,44 +150,20 @@ function Options:Init()
 							return GBankClassic_Output:IsCategoryEnabled("COMMS")
 						end,
 					},
-					["delta"] = {
+					["database"] = {
 						order = 12,
 						type = "toggle",
 						width = "full",
-						name = "DELTA - Delta sync operations and computations",
+						name = "DATABASE - Database and SavedVariables operations",
 						set = function(_, v)
-							GBankClassic_Output:SetCategoryEnabled("DELTA", v)
+							GBankClassic_Output:SetCategoryEnabled("DATABASE", v)
 						end,
 						get = function()
-							return GBankClassic_Output:IsCategoryEnabled("DELTA")
-						end,
-					},
-					["sync"] = {
-						order = 13,
-						type = "toggle",
-						width = "full",
-						name = "SYNC - Data synchronization operations",
-						set = function(_, v)
-							GBankClassic_Output:SetCategoryEnabled("SYNC", v)
-						end,
-						get = function()
-							return GBankClassic_Output:IsCategoryEnabled("SYNC")
-						end,
-					},
-					["chunk"] = {
-						order = 14,
-						type = "toggle",
-						width = "full",
-						name = "CHUNK - Data synchronization operations specific to chunk sending",
-						set = function(_, v)
-							GBankClassic_Output:SetCategoryEnabled("CHUNK", v)
-						end,
-						get = function()
-							return GBankClassic_Output:IsCategoryEnabled("CHUNK")
+							return GBankClassic_Output:IsCategoryEnabled("DATABASE")
 						end,
 					},
 					["donation"] = {
-						order = 15,
+						order = 13,
 						type = "toggle",
 						width = "full",
 						name = "DONATION - Donation ledger operations",
@@ -198,40 +174,64 @@ function Options:Init()
 							return GBankClassic_Output:IsCategoryEnabled("DONATION")
 						end,
 					},
-					["whisper"] = {
+					["events"] = {
+						order = 14,
+						type = "toggle",
+						width = "full",
+						name = "EVENTS - WoW event handling (GUILD_ROSTER_UPDATE, etc.)",
+						set = function(_, v)
+							GBankClassic_Output:SetCategoryEnabled("EVENTS", v)
+						end,
+						get = function()
+							return GBankClassic_Output:IsCategoryEnabled("EVENTS")
+						end,
+					},
+					-- ["fulfill"] = {
+					-- 	order = 15,
+					-- 	type = "toggle",
+					-- 	width = "full",
+					-- 	name = "FULFILL - Fulfilling requests",
+					-- 	set = function(_, v)
+					-- 		GBankClassic_Output:SetCategoryEnabled("FULFILL", v)
+					-- 	end,
+					-- 	get = function()
+					-- 		return GBankClassic_Output:IsCategoryEnabled("FULFILL")
+					-- 	end,
+					-- },
+					["inventory"] = {
 						order = 16,
 						type = "toggle",
 						width = "full",
-						name = "WHISPER - Whisper sends, skips, and online checks",
+						name = "INVENTORY - Inventory (bank/bag/mail) scanning and tracking",
 						set = function(_, v)
-							GBankClassic_Output:SetCategoryEnabled("WHISPER", v)
+							GBankClassic_Output:SetCategoryEnabled("INVENTORY", v)
 						end,
 						get = function()
-							return GBankClassic_Output:IsCategoryEnabled("WHISPER")
+							return GBankClassic_Output:IsCategoryEnabled("INVENTORY")
 						end,
 					},
-					-- ["requests"] = {
-					-- 	order = 17,
-					-- 	type = "toggle",
-					-- 	width = "full",
-					-- 	name = "REQUESTS - Request system activity and updates",
-					-- 	set = function(_, v)
-					-- 		GBankClassic_Output:SetCategoryEnabled("REQUESTS", v)
-					-- 	end,
-					-- 	get = function()
-					-- 		return GBankClassic_Output:IsCategoryEnabled("REQUESTS")
-					-- 	end,
-					-- },
-					["ui"] = {
+					["item"] = {
+						order = 17,
+						type = "toggle",
+						width = "full",
+						name = "ITEM - Item loading, validation, and processing",
+						set = function(_, v)
+							GBankClassic_Output:SetCategoryEnabled("ITEM", v)
+						end,
+						get = function()
+							return GBankClassic_Output:IsCategoryEnabled("ITEM")
+						end,
+					},
+					["mail"] = {
 						order = 18,
 						type = "toggle",
 						width = "full",
-						name = "UI - Interface operations (window opens/closes)",
+						name = "MAIL - Mail inventory scanning and tracking",
 						set = function(_, v)
-							GBankClassic_Output:SetCategoryEnabled("UI", v)
+							GBankClassic_Output:SetCategoryEnabled("MAIL", v)
 						end,
 						get = function()
-							return GBankClassic_Output:IsCategoryEnabled("UI")
+							return GBankClassic_Output:IsCategoryEnabled("MAIL")
 						end,
 					},
 					["protocol"] = {
@@ -246,80 +246,56 @@ function Options:Init()
 							return GBankClassic_Output:IsCategoryEnabled("PROTOCOL")
 						end,
 					},
-					["database"] = {
+					["queries"] = {
 						order = 20,
 						type = "toggle",
 						width = "full",
-						name = "DATABASE - Database and SavedVariables operations",
+						name = "QUERIES - Peer query/response decisions and hash matching",
 						set = function(_, v)
-							GBankClassic_Output:SetCategoryEnabled("DATABASE", v)
+							GBankClassic_Output:SetCategoryEnabled("QUERIES", v)
 						end,
 						get = function()
-							return GBankClassic_Output:IsCategoryEnabled("DATABASE")
+							return GBankClassic_Output:IsCategoryEnabled("QUERIES")
 						end,
 					},
-					["events"] = {
+					["replies"] = {
 						order = 21,
 						type = "toggle",
 						width = "full",
-						name = "EVENTS - WoW event handling (GUILD_ROSTER_UPDATE, etc.)",
+						name = "REPLIES - Output from addon communication replies (such as /bank hello)",
 						set = function(_, v)
-							GBankClassic_Output:SetCategoryEnabled("EVENTS", v)
+							GBankClassic_Output:SetCategoryEnabled("REPLIES", v)
 						end,
 						get = function()
-							return GBankClassic_Output:IsCategoryEnabled("EVENTS")
+							return GBankClassic_Output:IsCategoryEnabled("REPLIES")
 						end,
 					},
-					["inventory"] = {
-						order = 22,
-						type = "toggle",
-						width = "full",
-						name = "INVENTORY - Inventory (bank/bag/mail) scanning and tracking",
-						set = function(_, v)
-							GBankClassic_Output:SetCategoryEnabled("INVENTORY", v)
-						end,
-						get = function()
-							return GBankClassic_Output:IsCategoryEnabled("INVENTORY")
-						end,
-					},
-					["mail"] = {
+					-- ["requests"] = {
+					-- 	order = 22,
+					-- 	type = "toggle",
+					-- 	width = "full",
+					-- 	name = "REQUESTS - Request system activity and updates",
+					-- 	set = function(_, v)
+					-- 		GBankClassic_Output:SetCategoryEnabled("REQUESTS", v)
+					-- 	end,
+					-- 	get = function()
+					-- 		return GBankClassic_Output:IsCategoryEnabled("REQUESTS")
+					-- 	end,
+					-- },
+					["roster"] = {
 						order = 23,
 						type = "toggle",
 						width = "full",
-						name = "MAIL - Mail inventory scanning and tracking",
+						name = "ROSTER - Guild roster updates, online/offline tracking",
 						set = function(_, v)
-							GBankClassic_Output:SetCategoryEnabled("MAIL", v)
+							GBankClassic_Output:SetCategoryEnabled("ROSTER", v)
 						end,
 						get = function()
-							return GBankClassic_Output:IsCategoryEnabled("MAIL")
+							return GBankClassic_Output:IsCategoryEnabled("ROSTER")
 						end,
 					},
-					["item"] = {
-						order = 24,
-						type = "toggle",
-						width = "full",
-						name = "ITEM - Item loading, validation, and processing",
-						set = function(_, v)
-							GBankClassic_Output:SetCategoryEnabled("ITEM", v)
-						end,
-						get = function()
-							return GBankClassic_Output:IsCategoryEnabled("ITEM")
-						end,
-					},
-					-- ["fulfill"] = {
-					-- 	order = 25,
-					-- 	type = "toggle",
-					-- 	width = "full",
-					-- 	name = "FULFILL - Fulfilling requests",
-					-- 	set = function(_, v)
-					-- 		GBankClassic_Output:SetCategoryEnabled("FULFILL", v)
-					-- 	end,
-					-- 	get = function()
-					-- 		return GBankClassic_Output:IsCategoryEnabled("FULFILL")
-					-- 	end,
-					-- },
 					["search"] = {
-						order = 26,
+						order = 24,
 						type = "toggle",
 						width = "full",
 						name = "SEARCH - Search operations",
@@ -328,6 +304,54 @@ function Options:Init()
 						end,
 						get = function()
 							return GBankClassic_Output:IsCategoryEnabled("SEARCH")
+						end,
+					},
+					["sync"] = {
+						order = 25,
+						type = "toggle",
+						width = "full",
+						name = "SYNC - Data synchronization operations",
+						set = function(_, v)
+							GBankClassic_Output:SetCategoryEnabled("SYNC", v)
+						end,
+						get = function()
+							return GBankClassic_Output:IsCategoryEnabled("SYNC")
+						end,
+					},
+					["ui"] = {
+						order = 26,
+						type = "toggle",
+						width = "full",
+						name = "UI - Interface operations (window opens/closes)",
+						set = function(_, v)
+							GBankClassic_Output:SetCategoryEnabled("UI", v)
+						end,
+						get = function()
+							return GBankClassic_Output:IsCategoryEnabled("UI")
+						end,
+					},
+					["whisper"] = {
+						order = 27,
+						type = "toggle",
+						width = "full",
+						name = "WHISPER - Whisper sends, skips, and online checks",
+						set = function(_, v)
+							GBankClassic_Output:SetCategoryEnabled("WHISPER", v)
+						end,
+						get = function()
+							return GBankClassic_Output:IsCategoryEnabled("WHISPER")
+						end,
+					},
+					["delta"] = {
+						order = 28,
+						type = "toggle",
+						width = "full",
+						name = "DELTA - Delta sync operations and computations",
+						set = function(_, v)
+							GBankClassic_Output:SetCategoryEnabled("DELTA", v)
+						end,
+						get = function()
+							return GBankClassic_Output:IsCategoryEnabled("DELTA")
 						end,
 					},
 					["spacer"] = {
@@ -341,7 +365,7 @@ function Options:Init()
 						name = "Enable all categories",
 						func = function()
 							GBankClassic_Output:EnableAllCategories()
-							GBankClassic_Output:Info("All debug categories enabled")
+							GBankClassic_Output:Info("All debug categories enabled.")
 						end,
 					},
 					["disableAll"] = {
@@ -350,7 +374,7 @@ function Options:Init()
 						name = "Disable all categories",
 						func = function()
 							GBankClassic_Output:DisableAllCategories()
-							GBankClassic_Output:Info("All debug categories disabled")
+							GBankClassic_Output:Info("All debug categories disabled.")
 						end,
 					},
 					["spacer2"] = {
@@ -402,7 +426,7 @@ function Options:Init()
 			-- 				end
 			-- 				-- Also write to local settings as backup
 			-- 				self.db.global.requests.maxRequestPercent = v
-			-- 				GBankClassic_Output:Info("Maximum request amount set to %d%% (syncing to guild...)", v)
+			-- 				GBankClassic_Output:Info("Maximum request amount set to %d%%.", v)
 			-- 			end,
 			-- 		},
 			-- 		["exampleGroup"] = {

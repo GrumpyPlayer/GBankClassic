@@ -4,12 +4,17 @@ local Events = GBankClassic_Events
 local bagUpdateTimer = nil
 
 local Globals = GBankClassic_Globals
-local upvalues = Globals.GetUpvalues("hooksecurefunc", "GuildRoster", "IsInRaid", "MailFrame", "NewTimer")
+local upvalues = Globals.GetUpvalues("After", "wipe")
+local After = upvalues.After
+local wipe = upvalues.wipe
+local upvalues = Globals.GetUpvalues("hooksecurefunc", "GuildRoster", "IsInRaid", "MailFrame", "NewTimer", "GetTime", "IsInGuild", "IsAddOnLoaded")
 local hooksecurefunc = upvalues.hooksecurefunc
 local GuildRoster = upvalues.GuildRoster
 local IsInRaid = upvalues.IsInRaid
 local MailFrame = upvalues.MailFrame
 local NewTimer = upvalues.NewTimer
+local IsInGuild = upvalues.IsInGuild
+local IsAddOnLoaded = upvalues.IsAddOnLoaded
 
 function Events:RegisterEvent(event, callback)
 	if not callback then
@@ -183,12 +188,13 @@ function Events:GUILD_RANKS_UPDATE(_)
         
 		local cleaned = GBankClassic_Guild:CleanupMalformedAlts()
 		if cleaned and cleaned > 0 then
-			GBankClassic_Output:Info("Cleaned %d malformed alt entries from saved database", cleaned)
-			GBankClassic_Output:Debug("EVENTS", "GUILD_RANKS_UPDATE:", "Cleaned %d malformed alt entries from saved database", cleaned)
+			GBankClassic_Output:Info("Cleaned %d malformed guild bank alt entries from saved database.", cleaned)
+			GBankClassic_Output:Debug("EVENTS", "GUILD_RANKS_UPDATE: cleaned %d malformed alt entries from saved database", cleaned)
 		end
         
         if GBankClassic_UI_Inventory.isOpen then
             GBankClassic_UI_Inventory:DrawContent()
+			GBankClassic_UI_Inventory:RefreshCurrentTab()
         end
 		if GBankClassic_UI_Donations.isOpen then
 			GBankClassic_UI_Donations:DrawContent()
@@ -234,18 +240,18 @@ function Events:MAIL_CLOSED(_)
 	GBankClassic_Output:Debug("MAIL", "MAIL_CLOSED event fired")
 
     if GBankClassic_Mail.donationItemRegistry then
-        table.wipe(GBankClassic_Mail.donationItemRegistry)
+        wipe(GBankClassic_Mail.donationItemRegistry)
     end
     if GBankClassic_Mail.itemDonationVerificationQueue then
-        table.wipe(GBankClassic_Mail.itemDonationVerificationQueue)
+        wipe(GBankClassic_Mail.itemDonationVerificationQueue)
     end
 	GBankClassic_Mail.isGoldDonationPending = nil
 	GBankClassic_Mail.goldBalanceBeforeDonation = nil
     GBankClassic_Mail.isOpen = false
 
-	-- GBankClassic_Output:Debug("MAIL", "Calling Bank:OnUpdateStart()")
-    -- GBankClassic_Bank:OnUpdateStart()
-	-- GBankClassic_Output:Debug("MAIL", "Bank:OnUpdateStart() completed")
+	GBankClassic_Output:Debug("MAIL", "Calling Bank:OnUpdateStart()")
+    GBankClassic_Bank:OnUpdateStart()
+	GBankClassic_Output:Debug("MAIL", "Bank:OnUpdateStart() completed")
 	GBankClassic_Output:Debug("MAIL", "Calling Bank:OnUpdateStop()")
     GBankClassic_Bank:OnUpdateStop()
 	GBankClassic_Output:Debug("MAIL", "Bank:OnUpdateStop() completed")
@@ -272,9 +278,13 @@ function Events:BAG_UPDATE(_)
 		return
 	end
 	
-    bagUpdateTimer = NewTimer(5, function()
+    bagUpdateTimer = NewTimer(TIMER_INTERVALS.ALT_DATA_QUEUE_RETRY, function()
+		GBankClassic_Output:Debug("INVENTORY", "Calling Bank:OnUpdateStart()")
 		GBankClassic_Bank:OnUpdateStart()
+		GBankClassic_Output:Debug("INVENTORY", "Bank:OnUpdateStart() completed")
+		GBankClassic_Output:Debug("INVENTORY", "Calling Bank:OnUpdateStop()")
 		GBankClassic_Bank:OnUpdateStop()
+		GBankClassic_Output:Debug("INVENTORY", "Bank:OnUpdateStop() completed")
         bagUpdateTimer = nil
     end)
 end
@@ -333,13 +343,17 @@ function Events:OnTimer()
 end
 
 function Events:SetShareTimer()
-	GBankClassic_Core:ScheduleTimer(function(...)
+	if self.shareTimer then
+		GBankClassic_Core:CancelTimer(self.shareTimer)
+		self.shareTimer = nil
+	end
+	self.shareTimer = GBankClassic_Core:ScheduleTimer(function(...)
 		self:OnShareTimer()
 	end, TIMER_INTERVALS.VERSION_BROADCAST)
 end
 
 function Events:OnShareTimer()
-	GBankClassic_Guild:Share("reply", "version")
+	GBankClassic_Output:Debug("EVENTS", "OnShareTimer fired")
 	self:SetShareTimer()
 end
 

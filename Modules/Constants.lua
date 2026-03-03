@@ -41,6 +41,8 @@ DEBUG_CATEGORY = {
 	ITEM = "ITEM",               -- Item loading, validation, and processing
 	-- FULFILL = "FULFILL",		 -- Request fullfillment by guild bank alts
 	SEARCH = "SEARCH",			 -- Search operations
+	QUERIES = "QUERIES",         -- Peer query/response decisions and hash matching
+	REPLIES = "REPLIES",		 -- Debug output from /bank hello replies and /bank wipeall replies
 }
 
 -- -- Request storage settings
@@ -56,7 +58,7 @@ DEBUG_CATEGORY = {
 -- 	INDEX_INFLIGHT_TIMEOUT = 30,       -- Seconds before in-flight index sync is considered stale
 -- }
 
--- Communication prefix descriptions for debug logging
+-- Communication prefix descriptions for debug logging (maximum of 16 characters)
 COMM_PREFIX_DESCRIPTIONS = {
 	["gbank-v"] = "(Version)",
 	["gbank-dv"] = "(Delta version)",

@@ -43,6 +43,9 @@ function UI_Donations:Open()
         self.Window:SetPoint("TOPLEFT", GBankClassic_UI_Inventory.Window.frame, "TOPRIGHT", 0, 0)
     end
 
+	-- Ensure window stays within screen bounds
+	GBankClassic_UI:ClampFrameToScreen(self.Window)
+
     self:DrawContent()
 
     if _G["GBankClassic"] then

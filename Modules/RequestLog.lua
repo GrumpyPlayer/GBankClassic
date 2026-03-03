@@ -1133,15 +1133,6 @@ function Guild:SendRequestsVersionPing()
 	if not self.Info then
 		return
 	end
-	
-	local payload = {
-		requests = {
-			-- version = self:GetRequestsVersion(),
-			-- hash = self:GetRequestsHash(),
-		},
-	}
-	local data = GBankClassic_Core:SerializeWithChecksum(payload)
-	GBankClassic_Core:SendCommMessage("gbank-v", data, "Guild", nil, "BULK")
 end
 
 -- -- Receive mutation entries from another player and apply them.

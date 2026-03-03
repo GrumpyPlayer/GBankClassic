@@ -7,12 +7,13 @@ MailInventory.hasUpdated = false
 local Globals = GBankClassic_Globals
 local upvalues = Globals.GetUpvalues("time")
 local time = upvalues.time
-local upvalues = Globals.GetUpvalues("GetInboxNumItems", "GetInboxHeaderInfo", "GetInboxItem", "GetInboxItemLink", "GetServerTime")
+local upvalues = Globals.GetUpvalues("GetInboxNumItems", "GetInboxHeaderInfo", "GetInboxItem", "GetInboxItemLink", "GetServerTime", "GetItemInfo")
 local GetInboxNumItems = upvalues.GetInboxNumItems
 local GetInboxHeaderInfo = upvalues.GetInboxHeaderInfo
 local GetInboxItem = upvalues.GetInboxItem
 local GetInboxItemLink = upvalues.GetInboxItemLink
 local GetServerTime = upvalues.GetServerTime
+local GetItemInfo = upvalues.GetItemInfo
 local upvalues = Globals.GetUpvalues("ATTACHMENTS_MAX_RECEIVE")
 local ATTACHMENTS_MAX_RECEIVE = upvalues.ATTACHMENTS_MAX_RECEIVE
 
@@ -42,13 +43,17 @@ function MailInventory:ScanMailInventory()
 				
 				if itemID and name then
 					local link = GetInboxItemLink(i, j)
+					if not link and itemID then
+						link = select(2, GetItemInfo(itemID))
+						-- TODO: it's possible that the item isn't cached yet so the link will be nil
+					end
 					
 					-- Conditionally include link based on item class
 					-- Gear (weapons/armor) needs full link for suffix differentiation
-					-- Consumables/trade goods don't need link (saves bandwidth in d3 sync)
+					-- Consumables/trade goods don't need link (saves bandwidth)
 					local storageLink = nil
 					if link and GBankClassic_Item:NeedsLink(link) then
-						storageLink = link -- Store full link for gear
+						storageLink = link
 					end
 					
 					-- Use normalized key for deduplication (strips unique instance ID)
@@ -59,12 +64,13 @@ function MailInventory:ScanMailInventory()
 					if mailItemsTable[key] then
 						-- Item already exists, add to count
 						local item = mailItemsTable[key]
-						mailItemsTable[key] = { ID = item.ID, Count = item.Count + count, Link = item.Link or storageLink }
+						local newCount = item.Count + count
+						mailItemsTable[key] = { ID = item.ID, Count = newCount, Link = item.Link }
 						GBankClassic_Output:Debug("MAIL", "Item %s: merged (key=%s) added %d, total now %d", name, key, count, mailItemsTable[key].Count)
 					else
 						-- New item
 						mailItemsTable[key] = { ID = itemID, Count = count, Link = storageLink }
-						GBankClassic_Output:Debug("MAIL", "New item in mailbox: %s (ID: %d, Count: %d, link: %s, Key: %s)", name, itemID, count, storageLink and "preserved" or "stripped", key)
+						GBankClassic_Output:Debug("MAIL", "New item in mailbox: %s (ID: %d, Count: %d, Link: %s, Key: %s)", name, itemID, count, storageLink and "preserved" or "stripped", key)
 					end
 				end
 			end
@@ -89,7 +95,7 @@ function MailInventory:ScanMailInventory()
 	
 	-- Build result structure (match bank/bags format for consistency)
 	local result = {
-		slots = { count = #mailItems, total = 50 }, -- Match bank/bags structure
+		slots = { count = #mailItems, total = 100 }, -- Match bank/bags structure
 		items = mailItems, -- Now an array like bank/bags
 		version = GetServerTime(),
 		lastScan = GetServerTime()

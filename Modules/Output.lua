@@ -6,9 +6,12 @@ Output.level = LOG_LEVEL.INFO
 Output.commDebug = false
 Output.debugFrame = nil
 Output.debugMessageBuffer = {}
-Output.maxBufferSize = 1000
+Output.maxBufferSize = 4096
 
 local Globals = GBankClassic_Globals
+local upvalues = Globals.GetUpvalues("date", "GetServerTime")
+local date = upvalues.date
+local GetServerTime = upvalues.GetServerTime
 local upvalues = Globals.GetUpvalues("FCF_DockFrame", "FCF_ResetChatWindows", "FCF_SetLocked", "FCF_SetWindowColor", "FCF_SetWindowName", "GetChatWindowInfo", "ChatFrame_RemoveAllMessageGroups", "ChatFrame_RemoveAllChannels")
 local FCF_DockFrame = upvalues.FCF_DockFrame
 local FCF_ResetChatWindows = upvalues.FCF_ResetChatWindows
@@ -133,7 +136,7 @@ function Output:CreateDebugTab()
 		if name == "GBankClassicDebug" then
 			self.debugFrame = _G["ChatFrame"..i]
 			-- Reconfigure and show existing frame
-			self.debugFrame:SetMaxLines(1000)
+			self.debugFrame:SetMaxLines(self.maxBufferSize)
 			self.debugFrame:SetFading(false)
 			FCF_SetLocked(self.debugFrame, false)
 			-- Remove all message filters
@@ -198,7 +201,7 @@ function Output:CreateDebugTab()
 	ChatFrame_RemoveAllChannels(frame)
 
 	-- Configure message history
-	frame:SetMaxLines(1000)
+	frame:SetMaxLines(self.maxBufferSize)
 	frame:SetFading(false)
 	frame:SetTimeVisible(120)
 	frame:SetIndentedWordWrap(false)
@@ -277,7 +280,8 @@ local function log(level, prefix, fmt, ...)
 	if level == LOG_LEVEL.DEBUG then
 		local debugFrame = Output:GetDebugFrame()
 		if debugFrame then
-			local fullMessage = "GBankClassic: "
+			local timeStr = date("%H:%M:%S", GetServerTime())
+			local fullMessage = timeStr .. " GBankClassic: "
 			if prefix then
 				fullMessage = fullMessage .. prefix .. " " .. message
 			else
@@ -318,7 +322,7 @@ function Output:Debug(fmt, ...)
 		local actualFmt = select(1, ...)
 		local args = {select(2, ...)}
 		
-		return log(LOG_LEVEL.DEBUG, "|cff888888[DEBUG]|r", actualFmt, unpack(args))
+		return log(LOG_LEVEL.DEBUG, "|cff888888[" .. category .. "]|r", actualFmt, unpack(args))
 	end
 	
 	-- Fallback: no category specified

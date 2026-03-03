@@ -309,54 +309,83 @@ function Chat:ProcessVersionBroadcast(prefix, data, sender, message, distributio
 			local altCount = GBankClassic_Globals:Count(data.alts)
 			GBankClassic_Output:Debug("PROTOCOL", "Processing %d alts from %s (isDeltaVersion=%s)", altCount, sender, tostring(isDeltaVersion))
 			for k, v in pairs(data.alts) do
-				local kNorm = GBankClassic_Guild:NormalizeName(k)
-				local ourAlt = current_data.alts[kNorm]
+				local kNorm = GBankClassic_Guild:NormalizeName(k) or k
+				local ourAlt = (GBankClassic_Guild.Info and GBankClassic_Guild.Info.alts and GBankClassic_Guild.Info.alts[kNorm]) or current_data.alts[kNorm]
 
 				-- Handle both old format (number) and new format (table with version+hash)
+				-- See Guild:GetVersion() to understand what is a part of data.alts (v)
 				local theirVersion = type(v) == "table" and v.version or v
 				local theirHash = type(v) == "table" and v.hash or nil
+				local theirMailHash = type(v) == "table" and v.mailHash or nil
 				local ourVersion = type(ourAlt) == "table" and ourAlt.version or nil
 				local ourHash = type(ourAlt) == "table" and ourAlt.inventoryHash or nil
+				local ourMailHash = type(ourAlt) == "table" and ourAlt.mailHash or nil
 
-				-- Show what we received
+				-- Always log hash comparisons
 				if theirHash then
-					GBankClassic_Output:Debug("SYNC", "Received %s from %s: version=%d, hash=%d (our hash=%s)", kNorm, sender, theirVersion, theirHash, ourHash and tostring(ourHash) or "nil")
+					GBankClassic_Output:Debug("PROTOCOL", "Received %s from %s: theirVer=%d, theirHash=%d, ourVer=%s, ourHash=%s", kNorm, sender, theirVersion, theirHash, ourVersion and tostring(ourVersion) or "nil", ourHash and tostring(ourHash) or "nil")
 				end
 
-				-- Don't query sender about themselves
-				local senderNorm = GBankClassic_Guild:NormalizeName(sender)
-				if kNorm ~= senderNorm then
+				-- Don't query if we are the sender ourselves
+				local ourPlayer = GBankClassic_Guild:GetNormalizedPlayer()
+				local senderNorm = GBankClassic_Guild:NormalizeName(sender) or sender
+				local weAreSender = (ourPlayer == senderNorm)
+
+				-- Log the sender check
+				GBankClassic_Output:Debug("PROTOCOL", "Sender check for %s: ourPlayer=%s, senderNorm=%s, weAreSender=%s", kNorm, ourPlayer, senderNorm, tostring(weAreSender))
+
+				if not weAreSender then
+					-- We're not the sender, so we can query about any alt including the sender
 					-- For delta version broadcasts, only query if we support delta
 					-- For legacy version broadcasts, query as normal
 					local shouldQuery = false
-					if isDeltaVersion then
-						-- Hash-based comparison (most accurate)
-						if theirHash then
-							if not ourHash then
-								-- They have data, we don't - query
-								shouldQuery = true
-								GBankClassic_Output:Debug("SYNC", ">", colorPlayerName(sender), "has bank data for", colorPlayerName(kNorm) .. " (we have none), querying.")
-							elseif theirHash ~= ourHash then
-								-- Hashes differ - we need an update
-								shouldQuery = true
-								GBankClassic_Output:Debug("SYNC", ">", colorPlayerName(sender), "has different inventory for", colorPlayerName(kNorm) .. " (hash mismatch), querying.")
+							-- Log query decision path
+							GBankClassic_Output:Debug("PROTOCOL", "Query evaluation for %s: isDeltaVersion=%s", kNorm, tostring(isDeltaVersion))
+
+							if isDeltaVersion then
+								-- Hash-based comparison (most accurate)
+								if theirHash then
+									if not ourHash then
+										-- They have data, we don't - query
+										shouldQuery = true
+										GBankClassic_Output:Debug("SYNC", ">", colorPlayerName(sender), "has bank data for", colorPlayerName(kNorm) .. " (we have none), querying.")
+										GBankClassic_Output:Debug("PROTOCOL", "Query decision for %s: we don't have data, query", kNorm)
+									elseif theirHash ~= ourHash or theirMailHash ~= ourMailHash then
+										-- Hashes differ (inventory or mail) - we need an update
+										shouldQuery = true
+										local reason = (theirHash ~= ourHash) and "inventory" or "mail"
+										GBankClassic_Output:Debug("SYNC", ">", colorPlayerName(sender), "has different " .. reason .. " for", colorPlayerName(kNorm) .. " (hash mismatch), querying.")
+										GBankClassic_Output:Debug("PROTOCOL", "Query decision for %s: %s hash differs, query (ourInv=%d, theirInv=%d, ourMail=%d, theirMail=%d)", kNorm, reason, ourHash, theirHash, ourMailHash, theirMailHash)
+									-- elseif not hasContent then
+									-- 	-- Hash matches but we don't have content (stub entry) - need to fill it
+									-- 	shouldQuery = true
+									-- 	GBankClassic_Output:Debug("SYNC", ">", colorPlayerName(sender), "has matching hash for", colorPlayerName(kNorm) .. " but we need content (stub entry), querying.")
+									-- 	GBankClassic_Output:Debug("PROTOCOL", "Query decision for %s: hash matches but we don't have the content, create the stub entry", kNorm)
+									else
+										GBankClassic_Output:Debug("PROTOCOL", "Query decision for %s: hash matches our content, don't query", kNorm)
+									end
+								elseif not ourVersion or theirVersion > ourVersion then
+									-- No hash available, fall back to version comparison
+									shouldQuery = true
+									GBankClassic_Output:Debug("SYNC", ">", colorPlayerName(sender), "has fresher bank data about", colorPlayerName(kNorm) .. ", querying (delta).")
+									GBankClassic_Output:Debug("PROTOCOL", "Query decision for %s: their version is newer, query", kNorm)
+								else
+									GBankClassic_Output:Debug("PROTOCOL", "Query decision for %s: their version is same or older, don't query", kNorm)
+								end
+							else
+								-- Legacy version: query as usual
+								if not ourVersion or theirVersion > ourVersion then
+									shouldQuery = true
+									GBankClassic_Output:Debug("SYNC", ">", colorPlayerName(sender), "has fresher bank data about", colorPlayerName(kNorm) .. ", querying.")
+									GBankClassic_Output:Debug("PROTOCOL", "Query decision for %s: their version is newer, query", kNorm)
+								else
+									GBankClassic_Output:Debug("PROTOCOL", "Query decision for %s: their version is same or older, don't query", kNorm)
+								end
 							end
-						elseif not ourVersion or theirVersion > ourVersion then
-							-- No hash available, fall back to version comparison
-							shouldQuery = true
-							GBankClassic_Output:Debug("SYNC", ">", colorPlayerName(sender), "has fresher bank data about", colorPlayerName(kNorm) .. ", querying (delta).")
-						end
-					else
-						-- Legacy version: query as usual
-						if not ourVersion or theirVersion > ourVersion then
-							shouldQuery = true
-							GBankClassic_Output:Debug("SYNC", ">", colorPlayerName(sender), "has fresher bank data about", colorPlayerName(kNorm) .. ", querying.")
-						end
-					end
 
 					if shouldQuery then
 						-- Use pull-based query for delta version broadcasts
-						GBankClassic_Guild:QueryAltPullBased(kNorm)
+						GBankClassic_Output:Debug("PROTOCOL", "Querying %s from %s (reason: version broadcast mismatch)", kNorm, sender)
 					end
 				end
 			end
@@ -394,7 +423,7 @@ function Chat:OnCommReceived(prefix, message, distribution, sender)
 
 	local success, data = GBankClassic_Core:DeserializeWithChecksum(message)
 	if not success then
-		GBankClassic_Output:Debug("PROTOCOL", "> failed to deserialize", prefix, prefixDesc, "from", colorPlayerName(sender), "ERROR:", tostring(data))
+		GBankClassic_Output:Debug("PROTOCOL", "> (error)", prefix, prefixDesc, "from", colorPlayerName(sender), "(failed to deserialize, error=" .. tostring(data) .. ")")
 		
         return
 	end
@@ -878,25 +907,28 @@ function Chat:OnCommReceived(prefix, message, distribution, sender)
 	-- 	end
 	-- end
 
+	-- Hello
 	if prefix == "gbank-h" then
 		GBankClassic_Guild:Hello("reply")
 	end
-
 	if prefix == "gbank-hr" then
-		GBankClassic_Output:Debug("PROTOCOL", data)
+		GBankClassic_Output:Debug("QUERIES", "gbank-hr", data)
 	end
 
+	-- Share
 	if prefix == "gbank-s" then
 		GBankClassic_Guild:Share("reply")
-		local now = GetServerTime()
-		if not self.last_share_sync or now - self.last_share_sync > 30 then
-			self.last_share_sync = now
-			GBankClassic_Events:Sync()
-		end
 	end
-    
+	if prefix == "gbank-sr" then
+		GBankClassic_Output:Debug("QUERIES", "gbank-sr", data)
+	end
+
+	-- Wipe all
 	if prefix == "gbank-w" then
 		GBankClassic_Guild:Wipe("reply")
+	end
+	if prefix == "gbank-wr" then
+		GBankClassic_Output:Debug("QUERIES",  "gbank-wr", data)
 	end
 end
 
@@ -908,8 +940,8 @@ local HELP_COLOR = {
 }
 
 -- Command registry: name, usage, help, expert, handler
--- Commands are displayed in help in the order they appear here.
--- Set help = nil to hide from help output.
+-- Commands are displayed in help in the order they appear here
+-- Set help = nil to hide from help output
 local COMMAND_REGISTRY = {
 	-- Basic commands
 	{
@@ -953,6 +985,14 @@ local COMMAND_REGISTRY = {
 			end
 
 			GBankClassic_Guild:Reset(guild)
+		end,
+	},
+	{
+		name = "restoreui",
+		help = "restore all user interface window to their default positions",
+		expert = true,
+		handler = function()
+			GBankClassic_Chat:RestoreUI()
 		end,
 	},
 	-- Expert commands (alphabetically sorted)
@@ -1157,7 +1197,7 @@ local COMMAND_REGISTRY = {
 	},
 	{
 		name = "roster",
-		help = "guild banks and members that can read the officer note can use this command to share updated roster data with online guild members",
+		help = "if officer notes are used to define guild bank alts, use this command to share the roster of guild bank alts with online guild members",
 		expert = true,
 		handler = function()
 			GBankClassic_Guild:AuthorRosterData()
@@ -1284,8 +1324,8 @@ local HELP_INSTRUCTIONS = {
 1. Log in with the guild bank character, ensuring they are in the guild.
 2. Add |cffe6cc80gbank|r to their guild or officer note, then type |cffe6cc80/reload|r.
 3. In addon options (Escape -> Options -> Addons -> GBankClassic), click on the |cffe6cc80-|r icon (expand/collapse) to the left of the entry, enable reporting and scanning for the bank character in the |cffe6cc80Bank|r section.
-4. Open and close your bags and bank.
-5. Type |cffe6cc80/bank roster|r and confirm your bank character is included in the sent roster.
+4. Open and close your bank and mailbox.
+5. Type |cffe6cc80/bank roster|r and confirm your bank character is included in the roster.
 6. Type |cffe6cc80/reload|r. Wait up to 3 minutes (or type |cffe6cc80/bank share|r for immediate sharing) until |cffe6cc80Sharing guild bank data...|r completes.
 7. Verify with a guild member (they type |cffe6cc80/bank|r).]],
 	},
@@ -1294,7 +1334,7 @@ local HELP_INSTRUCTIONS = {
 		text = [[
 1. Log in with an officer or another bank character in the same guild (or a character from a different guild).
 2. If the bank character is still in the guild, remove |cffe6cc80gbank|r from their notes.
-3. Type |cffe6cc80/bank roster|r and confirm the bank character is no longer listed or the roster is empty.
+3. Type |cffe6cc80/bank roster|r and confirm the bank character is no longer listed.
 4. Verify with a guild member (they type |cffe6cc80/bank|r).]],
 	},
 }
@@ -1376,7 +1416,11 @@ function Chat:ProcessQueue()
 end
 
 function Chat:ReprocessQueue()
-    GBankClassic_Core:ScheduleTimer(function(...)
+	if self.reprocessTimer then
+		return
+	end
+	self.reprocessTimer = GBankClassic_Core:ScheduleTimer(function(...)
+		self.reprocessTimer = nil
         self:OnTimer()
     end, TIMER_INTERVALS.ALT_DATA_QUEUE_RETRY)
 end
@@ -1423,9 +1467,9 @@ function Chat:PrintVersions()
 			if seconds < 60 then
 				age = " (just now)"
 			elseif seconds < 3600 then
-				age = (" (%dm ago)"):format(math.floor(seconds / 60))
+				age = string.format(" (%dm ago)", math.floor(seconds / 60))
 			else
-				age = (" (%dh ago)"):format(math.floor(seconds / 3600))
+				age = string.format(" (%dh ago)", math.floor(seconds / 3600))
 			end
 		end
 		local marker = entry.isSelf and " (you)" or ""
@@ -1665,5 +1709,21 @@ function Chat:PrintDeltaHistory()
 				GBankClassic_Output:Response("  %d. v%d (%d change(s), %s)", i, delta.version or 0, changeCount, ageStr)
 			end
 		end
+	end
+end
+
+function GBankClassic_Chat:RestoreUI()
+	if GBankClassic_Options and GBankClassic_Options.db and GBankClassic_Options.db.char then
+		local count = GBankClassic_Globals:Count(GBankClassic_Options.db.char.framePositions)
+		GBankClassic_Options.db.char.framePositions = {}
+		GBankClassic_Output:Response("Cleared %d saved window position(s)", count)
+		if GBankClassic_UI_Inventory.isOpen then
+			GBankClassic_UI_Inventory:Close()
+			GBankClassic_UI_Inventory:Show()
+		else
+			GBankClassic_UI_Inventory:Open()
+		end
+	else
+		GBankClassic_Output:Response("No frame positions to clear")
 	end
 end
