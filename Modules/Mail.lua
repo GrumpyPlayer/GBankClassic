@@ -104,7 +104,7 @@ function Mail:RecordDonationInLedger(sender, itemLink, quantity, money, isMoney)
         return
     end
     
-    local senderNorm = GBankClassic_Guild:GetNormalizedPlayer(sender)
+    local senderNorm = GBankClassic_Guild:NormalizeName(sender) or sender
     if self.Roster and self.Roster[senderNorm] then
         GBankClassic_Output:Debug("DONATION", "Only items and money sent by non-guild bank alts are consider a donation")
 
@@ -135,6 +135,7 @@ function Mail:RecordDonationInLedger(sender, itemLink, quantity, money, isMoney)
         GBankClassic_Output:Debug("DONATION", "Proceeding to record item donation in ledger of %sx %s by %s to the donation ledger", quantity, itemLink, senderNorm)
         if itemLink and quantity then
             local name, _, _, level, _, _, _, _, _, _, price = GetItemInfo(itemLink)
+            -- TODO: is it possible that we get here and item may still not be in cache? we get here when the CHAT_MSG_LOOT event is fired
             if name and level and not GBankClassic_Item:IsUnique(itemLink) then
                 local effectivePrice = (price and price > 0) and price or 1
                 local score = (effectivePrice * quantity) / 10000
@@ -350,14 +351,14 @@ end
 -- 		return
 -- 	end
 
--- 	if not sender or not GBankClassic_Guild:IsBank(sender) then
+-- 	if not sender or not GBankClassic_Guild:IsGuildBankAlt(sender) then
 -- 		GBankClassic_Output:Debug("MAIL", "OnSendMail: Sender %s is not a guild bank alt, skipping", tostring(sender))
 
 -- 		return
 -- 	end
 
 -- 	GBankClassic_Output:Debug("MAIL", "OnSendMail: Sender %s IS a guild bank alt, setting pendingSend", tostring(sender))
--- 	local normRecipient = GBankClassic_Guild:NormalizeName(recipient)
+-- 	local normRecipient = GBankClassic_Guild:NormalizeName(recipient) or recipient
 
 -- 	self.pendingSend = {
 -- 		sender = sender,
@@ -371,7 +372,31 @@ end
 -- 	for _, item in ipairs(items) do
 -- 		table.insert(itemList, string.format("%dx %s", item.quantity, item.name))
 -- 	end
--- 	GBankClassic_Output:Info("Tracking manual mail to %s: %s", recipient, table.concat(itemList, ", "))
+-- 	GBankClassic_Output:Info("Tracking manual mail to %s: %s.", recipient, table.concat(itemList, ", "))
+-- end
+
+-- function GBankClassic_Mail:DebugSendMailState(contextMessage)
+-- 	local recipient = SendMailNameEditBox and SendMailNameEditBox:GetText() or nil
+-- 	local subject = SendMailSubjectEditBox and SendMailSubjectEditBox:GetText() or nil
+-- 	local items = {}
+-- 	local totalCount = 0
+-- 	for attachmentIndex = 1, (ATTACHMENTS_MAX_SEND or 12) do
+-- 		local itemName, itemID, texture, quantity = GetSendMailItem(attachmentIndex)
+-- 		if itemName and quantity and quantity > 0 then
+-- 			table.insert(items, { name = itemName, id = itemID, quantity = quantity })
+-- 			totalCount = totalCount + quantity
+-- 		end
+-- 	end
+
+-- 	GBankClassic_Output:Debug("MAIL", "SendMail error: %s | recipient=%s subject=%s items=%d total=%d", tostring(contextMessage), tostring(recipient), tostring(subject), #items, totalCount)
+
+-- 	for i, item in ipairs(items) do
+-- 		GBankClassic_Output:Debug("MAIL", "  Attachment %d: %s (id=%s) x%d", i, tostring(item.name), tostring(item.id), item.quantity)
+-- 	end
+
+-- 	if self.pendingSend then
+-- 		GBankClassic_Output:Debug("MAIL", "  pendingSend: sender=%s recipient=%s items=%d", tostring(self.pendingSend.sender), tostring(self.pendingSend.recipient), self.pendingSend.items and #self.pendingSend.items or 0)
+-- 	end
 -- end
 
 -- function Mail:ApplyPendingSend()
@@ -386,32 +411,32 @@ end
 -- 	self.pendingSend = nil
 -- 	self.pendingSendAt = nil
 
--- 	GBankClassic_Output:Info("Applying fulfillment for mail sent to %s...", pending.recipient)
+-- 	GBankClassic_Output:Info("Applying fulfillment for mail sent to %s.", pending.recipient)
 
 -- 	local totalApplied = 0
 -- 	for _, item in ipairs(pending.items) do
 -- 		local applied = GBankClassic_Guild:FulfillRequest(pending.sender, pending.recipient, item.name, item.quantity)
 -- 		if applied > 0 then
--- 			GBankClassic_Output:Info("  Applied %dx %s toward %s's request", applied, item.name, pending.recipient)
+-- 			GBankClassic_Output:Info("  Applied %dx %s toward %s's request.", applied, item.name, pending.recipient)
 -- 		end
 -- 		totalApplied = totalApplied + applied
 -- 	end
 
 -- 	if totalApplied > 0 then
--- 		GBankClassic_Output:Info("Total fulfilled: %d item(s) for %s", totalApplied, pending.recipient)
+-- 		GBankClassic_Output:Info("Total fulfilled: %d item(s) for %s.", totalApplied, pending.recipient)
 -- 		GBankClassic_Guild:RefreshRequestsUI()
 -- 	else
--- 		GBankClassic_Output:Info("No matching requests found for items sent to %s", pending.recipient)
+-- 		GBankClassic_Output:Info("No matching requests found for items sent to %s.", pending.recipient)
 -- 	end
 -- end
 
 -- -- Check if a request can be fulfilled by the current player
 -- -- Returns: canFulfill (boolean), reason (string), itemsInBags (number), smallestStack (number)
 -- function Mail:CanFulfillRequest(request, actor)
--- 	local normActor = GBankClassic_Guild:NormalizeName(actor or GBankClassic_Guild:GetPlayer())
+-- 	local normActor = GBankClassic_Guild:NormalizeName(actor or GBankClassic_Guild:GetNormalizedPlayer())
 
 -- 	-- Must be a bank alt
--- 	if not GBankClassic_Guild:IsBank(normActor) then
+-- 	if not GBankClassic_Guild:IsGuildBankAlt(normActor) then
 -- 		return false, "Only bank alts can fulfill requests.", 0, 0
 -- 	end
 
@@ -611,7 +636,7 @@ end
 
 -- 	-- First pass: Calculate minimum useful stack size based on split requirement
 -- 	-- Strategy: Don't use stacks smaller than what we'll need to split
--- 	-- Example: Need 95, have [20,20,20,20,14] → need to split 15, so exclude 14
+-- 	-- Example: Need 95, have [20,20,20,20,14] -> need to split 15, so exclude 14
 	
 -- 	-- Accumulate largest stacks to see what we'd need to split
 -- 	local accumulated = 0
@@ -633,7 +658,7 @@ end
 	
 -- 	-- Minimum stack size = the split amount (must be able to split that much from a stack)
 -- 	-- If no split needed, use min(5, qtyNeeded) to avoid filtering out perfectly sized stacks
--- 	-- Example: Need 1 item → minStackSize should be 1, not 5
+-- 	-- Example: Need 1 item -> minStackSize should be 1, not 5
 -- 	-- Never set minStackSize higher than largestStack (fixes non-stackable items like bags)
 -- 	local minStackSize = math.min(largestStack, wouldNeedToSplit > 0 and wouldNeedToSplit or math.min(5, qtyNeeded))
 	
@@ -791,7 +816,7 @@ end
 -- 	-- This ensures pendingSend is set BEFORE MAIL_SEND_SUCCESS fires
 -- 	if attached > 0 then
 -- 		local sender = GBankClassic_Guild:GetNormalizedPlayer()
--- 		local normRecipient = GBankClassic_Guild:NormalizeName(requester)
+-- 		local normRecipient = GBankClassic_Guild:NormalizeName(requester) or requester
 -- 		self.pendingSend = {
 -- 			sender = sender,
 -- 			recipient = normRecipient,

@@ -101,7 +101,7 @@ function Options:Init()
                         name = "Reset database",
                         type = "execute",
                         func = function()
-                            local guild = GBankClassic_Guild:GetGuild()
+                            local guild = GBankClassic_Guild:GetGuildName()
                             if not guild then
                                 return
 							end
@@ -471,8 +471,8 @@ function Options:Init()
 end
 
 function Options:InitGuild()
-    local player = GBankClassic_Guild:GetPlayer()
-    if not GBankClassic_Guild:IsBank(player) then 
+    local player = GBankClassic_Guild:GetNormalizedPlayer()
+    if not GBankClassic_Guild:IsGuildBankAlt(player) then 
         return
     end
 
@@ -487,9 +487,9 @@ function Options:InitGuild()
         type = "group",
 		name = "Bank",
         hidden = function()
-            local player = GBankClassic_Guild:GetPlayer()
+            local player = GBankClassic_Guild:GetNormalizedPlayer()
 			
-            return not GBankClassic_Guild:IsBank(player)
+            return not GBankClassic_Guild:IsGuildBankAlt(player)
         end,
         args = {
             ["enabled"] = {
@@ -540,7 +540,7 @@ function Options:InitGuild()
                 name = "Reset player database",
                 type = "execute",
                 func = function()
-                    local guild = GBankClassic_Guild:GetGuild()
+                    local guild = GBankClassic_Guild:GetGuildName()
                     if not guild then
                         return
                     end
@@ -553,7 +553,7 @@ function Options:InitGuild()
                 name = "This panel is only available to bank alts.",
                 desc = "This panel is only available to bank alts.",
                 hidden = function()
-                    return GBankClassic_Guild:IsBank(player)
+                    return GBankClassic_Guild:IsGuildBankAlt(player)
                 end,
             },
         },

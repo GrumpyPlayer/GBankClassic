@@ -122,15 +122,16 @@ function UI_Donations:DrawContent()
     self.Content:ReleaseChildren()
 
     local info = GBankClassic_Guild.Info
-	local roster_alts = GBankClassic_Guild:GetRosterAlts()
+	local roster_alts = GBankClassic_Guild:GetRosterGuildBankAlts()
 	if not info or not roster_alts then
 		return
 	end
 
     local players = {}
     local alts = info.alts
-	for _, v in pairs(roster_alts) do
-		local norm = GBankClassic_Guild:NormalizeName(v)
+    for i = 1, #roster_alts do
+        local guildBankAltName = roster_alts[i]
+		local norm = GBankClassic_Guild:NormalizeName(guildBankAltName) or guildBankAltName
 		local alt = alts[norm]
 		if alt and alt.ledger then
             for p, s in pairs(alt.ledger) do
@@ -187,7 +188,7 @@ function UI_Donations:DrawContent()
             self.Content:AddChild(rank)
 
             local color = "ff888888"
-            local class = GBankClassic_Guild:GetPlayerInfo(v.player)
+            local class = GBankClassic_Guild:GetGuildMemberInfo(v.player)
             if class then
                 _, _, _, color = GetClassColor(class)
             end

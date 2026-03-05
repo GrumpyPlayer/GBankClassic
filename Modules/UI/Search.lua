@@ -245,15 +245,7 @@ end
 --	end
 
 -- 	local requester = GBankClassic_Guild:GetNormalizedPlayer()
--- 	if not requester then
--- 		local name, realm = UnitName("player"), GetNormalizedRealmName()
--- 		if name then
--- 			requester = realm and (name .. "-" .. realm) or name
--- 			requester = GBankClassic_Guild:NormalizeName(requester)
--- 		end
--- 	end
-
--- 	local bank = GBankClassic_Guild:NormalizeName(self.requestContext.bank)
+-- 	local bank = GBankClassic_Guild:NormalizeName(self.requestContext.bank) or self.requestContext.bank
 
 -- 	local request = {
 -- 		date = GetServerTime(),
@@ -427,21 +419,22 @@ function UI_Search:BuildSearchData()
     }
 
     local info = GBankClassic_Guild.Info
-	local roster_alts = GBankClassic_Guild:GetRosterAlts()
+	local roster_alts = GBankClassic_Guild:GetRosterGuildBankAlts()
 	if not info or not roster_alts then
 		GBankClassic_Output:Debug("SEARCH", "BuildSearchData: no info or roster_alts, returning early")
 
 		return
 	end
 
-	local rosterCount = GBankClassic_Globals:Count(roster_alts)
+	local rosterCount = #roster_alts
 	GBankClassic_Output:Debug("SEARCH", "BuildSearchData: processing %d roster alts", rosterCount)
 
     local items = {}
-	for _, player in pairs(roster_alts) do
-		local norm = GBankClassic_Guild:NormalizeName(player)
+	for i = 1, #roster_alts do
+        local guildBankAltName = roster_alts[i]
+		local norm = GBankClassic_Guild:NormalizeName(guildBankAltName) or guildBankAltName
         local alt = info.alts[norm]
-		GBankClassic_Output:Debug("SEARCH", "Search corpus loop: processing player=%s, norm=%s, has alt=%s", player, norm, tostring(alt ~= nil))
+		GBankClassic_Output:Debug("SEARCH", "Search corpus loop: processing guildBankAltName=%s, norm=%s, has alt=%s", guildBankAltName, norm, tostring(alt ~= nil))
         if alt and type(alt) == "table" then
 			-- Use alt.items if available (aggregated format)
 			if alt.items and next(alt.items) ~= nil then
@@ -449,7 +442,7 @@ function UI_Search:BuildSearchData()
 				local beforeCount = #items
 				items = GBankClassic_Item:Aggregate(items, alt.items)
 				local afterCount = #items
-				GBankClassic_Output:Debug("SEARCH", "Search corpus: using alt.items for %s (%d items before, %d after aggregation)", player, beforeCount, afterCount)
+				GBankClassic_Output:Debug("SEARCH", "Search corpus: using alt.items for %s (%d items before, %d after aggregation)", guildBankAltName, beforeCount, afterCount)
 			else
 				-- Fallback: aggregate from sources for backward compatibility
 				if alt.bank then
@@ -505,9 +498,10 @@ function UI_Search:BuildSearchData()
 			end
         end
 
-		for _, player in pairs(roster_alts) do
+        for i = 1, #roster_alts do
+            local player = roster_alts[i]
             local altItems = {}
-			local norm = GBankClassic_Guild:NormalizeName(player)
+			local norm = GBankClassic_Guild:NormalizeName(player) or player
             local alt = info.alts[norm]
 			GBankClassic_Output:Debug("SEARCH", "Search results loop: processing player=%s, norm=%s, has alt=%s", player, norm, tostring(alt ~= nil))
             if alt and type(alt) == "table" then
@@ -644,7 +638,7 @@ function UI_Search:DrawContent()
 
                         local label = GBankClassic_UI:Create("Label")
                         -- Check if item is in mail (mail.items is an array)
-                        local norm = GBankClassic_Guild:NormalizeName(bankAlt)
+                        local norm = GBankClassic_Guild:NormalizeName(bankAlt) or bankAlt
                         local alt = GBankClassic_Guild.Info and GBankClassic_Guild.Info.alts and GBankClassic_Guild.Info.alts[norm]
                         local inMail = false
                         if alt and alt.mail and alt.mail.items then

@@ -149,8 +149,25 @@ function Database:Load(name)
 						GBankClassic_Output:Debug("DATABASE", "Sampling (before recalculation) for guild bank alt %s of alt.items: %s.", name, table.concat(beforeSample, ", "))
 					end
 
-					alt.items = nil -- Clear corrupted data
-					GBankClassic_Bank:RecalculateAggregatedItems(alt)
+					-- Don't create stub entries with hash but no content
+					if (alt.bank and alt.bank.items and #alt.bank.items > 0) or (alt.bags and alt.bags.items and #alt.bags.items > 0) or (alt.mail and alt.mail.items and #alt.mail.items > 0) then
+						-- Only recalc if source data exists
+						alt.items = nil
+						GBankClassic_Bank:RecalculateAggregatedItems(alt)
+
+						-- Verify recalculation produced valid data
+						if alt.items and #alt.items > 0 then
+							-- Recompute hash after recalculation
+							local money = alt.money or 0
+							alt.inventoryHash = GBankClassic_Bank:ComputeInventoryHash(alt.items, money)
+							GBankClassic_Output:Debug("DATABASE", "Recomputed inventory hash after recalculation for %s: %d.", name, alt.inventoryHash)
+							--TODO
+						end
+					else
+						-- No source data, clear hash and version too
+						alt.inventoryHash = nil
+						alt.version = nil
+					end
 
 					-- Log sample counts after recalculation
 					if alt.items and #alt.items > 0 then

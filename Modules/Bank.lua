@@ -121,13 +121,14 @@ function Bank:Scan()
 	local player = GBankClassic_Guild:GetNormalizedPlayer()
     
     local isBank = false
-    local banks = GBankClassic_Guild:GetBanks()
-	if banks == nil then
+    local guildBankAlts = GBankClassic_Guild:GetRosterGuildBankAlts()
+	if not guildBankAlts or #guildBankAlts == 0 then
 		return
 	end
 
-    for _, v in pairs(banks) do
-        local normV = GBankClassic_Guild:NormalizeName(v)
+	for i = 1, #guildBankAlts do
+        local guildBankAltName = guildBankAlts[i]
+        local normV = GBankClassic_Guild:NormalizeName(guildBankAltName) or guildBankAltName
         if normV == player then
             isBank = true
             break
@@ -144,14 +145,14 @@ function Bank:Scan()
 	-- Roster sync (because some players may be unable to view officer notes defining guild bank alts)
     local updateRoster = false
     if info.roster["version"] ~= nil then
-        if table.concat(banks) ~= table.concat(info.roster.alts) then
+        if table.concat(guildBankAlts) ~= table.concat(info.roster.alts) then
             updateRoster = true
         end
     else
         updateRoster = true
     end
     if updateRoster then
-        info.roster.alts = banks
+        info.roster.alts = guildBankAlts
         info.roster.version = GetServerTime()
     end
 
@@ -294,7 +295,7 @@ function Bank:Scan()
 
 	-- Only update version if inventory actually changed
 	-- Compute a hash of the current inventory state (use aggregated alt.items)
-	local currentHash = GBankClassic_DeltaComms:ComputeInventoryHash(alt.items, nil, nil, money)
+	local currentHash = self:ComputeInventoryHash(alt.items,  money)
 	local previousHash = alt.inventoryHash
 
 	if currentHash ~= previousHash then
@@ -312,7 +313,7 @@ function Bank:Scan()
 	-- mailHash is computed whenever mail is scanned (even if empty) to track all mail state changes
 	-- nil mailHash = "never scanned mail" vs hash value = "mail scanned" (could be empty or full)
 	if alt.mail and alt.mail.items then
-		local currentMailHash = GBankClassic_DeltaComms:ComputeInventoryHash(alt.mail.items, nil, nil, money)
+		local currentMailHash = self:ComputeInventoryHash(alt.mail.items, nil)
 		local previousMailHash = alt.mailHash
 
 		if mailWasScanned then
@@ -513,4 +514,47 @@ function Bank:RecalculateAggregatedItems(alt)
 	end
 	
 	GBankClassic_Output:Debug("DATABASE", "After aggregation of items: bank=%d, bags=%d, mail=%d, total=%d", #bankItems, #bagItems, #mailItems, #alt.items)
+end
+
+-- Compute a hash of inventory state to detect actual changes
+-- Only updates version timestamps when this hash changes
+function Bank:ComputeInventoryHash(items, money)
+	local parts = {}
+	table.insert(parts, tostring(money))
+
+	-- Hash aggregated items directly
+	local function hashItems(itemsArray)
+		if not itemsArray or type(itemsArray) ~= "table" then
+			return ""
+		end
+
+		local sorted = {}
+		for _, item in ipairs(itemsArray) do
+			if item and item.ID and item.ID > 0 then
+				-- Use ID + Count for hash (link variations don't affect inventory state)
+				-- This ensures hash matches even if links aren't reconstructed yet
+				local itemCount = item.Count or 1
+				local itemIdentity = tostring(item.ID)
+
+				-- For weapons/armor, include link key to catch suffix differences
+				if item.Link and GBankClassic_Item and GBankClassic_Item.NeedsLink then
+					if GBankClassic_Item:NeedsLink(item.Link) then
+						local linkKey = GBankClassic_Item:GetItemKey(item.Link)
+						if linkKey and linkKey ~= "" then
+							itemIdentity = linkKey
+						end
+					end
+				end
+				table.insert(sorted, string.format("%s:%d", itemIdentity, itemCount))
+			end
+		end
+		table.sort(sorted)
+
+		return table.concat(sorted, ",")
+	end
+
+	table.insert(parts, "I:" .. hashItems(items))
+	local combined = table.concat(parts, "|")
+
+	return GBankClassic_Core and GBankClassic_Core:Checksum(combined) or 0
 end

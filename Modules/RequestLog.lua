@@ -133,8 +133,8 @@ local Guild = GBankClassic_Guild
 -- 		fulfilled = math.min(fulfilled, quantity)
 -- 	end
 
--- 	local bank = Guild:NormalizeName(bankRaw)
--- 	local requester = Guild:NormalizeName(requesterRaw)
+-- 	local bank = Guild:NormalizeName(bankRaw) or bankRaw
+-- 	local requester = Guild:NormalizeName(requesterRaw) or requesterRaw
 
 -- 	-- Validate timestamps to prevent corruption
 -- 	-- Max 32-bit signed integer (Jan 19, 2038) - any larger value is corrupted
@@ -1129,12 +1129,6 @@ local Guild = GBankClassic_Guild
 -- 	return ADOPTION_STATUS.INVALID
 -- end
 
-function Guild:SendRequestsVersionPing()
-	if not self.Info then
-		return
-	end
-end
-
 -- -- Receive mutation entries from another player and apply them.
 -- function Guild:ReceiveRequestMutations(payload, sender)
 -- 	if not payload or type(payload) ~= "table" then
@@ -1231,15 +1225,16 @@ end
 -- 		return true
 -- 	end
 
--- 	local normActor = self:NormalizeName(actor)
+-- 	local normActor = self:NormalizeName(actor) or actor
 
--- 	if normActor and self.IsBank and self:IsBank(normActor) then
+-- 	if normActor and self.IsGuildBankAlt and self:IsGuildBankAlt(normActor) then
 -- 		return true
 -- 	end
 -- 	if actorIsGM ~= nil then
 -- 		return actorIsGM
 -- 	end
--- 	if normActor and self.SenderIsGM and self:SenderIsGM(normActor) then
+--  local _, isGM = GBankClassic_Guild:GetGuildMemberInfo(normActor)
+-- 	if isGM then
 -- 		return true
 -- 	end
 
@@ -1251,8 +1246,8 @@ end
 -- 		return false
 -- 	end
 
--- 	local normActor = self:NormalizeName(actor or self:GetPlayer())
--- 	local requester = self:NormalizeName(req.requester)
+-- 	local normActor = self:NormalizeName(actor or self:GetNormalizedPlayer())
+-- 	local requester = self:NormalizeName(req.requester) or req.requester
 
 -- 	if normActor and requester and normActor == requester then
 -- 		return true
@@ -1266,19 +1261,20 @@ end
 -- 		return false
 -- 	end
 
--- 	local normActor = self:NormalizeName(actor or self:GetPlayer())
+-- 	local normActor = self:NormalizeName(actor or self:GetNormalizedPlayer())
 -- 	if not normActor then
 -- 		return false
 -- 	end
 
--- 	local bank = self:NormalizeName(req.bank)
+-- 	local bank = self:NormalizeName(req.bank) or req.bank
 -- 	if bank and bank ~= "" and normActor == bank then
 -- 		return true
 -- 	end
 -- 	if actorIsGM ~= nil then
 -- 		return actorIsGM
 -- 	end
--- 	if self.SenderIsGM and self:SenderIsGM(normActor) then
+--  local _, isGM = GBankClassic_Guild:GetGuildMemberInfo(normActor)
+-- 	if isGM then
 -- 		return true
 -- 	end
 
@@ -1290,14 +1286,15 @@ end
 -- 		return false
 -- 	end
 
--- 	local normActor = self:NormalizeName(actor or self:GetPlayer())
+-- 	local normActor = self:NormalizeName(actor or self:GetNormalizedPlayer())
 -- 	if not normActor then
 -- 		return false
 -- 	end
 -- 	if actorIsGM ~= nil then
 -- 		return actorIsGM
 -- 	end
--- 	if self.SenderIsGM and self:SenderIsGM(normActor) then
+--  local _, isGM = GBankClassic_Guild:GetGuildMemberInfo(normActor)
+-- 	if isGM then
 -- 		return true
 -- 	end
 
@@ -1332,8 +1329,8 @@ end
 -- 		return false
 -- 	end
 
--- 	if not self:CanCancelRequest(req, actor or self:GetPlayer()) then
--- 		GBankClassic_Output:Debug("SYNC", "CancelRequest failed: Permission denied (actor=%s, requester=%s)", tostring(actor or self:GetPlayer()), tostring(req.requester))
+-- 	if not self:CanCancelRequest(req, actor or self:GetNormalizedPlayer()) then
+-- 		GBankClassic_Output:Debug("SYNC", "CancelRequest failed: Permission denied (actor=%s, requester=%s)", tostring(actor or self:GetNormalizedPlayer()), tostring(req.requester))
 
 -- 		return false
 -- 	end
@@ -1375,7 +1372,7 @@ end
 -- 	if req.status == "fulfilled" or (quantity > 0 and fulfilled >= quantity) then
 -- 		return false
 -- 	end
--- 	if not self:CanCompleteRequest(req, actor or self:GetPlayer()) then
+-- 	if not self:CanCompleteRequest(req, actor or self:GetNormalizedPlayer()) then
 -- 		return false
 -- 	end
 
@@ -1401,7 +1398,7 @@ end
 -- 	if not req then
 -- 		return false
 -- 	end
--- 	if not self:CanDeleteRequest(req, actor or self:GetPlayer()) then
+-- 	if not self:CanDeleteRequest(req, actor or self:GetNormalizedPlayer()) then
 -- 		return false
 -- 	end
 
@@ -1533,6 +1530,7 @@ end
 -- 			for _, item in ipairs(alt.mail.items) do
 -- 				-- Use item name from item link if available, otherwise can't match by name
 -- 				local itemName = item.Link and (GetItemInfo(item.Link))
+--              --TODO: it's possible the item isn't cached so itemName will be empty
 -- 				if itemName == request.item or item.ID == tonumber(request.item) then
 -- 					itemID = item.ID
 -- 					break

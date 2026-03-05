@@ -403,7 +403,7 @@
 
 -- 	-- Check if guild bank alt status has changed since window was created
 -- 	local currentPlayer = GBankClassic_Guild:GetNormalizedPlayer()
--- 	local isCurrentlyGuildBankAlt = currentPlayer and GBankClassic_Guild:IsBank(currentPlayer) or false
+-- 	local isCurrentlyGuildBankAlt = currentPlayer and GBankClassic_Guild:IsGuildBankAlt(currentPlayer) or false
 -- 	local guildBankAltStatusChanged = (self.wasBank ~= nil) and (self.wasBank ~= isCurrentlyGuildBankAlt)
 	
 -- 	-- Recreate window if guild bank alt status changed (to add/remove highlight checkbox)
@@ -422,6 +422,9 @@
 -- 		self.Window:SetPoint("TOPLEFT", GBankClassic_UI_Inventory.Window.frame, "TOPRIGHT", 0, 0)
 -- 	end
 
+	-- -- Ensure window stays within screen bounds
+	-- GBankClassic_UI:ClampFrameToScreen(self.Window)
+
 -- 	self:DrawContent()
 	
 -- 	-- Force layout update before showing to ensure proper sizing
@@ -432,7 +435,7 @@
 
 -- 	-- Start listening for bag changes to update fulfill button states (bank alts only)
 -- 	local player = GBankClassic_Guild:GetNormalizedPlayer()
--- 	if player and GBankClassic_Guild:IsBank(player) then
+-- 	if player and GBankClassic_Guild:IsGuildBankAlt(player) then
 -- 		registerBagEvents()
 -- 	end
 
@@ -640,7 +643,7 @@
 -- 		-- Check if guild roster is loaded before checking guild bank alt status
 -- 		if GetNumGuildMembers() > 0 then
 -- 			local currentPlayer = GBankClassic_Guild:GetNormalizedPlayer()
--- 			local isBank = GBankClassic_Guild:IsBank(currentPlayer)
+-- 			local isBank = GBankClassic_Guild:IsGuildBankAlt(currentPlayer)
 -- 			GBankClassic_Output:Debug("UI", "UpdateFilters: currentPlayer=%s, isBank=%s", tostring(currentPlayer), tostring(isBank))
 			
 -- 			if isBank then
@@ -1113,7 +1116,7 @@
 -- 		if self.requesterFilter ~= nil or self.bankFilter ~= nil then
 -- 			self.defaultFiltersApplied = true
 -- 		elseif currentPlayer and currentPlayer ~= "" then
--- 			if GBankClassic_Guild:IsBank(currentPlayer) then
+-- 			if GBankClassic_Guild:IsGuildBankAlt(currentPlayer) then
 -- 				self.bankFilter = currentPlayer
 -- 			else
 -- 				self.requesterFilter = currentPlayer
@@ -1121,6 +1124,30 @@
 -- 			self.defaultFiltersApplied = true
 -- 		end
 -- 	end
+
+	-- -- Create highlight checkbox if it doesn't exist but should (guild bank alt status now available)
+	-- if not self.HighlightCheckbox and self.FilterGroup and GetNumGuildMembers() > 0 then
+	-- 	local isBank = GBankClassic_Guild:IsGuildBankAlt(currentPlayer)
+	-- 	if isBank then
+	-- 		GBankClassic_Output:Debug("UI", "UpdateFilters: Creating highlight checkbox (delayed)")
+	-- 		local highlightCheckbox = GBankClassic_UI:Create("CheckBox")
+	-- 		highlightCheckbox:SetLabel("Highlight needed items")
+	-- 		highlightCheckbox:SetFullWidth(true)
+	-- 		highlightCheckbox:SetValue(GBankClassic_ItemHighlight and GBankClassic_ItemHighlight.enabled or false)
+	-- 		highlightCheckbox:SetCallback("OnValueChanged", function(widget, _, value)
+	-- 			if GBankClassic_ItemHighlight then
+	-- 				GBankClassic_ItemHighlight:SetEnabled(value)
+	-- 			end
+	-- 		end)
+	-- 		self.FilterGroup:AddChild(highlightCheckbox)
+	-- 		self.HighlightCheckbox = highlightCheckbox
+	-- 		-- Re-layout filter group to show new checkbox
+	-- 		if self.FilterGroup.DoLayout then
+	-- 			self.FilterGroup:DoLayout()
+	-- 		end
+	-- 		GBankClassic_Output:Debug("UI", "UpdateFilters: Highlight checkbox created and added")
+	-- 	end
+	-- end
 
 -- 	local requesterList, requesterOrder = buildRequesterOptions(currentPlayer, requesterCounts)
 	
@@ -1254,7 +1281,7 @@
 
 -- 		local CheckMarkIcon = "|TInterface\\Buttons\\UI-CheckBox-Check:0|t "
 -- 		local actor = GBankClassic_Guild:GetNormalizedPlayer()
--- 		local actorIsGM = actor and GBankClassic_Guild:SenderIsGM(actor) or false
+--      local _, actorIsGM = GBankClassic_Guild:GetGuildMemberInfo(actor)
 
 -- 		for index, req in ipairs(sorted) do
 -- 			local row = self:EnsureRow(index)
@@ -1298,7 +1325,7 @@
 
 -- 			-- Check fulfill eligibility
 -- 			local canFulfill, fulfillReason, itemsInBags = false, nil, 0
--- 			local isActorBank = GBankClassic_Guild:IsBank(actor)
+-- 			local isActorBank = GBankClassic_Guild:IsGuildBankAlt(actor)
 -- 			if not completed and requestId and isActorBank then
 -- 				canFulfill, fulfillReason, itemsInBags = GBankClassic_Mail:CanFulfillRequest(req, actor)
 -- 			end

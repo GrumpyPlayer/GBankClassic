@@ -31,22 +31,21 @@ end
 -- Centralized whisper send with automatic online check
 -- Returns true if sent, false if target offline or send failed
 function Core:SendWhisper(prefix, text, target, prio, callbackFn, callbackArg)
+    -- Strip realm suffix only for same-realm targets; cross-realm requires full name
+    target = GBankClassic_Guild:NormalizeName(target, true)
+
     -- Check if target is online
-    if not GBankClassic_Guild:IsPlayerOnline(target) then
+    local isOnline = GBankClassic_Guild:IsPlayerOnlineMember(target)
+    GBankClassic_Output:Debug("PROTOCOL", "SendWhisper called: prefix=%s, target=%s, isOnline=%s", prefix, target, tostring(isOnline))
+    if not isOnline then
         GBankClassic_Output:Debug("WHISPER", "Cannot send %s whisper to %s - player is offline", prefix, target)
 
         return false
     end
 
-    -- Strip realm suffix for whisper (WoW requires name-only)
-    -- Target may be "Name-Realm" format, but whisper needs just "Name"
-    local nameOnly = target
-    if target and string.find(target, "-") then
-        nameOnly = string.match(target, "^(.-)%-")
-    end
-
     -- Send the whisper
-    self:SendCommMessage(prefix, text, "WHISPER", nameOnly, prio, callbackFn, callbackArg)
+    self:SendCommMessage(prefix, text, "WHISPER", target, prio, callbackFn, callbackArg)
+    GBankClassic_Output:Debug("PROTOCOL", "SendCommMessage whisper completed for %s to %s", prefix, target)
     
     -- The player is online and whisper was sent
     return true

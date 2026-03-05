@@ -157,7 +157,7 @@ end
 
 function UI_Inventory:DrawContent()
     local info = GBankClassic_Guild.Info
-	local roster_alts = GBankClassic_Guild:GetRosterAlts()
+	local roster_alts = GBankClassic_Guild:GetRosterGuildBankAlts()
 	if not info or not roster_alts then
 		queryEmpty()
 		onClose()
@@ -169,29 +169,21 @@ function UI_Inventory:DrawContent()
     -- Rebuild search on next open
 	GBankClassic_UI_Search.searchDataBuilt = false
 
-    local players = {}
-    local n = 0
-	for _, v in pairs(roster_alts) do
-        n = n + 1
-        players[n] = v
-    end
-    table.sort(players)
-
     local tabs = {}
     local first_tab = nil
     local total_gold = 0
     local slots = 0
     local total_slots = 0
-    local i = 1
 
-    for _, player in pairs(players) do
-		local norm = GBankClassic_Guild:NormalizeName(player)
+    for i = 1, #roster_alts do
+        local guildBankAltName = roster_alts[i]
+		local norm = GBankClassic_Guild:NormalizeName(guildBankAltName) or guildBankAltName
 		local alt = info.alts[norm]
         if alt and type(alt) == "table" then
             if not first_tab then
-                first_tab = player
+                first_tab = guildBankAltName
             end
-            tabs[i] = { value = player, text = player }
+            tabs[i] = { value = guildBankAltName, text = guildBankAltName }
             if alt.money then
                 total_gold = total_gold + alt.money
             end
@@ -203,7 +195,6 @@ function UI_Inventory:DrawContent()
                 slots = slots + alt.bags.slots.count
                 total_slots = total_slots + alt.bags.slots.total
             end
-            i = i + 1
         end
     end
 
@@ -229,7 +220,7 @@ function UI_Inventory:DrawContent()
 
     self.Window:SetCallback("OnEnterStatusBar", function(_)
         local tab = self.TabGroup.localstatus.selected
-		local normTab = GBankClassic_Guild:NormalizeName(tab)
+		local normTab = GBankClassic_Guild:NormalizeName(tab) or tab
 		local alt = info.alts[normTab] or nil
         if not alt or not alt.version then
             return
@@ -292,7 +283,7 @@ function UI_Inventory:DrawContent()
         local alt = info.alts and info.alts[tab] or nil
         if not alt then
             -- Placeholder view for missing guild bank alt data
-            local isLocal = (GBankClassic_Guild and GBankClassic_Guild:GetPlayer() == tab)
+            local isLocal = (GBankClassic_Guild and GBankClassic_Guild:GetNormalizedPlayer() == tab)
             local label = GBankClassic_UI:Create("Label")
             if isLocal then
                 local msg = "|cffaad372This is you!|r\n\nNo data has been scanned yet.\n\n|cffFFd100To populate your bank data:|r\n1. |cff33ff99Enable reporting and scanning|r of your data via the addon options.\n2. Visit the |cff33ff99Bank|r to scan your bank and bag slots.\n3. Close your bank.\n4. If other guild members are online, |cff33ff99wait|r for the share to complete.\n"                 
@@ -312,7 +303,7 @@ function UI_Inventory:DrawContent()
             -- Track scroll container to prevent race conditions
             scroll.callbackProcessed = false
             
-            local normTab = GBankClassic_Guild:NormalizeName(tab)
+            local normTab = GBankClassic_Guild:NormalizeName(tab) or tab
             local alt = info.alts[normTab]
             
             -- Use alt.items if available

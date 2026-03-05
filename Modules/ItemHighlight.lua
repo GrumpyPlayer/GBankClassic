@@ -6,6 +6,15 @@
 -- ItemHighlight.enabled = false
 -- ItemHighlight.neededItems = {} -- {itemName: quantityNeeded}
 -- ItemHighlight.overlays = {} -- Texture overlays for dimming items
+-- ItemHighlight.lastBagnonSearch = nil -- Cache last Bagnon search string to avoid redundant signals
+
+-- -- Settings
+-- local OVERLAY_ALPHA = 0.7 -- Alpha for grey overlay (0=transparent, 1=opaque)
+-- local OVERLAY_COLOR = {0.2, 0.2, 0.2} -- RGB grey color
+
+-- -- Throttling to prevent Bagnon execution timeout
+-- local REFRESH_THROTTLE = 0.5 -- seconds
+-- local lastRefresh = 0
 
 -- -- Initialize the module
 -- function ItemHighlight:Initialize()
@@ -14,13 +23,30 @@
 
 -- 	-- Register events
 -- 	local frame = CreateFrame("GBankClassicItemHighlightFrame")
--- 	frame:RegisterEvent("BAG_UPDATE")
+-- 	frame:RegisterEvent("BAG_UPDATE_DELAYED")
 -- 	frame:RegisterEvent("PLAYERBANKSLOTS_CHANGED")
 -- 	frame:RegisterEvent("BANKFRAME_OPENED")
 -- 	frame:RegisterEvent("BANKFRAME_CLOSED")
 -- 	frame:SetScript("OnEvent", function(_, event, ...)
 -- 		if self.enabled then
--- 			self:RefreshHighlighting()
+-- 			-- Throttle refresh to prevent Bagnon execution timeout during rapid BAG_UPDATE_DELAYED spam
+-- 			local now = GetTime()
+-- 			if now - lastRefresh < REFRESH_THROTTLE then
+-- 				-- Schedule delayed refresh if not already pending
+-- 				if not pendingRefresh then
+-- 					pendingRefresh = true
+-- 					C_Timer.After(REFRESH_THROTTLE, function()
+-- 						pendingRefresh = false
+-- 						if self.enabled then
+-- 							lastRefresh = GetTime()
+-- 							ItemHighlight:RefreshHighlighting()
+-- 						end
+-- 					end)
+-- 				end
+-- 				return
+-- 			end
+-- 			lastRefresh = now
+-- 			ItemHighlight:RefreshHighlighting()
 -- 		end
 -- 	end)
 
@@ -30,7 +56,7 @@
 -- -- Enable/disable highlighting
 -- function ItemHighlight:SetEnabled(enabled)
 -- 	-- Only allow guild bank alts to use highlighting
--- 	local banks = GBankClassic_Guild:GetBanks()
+-- 	local banks = GBankClassic_Guild:GetCachedGuildBankAlts()
 -- 	if not banks then
 -- 		GBankClassic_Output:Debug("REQUESTS", "Highlighting disabled: no banks found")
 
@@ -40,7 +66,7 @@
 -- 	local currentPlayer = GBankClassic_Guild:GetNormalizedPlayer()
 -- 	local isBank = false
 -- 	for _, bankName in ipairs(banks) do
--- 		local normBank = GBankClassic_Guild:NormalizeName(bankName)
+-- 		local normBank = GBankClassic_Guild:NormalizeName(bankName) or bankName
 -- 		if normBank == currentPlayer then
 -- 			isBank = true
 -- 			break
@@ -65,8 +91,9 @@
 -- 		self:RefreshHighlighting()
 -- 	else
 -- 		self:ClearAllOverlays()
--- 		-- Clear Bagnon search when disabling
--- 		if Bagnon then
+-- 		-- Clear Bagnon search when disabling (only if it was previously set)
+-- 		if Bagnon and self.lastBagnonSearch ~= nil then
+-- 			self.lastBagnonSearch = nil
 -- 			local addon = Bagnon
 -- 			addon.search = nil
 -- 			addon.canSearch = false
@@ -91,7 +118,7 @@
 
 -- 	-- If no filter set, default to current player if they're a guild bank alt
 -- 	if not currentGuildBankAlt or currentGuildBankAlt == "__gbank_any__" then
--- 		if currentPlayer and GBankClassic_Guild:IsBank(currentPlayer) then
+-- 		if currentPlayer and GBankClassic_Guild:IsGuildBankAlt(currentPlayer) then
 -- 			currentGuildBankAlt = currentPlayer
 -- 		else
 -- 			return false
@@ -230,8 +257,17 @@
 -- 		searchTerms = limited
 -- 	end
 
--- 	-- Join with | (OR operator) so Bagnon matches items containing any of these names
+-- 	-- Join with | (OR operator) so Bagnon matches items containing ANY of these names
 -- 	local searchString = table.concat(searchTerms, "|")
+	
+-- 	-- Only trigger SEARCH_CHANGED if the search string actually changed
+-- 	-- This prevents redundant Bagnon UI rebuilds that can cause execution timeout
+-- 	if self.lastBagnonSearch == searchString then
+-- 		GBankClassic_Output:Debug("REQUESTS", "Search string unchanged, skipping SEARCH_CHANGED signal")
+-- 		return true
+-- 	end
+	
+-- 	self.lastBagnonSearch = searchString
 -- 	GBankClassic_Output:Debug("REQUESTS", "Setting Bagnon search (%d items): %s", #searchTerms, searchString)
 
 -- 	-- Set Bagnon's search string (use whichever global is available)
@@ -339,8 +375,9 @@
 -- -- Refresh all highlighting
 -- function ItemHighlight:RefreshHighlighting()
 -- 	if not self.enabled then
--- 		-- If disabled, clear Bagnon search
--- 		if Bagnon then
+-- 		-- If disabled, clear Bagnon search (only if it was previously set)
+-- 		if Bagnon and self.lastBagnonSearch ~= nil then
+-- 			self.lastBagnonSearch = nil
 -- 			local addon = Bagnon
 -- 			addon.search = nil
 -- 			addon.canSearch = false

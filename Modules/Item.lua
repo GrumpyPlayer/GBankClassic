@@ -9,9 +9,8 @@ local ITEM_CLASSES_NEEDING_LINK = {
 }
 
 local Globals = GBankClassic_Globals
-local upvalues = Globals.GetUpvalues("GetItemInfo", "GetTime", "GetItemInventoryTypeByID", "CreateFrame", "GetItemInfoInstant")
+local upvalues = Globals.GetUpvalues("GetItemInfo", "GetItemInventoryTypeByID", "CreateFrame", "GetItemInfoInstant")
 local GetItemInfo = upvalues.GetItemInfo
-local GetTime = upvalues.GetTime
 local GetItemInventoryTypeByID = upvalues.GetItemInventoryTypeByID
 local CreateFrame = upvalues.CreateFrame
 local GetItemInfoInstant = upvalues.GetItemInfoInstant
