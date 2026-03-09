@@ -9,35 +9,33 @@ local warnedAbout = {
 	corruptedTimestamps = {}, -- Track by request ID
 }
 
-    --[[
-    Request sync and storage
-    ========================
-    This module owns the request lifecycle and synchronization rules
-    It attaches methods to GBankClassic_Guild, but keeps the logic isolated
+-- Request sync and storage
+-- ========================
+-- This module owns the request lifecycle and synchronization rules
+-- It attaches methods to GBankClassic_Guild, but keeps the logic isolated
 
-    Data model (GBankClassic_Guild.Info):
-    - requests: map of request ID -> request record (canonical state for UI/logic).
-    - requestsVersion: max updatedAt timestamp for quick freshness checks.
-    - requestsTombstones: map requestId -> delete timestamp.
+-- Data model (GBankClassic_Guild.Info):
+-- - requests: map of request ID -> request record (canonical state for UI/logic).
+-- - requestsVersion: max updatedAt timestamp for quick freshness checks.
+-- - requestsTombstones: map requestId -> delete timestamp.
 
-    Request record schema:
-    {
-    id, date, updatedAt, statusUpdatedAt,
-    requester, bank, item, quantity, fulfilled,
-    status = "open" | "fulfilled" | "cancelled" | "complete",
-    notes
-    }
+-- Request record schema:
+-- {
+-- id, date, updatedAt, statusUpdatedAt,
+-- requester, bank, item, quantity, fulfilled,
+-- status = "open" | "fulfilled" | "cancelled" | "complete",
+-- notes
+-- }
 
-    Conflict resolution (merge-based sync):
-    - Each request is merged using last-writer-wins based on updatedAt.
-    - Tombstones win over requests with updatedAt <= tombstone timestamp.
-    - Fulfillment uses max() to ensure idempotency.
+-- Conflict resolution (merge-based sync):
+-- - Each request is merged using last-writer-wins based on updatedAt.
+-- - Tombstones win over requests with updatedAt <= tombstone timestamp.
+-- - Fulfillment uses max() to ensure idempotency.
 
-    Sync flow:
-    - Version broadcast includes requestsVersion + requests hash.
-    - Full snapshots and by-id fetches are merged per-request.
-    - Mutations are broadcast as entries and applied directly.
-    ]--
+-- Sync flow:
+-- - Version broadcast includes requestsVersion + requests hash.
+-- - Full snapshots and by-id fetches are merged per-request.
+-- - Mutations are broadcast as entries and applied directly.
 
 -- Request status constants
 local VALID_REQUEST_STATUS = {
