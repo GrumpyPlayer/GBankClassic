@@ -637,23 +637,7 @@ function UI_Search:DrawContent()
 						end
 
                         local label = GBankClassic_UI:Create("Label")
-                        -- Check if item is in mail (mail.items is an array)
-                        local norm = GBankClassic_Guild:NormalizeName(bankAlt) or bankAlt
-                        local alt = GBankClassic_Guild.Info and GBankClassic_Guild.Info.alts and GBankClassic_Guild.Info.alts[norm]
-                        local inMail = false
-                        if alt and alt.mail and alt.mail.items then
-                            for _, item in ipairs(alt.mail.items) do
-                                if item.ID == resultItem.ID then
-                                    inMail = true
-                                    break
-                                end
-                            end
-                        end					
-                        local mailIcon = inMail and " \124TInterface\\MailFrame\\UI-MailIcon-Up:16:16\124t" or ""	
-                        label:SetText(bankAlt .. mailIcon)
-                        label.label:SetSize(100, 30)
-                        label.label:SetJustifyV("MIDDLE")
-                        self.Results:AddChild(label)
+                        label:SetText(bankAlt)
 
                         count = count + 1
                     end

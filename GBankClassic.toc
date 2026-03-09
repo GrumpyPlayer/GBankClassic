@@ -35,6 +35,5 @@ Modules/UI/Inventory.lua
 Modules/UI/Minimap.lua
 Modules/UI/Requests.lua
 Modules/UI/Search.lua
-Modules/Tests.lua
 
 Core.lua

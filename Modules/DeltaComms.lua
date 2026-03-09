@@ -30,6 +30,18 @@ function DeltaComms:ValidateDeltaStructure(delta)
 		return false, "missing or invalid version"
 	end
 
+	if delta.inventoryHash and type(delta.inventoryHash) ~= "number" then
+		return false, "invalid inventoryHash"
+	end
+
+	if delta.updatedAt and type(delta.updatedAt) ~= "number" then
+		return false, "invalid updatedAt"
+	end
+
+	if delta.baseVersion and type(delta.baseVersion) ~= "number" then
+		return false, "invalid baseVersion"
+	end
+
 	if not delta.changes or type(delta.changes) ~= "table" then
 		return false, "missing or invalid changes"
 	end
@@ -58,11 +70,11 @@ function DeltaComms:ValidateDeltaStructure(delta)
 		end
 	end
 
-	-- Validate aggregated items delta if present (NEW)
-	if changes.items then
-		local valid, err = self:ValidateItemDelta(changes.items)
+	-- Validate mail delta if present
+	if changes.mail then
+		local valid, err = self:ValidateItemDelta(changes.mail)
 		if not valid then
-			return false, "invalid items delta: " .. err
+			return false, "invalid mail delta: " .. err
 		end
 	end
 
@@ -250,6 +262,10 @@ function DeltaComms:StripDeltaLinks(delta)
 				ID = item.ID,
 				Count = item.Count
 			}
+			-- Preserve link
+			if item.Link and GBankClassic_Item:NeedsLink(item.Link) then
+				strippedItem.Link = item.Link
+			end
 			-- Preserve info if present (for modified items)
 			if item.Info then
 				strippedItem.Info = item.Info
@@ -264,12 +280,19 @@ function DeltaComms:StripDeltaLinks(delta)
 		type = delta.type,
 		name = delta.name,
 		version = delta.version,
+		updatedAt = delta.updatedAt,
+		inventoryHash = delta.inventoryHash,
 		changes = {}
 	}
 
 	-- Copy money change (no link to strip)
 	if delta.changes.money then
 		strippedDelta.changes.money = delta.changes.money
+	end
+
+	-- Copy mailHash change
+	if delta.changes.mailHash then
+		strippedDelta.changes.mailHash = delta.changes.mailHash
 	end
 
 	-- Strip links from bank changes
@@ -290,12 +313,12 @@ function DeltaComms:StripDeltaLinks(delta)
 		}
 	end
 
-	-- Strip links from aggregated items changes (NEW)
-	if delta.changes.items then
-		strippedDelta.changes.items = {
-			added = stripItemArray(delta.changes.items.added),
-			modified = stripItemArray(delta.changes.items.modified),
-			removed = stripItemArray(delta.changes.items.removed)
+	-- Strip links from mail changes
+	if delta.changes.mail then
+		strippedDelta.changes.mail = {
+			added = stripItemArray(delta.changes.mail.added),
+			modified = stripItemArray(delta.changes.mail.modified),
+			removed = stripItemArray(delta.changes.mail.removed)
 		}
 	end
 
@@ -320,8 +343,11 @@ function DeltaComms:ItemsEqual(item1, item2)
 	if item1.Count ~= item2.Count then
 		return false
 	end
-	if item1.Link ~= item2.Link then
-		return false
+
+	if item1.Link ~= nil and item2.Link ~= nil then
+		if item1.Link ~= item2.Link then
+			return false
+		end
 	end
 
 	-- Compare info table if present (deep comparison)
@@ -373,9 +399,17 @@ function DeltaComms:BuildItemIndex(items)
 	end
 
 	for _, item in pairs(items) do
-		if item and item.ID and item.Link then
-			local key = tostring(item.ID) .. item.Link
-			index[key] = item
+		if item and item.ID then
+			if item.Link then
+				local normalizedKey = GBankClassic_Item:GetItemKey(item.Link)
+				local key = tostring(item.ID) .. normalizedKey
+				index[key] = item
+			else
+				local key = tostring(item.ID)
+				if not index[key] then
+					index[key] = item
+				end
+			end
 		end
 	end
 
@@ -391,12 +425,51 @@ function DeltaComms:ComputeItemDelta(oldItems, newItems)
 
 	-- Build item index for old items by itemID + link key
 	local oldByKey = self:BuildItemIndex(oldItems)
+	
+	-- Build ID-only lookup for items without links (from minimal baselines)
+	local oldByIDOnly = {}
+	for _, item in pairs(oldItems) do
+		if item and item.ID and not (item.Link or item.ItemString) then
+			oldByIDOnly[tostring(item.ID)] = item
+		end
+	end
 
 	-- Find added and modified items
+	local deepFallbackUsed = {}
 	for _, newItem in pairs(newItems) do
-		if newItem and newItem.ID and newItem.Link then
-			local key = tostring(newItem.ID) .. newItem.Link
-			local oldItem = oldByKey[key]
+		if newItem and newItem.ID then
+			local key
+			local oldItem = nil
+			local usedDeepFallback = false
+			
+			if newItem.Link then
+				local normalizedKey = GBankClassic_Item:GetItemKey(newItem.Link)
+				key = tostring(newItem.ID) .. normalizedKey
+				oldItem = oldByKey[key]
+				
+				if not oldItem then
+					oldItem = oldByIDOnly[tostring(newItem.ID)]
+					if oldItem then
+						key = tostring(newItem.ID)
+					end
+				end
+				
+				if not oldItem then
+					for _, item in pairs(oldItems) do
+						if item and item.ID == newItem.ID and not deepFallbackUsed[item] then
+							oldItem = item
+							key = tostring(newItem.ID)
+							usedDeepFallback = true
+							deepFallbackUsed[item] = true
+							break
+						end
+					end
+				end
+			else
+				-- Minimal item without Link - use ID-only key
+				key = tostring(newItem.ID)
+				oldItem = oldByKey[key] or oldByIDOnly[key]
+			end
 
 			if not oldItem then
 				-- Item was added
@@ -407,12 +480,34 @@ function DeltaComms:ComputeItemDelta(oldItems, newItems)
 			end
 
 			-- Mark as processed
-			oldByKey[key] = nil
+			if key then
+				oldByKey[key] = nil
+				oldByIDOnly[key] = nil
+			end
+			if usedDeepFallback and oldItem then
+				for k, v in pairs(oldByKey) do
+					if v == oldItem then
+						oldByKey[k] = nil
+						break
+					end
+				end
+				local idKey = tostring(oldItem.ID)
+				if oldByIDOnly[idKey] == oldItem then
+					oldByIDOnly[idKey] = nil
+				end
+			end
 		end
 	end
 
 	-- Remaining old items were removed
 	for _, item in pairs(oldByKey) do
+		local removed = { ID = item.ID }
+		if item.Link then
+			removed.Link = item.Link
+		end
+		table.insert(delta.removed, removed)
+	end
+	for _, item in pairs(oldByIDOnly) do
 		table.insert(delta.removed, { ID = item.ID })
 	end
 
@@ -420,13 +515,77 @@ function DeltaComms:ComputeItemDelta(oldItems, newItems)
 end
 
 -- Compute full delta for an alt
-function DeltaComms:ComputeDelta(guildName, altName, currentAlt)
+function DeltaComms:ComputeDelta(guildName, altName, currentAlt, requesterInventoryHash, requesterMailHash, requesterBaseline)
 	if not guildName or not altName or not currentAlt then
 		return nil
 	end
 
-	-- Get previous snapshot
-	local previous = GBankClassic_Database:GetSnapshot(guildName, altName)
+	-- Compute delta using requester's actual baseline from state summary
+	local previous = nil
+	local currentHash = currentAlt.inventoryHash or 0
+	local currentMailHash = currentAlt.mailHash or 0
+	requesterMailHash = requesterMailHash or 0
+
+	-- Convert minimal item structure to full structure (without links)
+	local function expandMinimalItems(minimalItems)
+		if not minimalItems then return {} end
+		local expanded = {}
+		for _, item in ipairs(minimalItems) do
+			table.insert(expanded, { ID = item.ID, Count = item.Count or 1 })
+		end
+
+		return expanded
+	end
+
+	if requesterInventoryHash and requesterInventoryHash ~= 0 then
+		-- Requester has data - check if it matches current (both inventory AND mail)
+		if requesterInventoryHash == currentHash and requesterMailHash == currentMailHash then
+			-- Hash match (both hashes) - no changes needed (empty delta)
+			GBankClassic_Output:Debug("DELTA", "Hash match: requester inv=%d mail=%d, guild bank alt inv=%d mail=%d (no changes)", requesterInventoryHash, requesterMailHash, currentHash, currentMailHash)
+			previous = currentAlt -- Use current as previous (results in empty delta)
+		elseif requesterInventoryHash == currentHash and requesterMailHash ~= currentMailHash then
+			-- Inventory matches but mail changed - use requester's actual baseline if available
+			if requesterBaseline then
+				previous = {
+					items = {},
+					money = requesterBaseline.money or 0,
+					mailHash = requesterMailHash,
+					bank = { items = expandMinimalItems(requesterBaseline.bank) },
+					bags = { items = expandMinimalItems(requesterBaseline.bags) },
+					mail = { items = expandMinimalItems(requesterBaseline.mail) },
+				}
+				GBankClassic_Output:Debug("DELTA", "Mail changed: using requester's actual baseline (bank=%d, bags=%d, mail=%d)", #previous.bank.items, #previous.bags.items, #previous.mail.items)
+			else
+				-- No requester baseline - cannot compute accurate delta
+				-- Force full sync by using empty baseline instead
+				previous = { items = {}, money = 0, mailHash = 0, bank = { items = {} }, bags = { items = {} }, mail = { items = {} } }
+				GBankClassic_Output:Warn("DELTA", "[Missing requester baseline (mail change) - forcing full sync for %s (mail=%d->%d)", altName, requesterMailHash, currentMailHash)
+			end
+		else
+			-- Hash mismatch - use requester's actual baseline if available
+			if requesterBaseline then
+				previous = {
+					items = {},
+					money = requesterBaseline.money or 0,
+					mailHash = requesterMailHash,
+					bank = { items = expandMinimalItems(requesterBaseline.bank) },
+					bags = { items = expandMinimalItems(requesterBaseline.bags) },
+					mail = { items = expandMinimalItems(requesterBaseline.mail) },
+				}
+				GBankClassic_Output:Debug("DELTA", "Using requester's actual baseline: inv=%d->%d (bank=%d, bags=%d, mail=%d items)", requesterInventoryHash, currentHash, #previous.bank.items, #previous.bags.items, #previous.mail.items)
+			else
+				-- No requester baseline - cannot compute accurate delta
+				-- Force full sync by using empty baseline instead
+				previous = { items = {}, money = 0, mailHash = 0, bank = { items = {} }, bags = { items = {} }, mail = { items = {} } }
+				GBankClassic_Output:Warn("DELTA", "Missing requester baseline - forcing full sync for %s (hash=%d->%d)", altName, requesterInventoryHash or 0, currentHash)
+			end
+		end
+	else
+		-- Requester has no data (hash 0 or nil) - send everything as delta additions
+		previous = { items = {}, money = 0, mailHash = 0, bank = { items = {} }, bags = { items = {} }, mail = { items = {} } }
+		GBankClassic_Output:Debug("DELTA", "Requester has no data (hash=%s), sending all as additions", tostring(requesterInventoryHash))
+	end
+
 	if not previous then
 		return nil
 	end
@@ -437,6 +596,8 @@ function DeltaComms:ComputeDelta(guildName, altName, currentAlt)
 		type = "alt-delta",
 		name = altName,
 		version = currentAlt.version or GetServerTime(),
+		updatedAt = currentAlt.inventoryUpdatedAt or currentAlt.version or GetServerTime(),
+		inventoryHash = currentAlt.inventoryHash or 0,
 		changes = {},
 	}
 
@@ -445,13 +606,28 @@ function DeltaComms:ComputeDelta(guildName, altName, currentAlt)
 		delta.changes.money = currentAlt.money
 	end
 
-	-- Items delta (aggregated bank + bags + mail)
-	local previousItems = previous.items or {}
-	local currentItems = currentAlt.items or {}
+	-- Track mailHash changes so receivers can detect mail updates
+	if currentAlt.mailHash ~= previous.mailHash then
+		delta.changes.mailHash = currentAlt.mailHash
+		GBankClassic_Output:Debug("DELTA", "Mail hash changed for %s: %s -> %s", altName, tostring(previous.mailHash), tostring(currentAlt.mailHash))
+	end
 
-	-- Log item counts
-	GBankClassic_Output:Debug("DELTA", "Comparing %s: previous aggregation has %d items, current aggregation has %d items", altName, #previousItems, #currentItems)
-	delta.changes.items = self:ComputeItemDelta(previousItems, currentItems)
+	-- Compute separate deltas for bank, bags, and mail inventories
+	-- These are sent individually (not aggregated) so receiver can populate them correctly
+	local previousBank = (previous.bank and previous.bank.items) or {}
+	local currentBank = (currentAlt.bank and currentAlt.bank.items) or {}
+	delta.changes.bank = self:ComputeItemDelta(previousBank, currentBank)
+
+	local previousBags = (previous.bags and previous.bags.items) or {}
+	local currentBags = (currentAlt.bags and currentAlt.bags.items) or {}
+	delta.changes.bags = self:ComputeItemDelta(previousBags, currentBags)
+
+	local previousMail = (previous.mail and previous.mail.items) or {}
+	local currentMail = (currentAlt.mail and currentAlt.mail.items) or {}
+	delta.changes.mail = self:ComputeItemDelta(previousMail, currentMail)
+
+	-- Log what's being sent
+	GBankClassic_Output:Debug("DELTA", "Delta for %s: bank=%d->%d, bags=%d->%d, mail=%d->%d", altName, #previousBank, #currentBank, #previousBags, #currentBags, #previousMail, #currentMail)
 
 	return delta
 end
@@ -481,6 +657,32 @@ function DeltaComms:DeltaHasChanges(delta)
 		return true
 	end
 
+	-- Check mailHash change
+	if changes.mailHash ~= nil then
+		return true
+	end
+
+	-- Check bank changes
+	if changes.bank then
+		if next(changes.bank.added) or next(changes.bank.modified) or next(changes.bank.removed) then
+			return true
+		end
+	end
+
+	-- Check bags changes
+	if changes.bags then
+		if next(changes.bags.added) or next(changes.bags.modified) or next(changes.bags.removed) then
+			return true
+		end
+	end
+
+	-- Check mail changes
+	if changes.mail then
+		if next(changes.mail.added) or next(changes.mail.modified) or next(changes.mail.removed) then
+			return true
+		end
+	end
+
 	-- Check items changes
 	if changes.items then
 		if next(changes.items.added) or next(changes.items.modified) or next(changes.items.removed) then
@@ -501,29 +703,43 @@ function DeltaComms:ApplyItemDelta(items, delta)
 
 	-- Build current items index by itemKey
 	local itemsByKey = self:BuildItemIndex(items)
+	
+	-- Build ID-only lookup for items without Links
+	local itemsByIDOnly = {}
+	for _, item in pairs(items) do
+		if item and item.ID and not (item.Link) then
+			itemsByIDOnly[tostring(item.ID)] = item
+		end
+	end
 
 	-- Remove items
 	if delta.removed then
 		for _, removedItem in ipairs(delta.removed) do
 			if removedItem and removedItem.ID then
 				-- Match by ID only (link field removed)
-				for i = #items, 1, -1 do
-					local item = items[i]
-					if item and item.ID == removedItem.ID then
-						table.remove(items, i)
-						break -- Remove first match only
+				if removedItem.Link then
+					local normalizedRemovedKey = GBankClassic_Item:GetItemKey(removedItem.Link)
+					local key = tostring(removedItem.ID) .. normalizedRemovedKey
+					for i = #items, 1, -1 do
+						local item = items[i]
+						if item and item.ID and (item.Link) then
+							local normalizedItemKey = GBankClassic_Item:GetItemKey(item.Link)
+							local itemKey = tostring(item.ID) .. normalizedItemKey
+							if itemKey == key then
+								table.remove(items, i)
+								break
+							end
+						end
+					end
+				else
+					for i = #items, 1, -1 do
+						local item = items[i]
+						if item and item.ID == removedItem.ID then
+							table.remove(items, i)
+							break
+						end
 					end
 				end
-			end
-		end
-	end
-
-	-- Add new items
-	if delta.added then
-		for _, item in ipairs(delta.added) do
-				-- Match by ID only (link field removed)
-			if item and item.ID then
-				table.insert(items, item)
 			end
 		end
 	end
@@ -531,24 +747,22 @@ function DeltaComms:ApplyItemDelta(items, delta)
 	-- Modify existing items
 	if delta.modified then
 		for _, changes in ipairs(delta.modified) do
-				-- Match by ID only (link field removed)
 			if changes and changes.ID then
 				local existingItem = nil
 				
-				-- Try exact match with link first (for gear/weapons with suffixes)
 				if changes.Link then
-					local key = tostring(changes.ID) .. changes.Link
+					local normalizedKey = GBankClassic_Item:GetItemKey(changes.Link)
+					local key = tostring(changes.ID) .. normalizedKey
 					existingItem = itemsByKey[key]
-				end
-
-				-- Fallback: Match by ID if link was stripped to save bandwidth
-				if not existingItem then
-					for _, item in ipairs(items) do
-						if item.ID == changes.ID then
-							existingItem = item
-							break
-						end
+					
+					-- Check ID-only index if not found
+					if not existingItem then
+						existingItem = itemsByIDOnly[tostring(changes.ID)]
 					end
+				else
+					-- Minimal item without link
+					local key = tostring(changes.ID)
+					existingItem = itemsByKey[key] or itemsByIDOnly[key]
 				end
 
 				if existingItem then
@@ -558,10 +772,100 @@ function DeltaComms:ApplyItemDelta(items, delta)
 					end
 				else
 					-- Item doesn't exist (shouldn't happen), add as new
-					table.insert(items, changes)
+					local guardBlock = false
+					if not changes.Link then
+						local needsLink = GBankClassic_Item:ItemClassNeedsLink(changes.ID)
+						if needsLink == true then
+							guardBlock = true
+							GBankClassic_Output:Debug("DELTA", "Blocked linkless modified-as-new weapon/armor ID=%d", changes.ID)
+						elseif needsLink == nil then
+							-- Class not cached; block if any linked entry already exists for this base ID
+							for _, existingEntry in ipairs(items) do
+								if existingEntry and existingEntry.ID == changes.ID and existingEntry.Link then
+									guardBlock = true
+									GBankClassic_Output:Debug("DELTA", "Blocked linkless modified-as-new ID=%d (linked entry exists, class uncached)", changes.ID)
+									break
+								end
+							end
+						end
+					end
+					if not guardBlock then
+						table.insert(items, changes)
+						GBankClassic_Output:Debug("DELTA", "Modified item not found, adding as new: ID=%d", changes.ID)
+					end
 				end
 			end
 		end
+	end
+
+	-- Add new items (can invalidate indexes, but no more operations depend on them)
+	if delta.added then
+		local updated = 0
+		local added = 0
+
+		for _, newItem in ipairs(delta.added) do
+			if newItem and newItem.ID and newItem.Link then
+				local existingItem = nil
+				local newNormKey = GBankClassic_Item:GetItemKey(newItem.Link)
+				local newFullKey = tostring(newItem.ID) .. newNormKey
+
+				-- Exact normalized-key match (distinguishes suffix variants)
+				for _, item in ipairs(items) do
+					if item and item.ID == newItem.ID then
+						local existingNormKey = GBankClassic_Item:GetItemKey(item.Link or "")
+						if (tostring(item.ID) .. existingNormKey) == newFullKey then
+							existingItem = item
+							break
+						end
+					end
+				end
+
+				-- ID-only match only for linkless existing entries
+				if not existingItem then
+					for _, item in ipairs(items) do
+						if item and item.ID == newItem.ID and not item.Link then
+							existingItem = item
+							break
+						end
+					end
+				end
+
+				if existingItem then
+					-- Item exists - update quantities and fields
+					existingItem.Count = newItem.Count
+					existingItem.Link = newItem.Link or existingItem.Link
+					if newItem.Info then
+						existingItem.Info = newItem.Info
+					end
+					updated = updated + 1
+				else
+					-- Item doesn't exist - add it
+					local guardBlock = false
+					if not newItem.Link and GBankClassic_Item then
+						local needsLink = GBankClassic_Item:ItemClassNeedsLink(newItem.ID)
+						if needsLink == true then
+							guardBlock = true
+							GBankClassic_Output:Debug("DELTA", "Bocked linkless weapon/armor ID=%d (class confirmed)", newItem.ID)
+						elseif needsLink == nil then
+							-- Class not cached; block if any linked entry already exists for this base ID
+							for _, existingEntry in ipairs(items) do
+								if existingEntry and existingEntry.ID == newItem.ID and existingEntry.Link then
+									guardBlock = true
+									GBankClassic_Output:Debug("DELTA", "Blocked linkless ID=%d (linked entry exists, class uncached)", newItem.ID)
+									break
+								end
+							end
+						end
+					end
+					if not guardBlock then
+						table.insert(items, newItem)
+						added = added + 1
+					end
+				end
+			end
+		end
+
+		GBankClassic_Output:Debug("DELTA", "Applied %d added items (%d updated existing, %d new)", #delta.added, updated, added)
 	end
 
 	return true
@@ -579,22 +883,21 @@ function DeltaComms:ApplyDelta(guildInfo, altName, deltaData, sender)
 
 	-- Validate base version matches
 	if not current then
-		-- No existing data, request full sync (but only if not already pending)
-		local hasPending = GBankClassic_Guild.pending_sync and GBankClassic_Guild.pending_sync.alts and GBankClassic_Guild.pending_sync.alts[norm]
-		if not hasPending then
-			local errorMsg = string.format("No existing data for %s", norm)
-			GBankClassic_Output:Debug("DELTA", errorMsg .. ", requesting full sync")
-			self:RecordDeltaError(guildInfo.name, norm, "NO_DATA", errorMsg)
-			GBankClassic_Guild:QueryAlt(nil, norm, nil)
-		else
-			GBankClassic_Output:Debug("DELTA", "No data for %s but full sync already pending, skipping duplicate request", norm)
+		-- No existing data: adopt delta against empty baseline to avoid full sync fallback
+		if not guildInfo.alts then
+			guildInfo.alts = {}
 		end
-
-		if guildInfo and guildInfo.name then
-			GBankClassic_Database:RecordDeltaFailed(guildInfo.name)
-		end
-
-		return ADOPTION_STATUS.INVALID
+		current = {
+			name = norm,
+			version = 0,
+			money = 0,
+			items = {},
+			inventoryHash = 0,
+			inventoryUpdatedAt = 0,
+			mailHash = 0,
+		}
+		guildInfo.alts[norm] = current
+		GBankClassic_Output:Debug("DELTA", "No existing data for %s; applying delta against empty baseline", norm)
 	end
 
 	-- Protect guild bank alt data as source of truth
@@ -603,7 +906,8 @@ function DeltaComms:ApplyDelta(guildInfo, altName, deltaData, sender)
 	local realm = GetNormalizedRealmName()
 	local playerFull = player .. "-" .. realm
 	local playerNorm = GBankClassic_Guild:NormalizeName(playerFull)
-	local playerIsGuildBankAlt = GBankClassic_Guild:IsBank(playerNorm)
+	local playerIsGuildBankAlt = GBankClassic_Guild:IsGuildBankAlt(playerNorm)
+	local currentIsGuildBankAlt = GBankClassic_Guild:IsGuildBankAlt(norm)
 	if playerIsGuildBankAlt then
 		-- We are a guild bank alt - protect our own data and other guild bank alt data
 
@@ -616,9 +920,8 @@ function DeltaComms:ApplyDelta(guildInfo, altName, deltaData, sender)
 		end
 		
 		-- Also protect other guild bank alt data from non-guild bank alt updates
-		local currentIsGuildBankAlt = GBankClassic_Guild:IsBank(norm)
 		local senderNorm = sender and GBankClassic_Guild:NormalizeName(sender) or nil
-		local senderIsGuildBankAlt = senderNorm and GBankClassic_Guild:IsBank(senderNorm) or false
+		local senderIsGuildBankAlt = senderNorm and GBankClassic_Guild:IsGuildBankAlt(senderNorm) or false
 		if currentIsGuildBankAlt and not senderIsGuildBankAlt then
 			-- Reject: non-guild bank alt trying to update guild bank alt data
 			local errorMsg = string.format("Rejected delta from non-guild bank alt %s for guild bank alt %s (guild bank alts are source of truth)", sender or "unknown", norm)
@@ -626,6 +929,38 @@ function DeltaComms:ApplyDelta(guildInfo, altName, deltaData, sender)
 
 			return ADOPTION_STATUS.UNAUTHORIZED
 		end
+	end
+	-- Non-guild bank alts accept all deltas (they're not the authority)
+
+	-- Newest-wins for non-guild bank alts alts
+	local incomingUpdatedAt = deltaData.updatedAt or deltaData.version
+	local existingUpdatedAt = current.inventoryUpdatedAt or current.version
+	if not currentIsGuildBankAlt and incomingUpdatedAt and existingUpdatedAt and incomingUpdatedAt < existingUpdatedAt then
+		return ADOPTION_STATUS.STALE
+	end
+
+	local currentVersion = current.version or 0
+	local baseVersion = deltaData.baseVersion or currentVersion
+
+	-- Only check version mismatch if delta included baseVersion
+	if deltaData.baseVersion and currentVersion ~= baseVersion then
+		-- Version mismatch - try delta chain replay
+		local errorMsg = string.format(
+			"Version mismatch: have %d, delta expects %d",
+			currentVersion,
+			baseVersion
+		)
+
+		-- Can't use delta chain, request full sync
+		GBankClassic_Output:Debug("DELTA", "Version mismatch for %s (have %d, delta expects %d), requesting full sync", norm, currentVersion, baseVersion)
+		GBankClassic_Guild:QueryAlt(nil, norm, nil)
+
+		self:RecordDeltaError(guildInfo.name, norm, "VERSION_MISMATCH", errorMsg)
+		if guildInfo and guildInfo.name then
+			GBankClassic_Database:RecordDeltaFailed(guildInfo.name)
+		end
+
+		return ADOPTION_STATUS.INVALID
 	end
 
 	-- Apply changes (wrapped in pcall for safety)
@@ -636,21 +971,126 @@ function DeltaComms:ApplyDelta(guildInfo, altName, deltaData, sender)
 			current.money = changes.money
 		end
 
+		-- Apply bank changes
+		if changes.bank then
+			if not current.bank then
+				current.bank = { items = {} }
+			end
+			if not current.bank.items then
+				current.bank.items = {}
+			end
+			self:ApplyItemDelta(current.bank.items, changes.bank)
+			-- Deduplicate bank items after delta application
+			if GBankClassic_Item and #current.bank.items > 0 then
+				local deduped = GBankClassic_Item:Aggregate(current.bank.items, nil)
+				current.bank.items = {}
+				local keys = {}
+				for k in pairs(deduped) do table.insert(keys, k) end
+				table.sort(keys)
+				for _, k in ipairs(keys) do
+					table.insert(current.bank.items, deduped[k])
+				end
+			end
+			GBankClassic_Output:Debug("DELTA", "Applied bank delta for %s: now %d items", norm, #current.bank.items)
+		end
+
+		-- Apply bags changes
+		if changes.bags then
+			if not current.bags then
+				current.bags = { items = {} }
+			end
+			if not current.bags.items then
+				current.bags.items = {}
+			end
+			self:ApplyItemDelta(current.bags.items, changes.bags)
+			-- Deduplicate bags items after delta application
+			if GBankClassic_Item and #current.bags.items > 0 then
+				local deduped = GBankClassic_Item:Aggregate(current.bags.items, nil)
+				current.bags.items = {}
+				local keys = {}
+				for k in pairs(deduped) do table.insert(keys, k) end
+				table.sort(keys)
+				for _, k in ipairs(keys) do
+					table.insert(current.bags.items, deduped[k])
+				end
+			end
+			GBankClassic_Output:Debug("DELTA", "Applied bags delta for %s: now %d items", norm, #current.bags.items)
+		end
+
+		-- Apply mail changes
+		if changes.mail then
+			if not current.mail then
+				current.mail = { items = {} }
+			end
+			if not current.mail.items then
+				current.mail.items = {}
+			end
+			self:ApplyItemDelta(current.mail.items, changes.mail)
+			-- Deduplicate mail items after delta application
+			if GBankClassic_Item and #current.mail.items > 0 then
+				local deduped = GBankClassic_Item:Aggregate(current.mail.items, nil)
+				current.mail.items = {}
+				local keys = {}
+				for k in pairs(deduped) do table.insert(keys, k) end
+				table.sort(keys)
+				for _, k in ipairs(keys) do
+					table.insert(current.mail.items, deduped[k])
+				end
+			end
+			GBankClassic_Output:Debug("DELTA", "Applied mail delta for %s: now %d items", norm, #current.mail.items)
+		end
+
+		-- Recalculate aggregated items for UI display
+		if changes.bank or changes.bags or changes.mail then
+			local bankItems = (current.bank and current.bank.items) or {}
+			local bagItems = (current.bags and current.bags.items) or {}
+			local mailItems = (current.mail and current.mail.items) or {}
+			
+			-- Aggregate all three sources
+			local aggregated = GBankClassic_Item:Aggregate(bankItems, bagItems)
+			aggregated = GBankClassic_Item:Aggregate(aggregated, mailItems)
+			current.items = {}
+			-- Sort keys before inserting to ensure consistent array ordering
+			local keys = {}
+			for k in pairs(aggregated) do
+				table.insert(keys, k)
+			end
+			table.sort(keys)
+			for _, k in ipairs(keys) do
+				table.insert(current.items, aggregated[k])
+			end
+			GBankClassic_Output:Debug("DELTA", "Recalculated aggregated items for %s: %d items (bank=%d, bags=%d, mail=%d)", norm, #current.items, #bankItems, #bagItems, #mailItems)
+		end
+
 		-- Apply item changes (aggregated bank + bags + mail)
 		if changes.items then
 			if not current.items then
 				current.items = {}
 			end
 			self:ApplyItemDelta(current.items, changes.items)
+			GBankClassic_Output:Debug("DELTA", "Applied aggregated items delta for %s: now %d items", norm, #current.items)
 		end
 
 		-- Update version
 		current.version = deltaData.version
+		current.inventoryUpdatedAt = deltaData.updatedAt or deltaData.version or current.inventoryUpdatedAt
+
+		-- Derive inventoryHash from the actual applied items
+		local recomputedInvHash = self:ComputeInventoryHash(current.items or {}, nil, nil, current.money or 0)
+		current.inventoryHash = recomputedInvHash
+		GBankClassic_Output:Debug("DELTA", "%s inventoryHash recomputed=%d (delta had %d)", norm, recomputedInvHash, deltaData.inventoryHash or 0)
+
+		-- Also recompute mailHash from actual mail items after delta application
+		if current.mail and current.mail.items then
+			local recomputedMailHash = self:ComputeInventoryHash(current.mail.items, nil, nil, nil)
+			current.mailHash = recomputedMailHash
+			GBankClassic_Output:Debug("DELTA", "%s mailHash recomputed=%d (delta had %d)", norm, recomputedMailHash, changes.mailHash or 0)
+			end
 	end)
 
 	if not success then
 		-- Delta application failed, request full sync
-		local errorMsg = string.format("Delta application ERROR: %s", tostring(err))
+		local errorMsg = string.format("Delta application error: %s", tostring(err))
 		GBankClassic_Output:Error("Failed to apply delta for %s: %s", norm, tostring(err))
 		self:RecordDeltaError(guildInfo.name, norm, "APPLICATION_ERROR", errorMsg)
 		GBankClassic_Guild:QueryAlt(nil, norm, nil)
@@ -669,7 +1109,7 @@ function DeltaComms:ApplyDelta(guildInfo, altName, deltaData, sender)
 		-- Record apply time
 		local applyTime = debugprofilestop() - applyStart
 		GBankClassic_Database:RecordDeltaApplyTime(guildInfo.name, applyTime)
-		GBankClassic_Output:Debug("DELTA", "✓ Applied delta for %s (v%d) in %.2fms", norm, deltaData.version, applyTime)
+		GBankClassic_Output:Debug("DELTA", "Applied delta for %s (v%d->v%d) in %.2fms", norm, baseVersion, deltaData.version, applyTime)
 	end
 
 	-- Reset error count on successful application
@@ -677,7 +1117,10 @@ function DeltaComms:ApplyDelta(guildInfo, altName, deltaData, sender)
 
 	-- Trigger UI refresh if inventory window is open
 	if GBankClassic_UI_Inventory and GBankClassic_UI_Inventory.isOpen then
-		GBankClassic_UI_Inventory:DrawContent()
+		if not GBankClassic_UI_Inventory.currentTab or GBankClassic_UI_Inventory.currentTab == norm then
+			GBankClassic_UI_Inventory:DrawContent()
+			GBankClassic_UI_Inventory:RefreshCurrentTab()
+		end
 	end
 
 	return ADOPTION_STATUS.ADOPTED
@@ -716,27 +1159,39 @@ function DeltaComms:ApplyDeltaChain(guildInfo, altName, deltaChain)
 
 	-- Apply each delta in sequence
 	local chainStart = debugprofilestop()
+	local currentVersion = current.version or 0
 
 	for i, deltaEntry in ipairs(deltaChain) do
+		-- Validate this delta applies to our current version
+		if deltaEntry.baseVersion ~= currentVersion then
+			GBankClassic_Output:Debug("DELTA", "Delta chain broken for %s at hop %d: have v%d, delta expects v%d", norm, i, currentVersion, deltaEntry.baseVersion)
+			GBankClassic_Guild:QueryAlt(nil, norm, nil)
+
+			return ADOPTION_STATUS.INVALID
+		end
+
 		-- Apply this delta
 		local deltaData = {
 			type = "alt-delta",
 			name = altName,
 			version = deltaEntry.version,
-			-- Properly target the nested changes table, avoiding double-nesting
-			changes = deltaEntry.delta and deltaEntry.delta.changes or nil
+			updatedAt = deltaEntry.updatedAt or deltaEntry.version,
+			baseVersion = deltaEntry.baseVersion,
+			changes = deltaEntry.delta
 		}
 
 		local status = self:ApplyDelta(guildInfo, altName, deltaData)
 		if status ~= ADOPTION_STATUS.ADOPTED then
-			GBankClassic_Output:Debug("DELTA", "Failed to apply delta chain for %s at hop %d (v%d)", norm, i, deltaEntry.version)
+			GBankClassic_Output:Debug("DELTA", "Failed to apply delta chain for %s at hop %d (v%d->v%d)", norm, i, deltaEntry.baseVersion, deltaEntry.version)
 
 			return status
 		end
+
+		currentVersion = deltaEntry.version
 	end
 
 	local chainTime = debugprofilestop() - chainStart
-	GBankClassic_Output:Debug("DELTA", "✓ Applied delta chain for %s (%d hops, v%d) in %.2fms", norm, #deltaChain, deltaChain[#deltaChain].version, chainTime)
+	GBankClassic_Output:Debug("DELTA", "Applied delta chain for %s (%d hops, v%d->v%d) in %.2fms", norm, #deltaChain, deltaChain[1].baseVersion, deltaChain[#deltaChain].version, chainTime)
 
 	return ADOPTION_STATUS.ADOPTED
 end
@@ -916,6 +1371,6 @@ function DeltaComms:FastFillMissingAlts(guildInfo)
 
 	-- Query each missing alt using pull-based protocol
 	for _, norm in ipairs(missing) do
-		GBankClassic_Guild:QueryAltPullBased(norm)
+		GBankClassic_Guild:QueryAltPullBased(norm, false)
 	end
 end

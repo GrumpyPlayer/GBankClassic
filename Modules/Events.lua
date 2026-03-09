@@ -177,7 +177,7 @@ function Events:PLAYER_ENTERING_WORLD(_, isInitialLogin, isReloadingUi)
 	GBankClassic_Output:Debug("EVENTS", "PLAYER_ENTERING_WORLD event fired (isInitialLogin=%s, isReloadingUi=%s)", tostring(isInitialLogin), tostring(isReloadingUi))
 	if isInitialLogin then
 		GBankClassic_Guild:CleanupMalformedAlts()
-		GBankClassic_Guild:ShareAddonVersionData()
+		-- GBankClassic_Guild:ShareAddonVersionData()
 	end
 	if IsInGuild() then
 		GBankClassic_Guild.rosterRefreshNeeded = true
@@ -287,6 +287,7 @@ function Events:MAIL_CLOSED(_)
 	GBankClassic_Mail.isGoldDonationPending = nil
 	GBankClassic_Mail.goldBalanceBeforeDonation = nil
     GBankClassic_Mail.isOpen = false
+    -- GBankClassic_Mail.isScanning = false
 
 	GBankClassic_Output:Debug("MAIL", "Calling Bank:OnUpdateStart()")
     GBankClassic_Bank:OnUpdateStart()
@@ -383,6 +384,7 @@ end
 function Events:OnShareTimer()
 	GBankClassic_Output:Debug("EVENTS", "OnShareTimer fired")
 	GBankClassic_Guild:Share("reply")
+	-- GBankClassic_Guild:QueryRequestsIndex(nil, "NORMAL")
 	self:SetShareTimer()
 end
 

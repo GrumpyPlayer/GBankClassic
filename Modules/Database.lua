@@ -161,7 +161,6 @@ function Database:Load(name)
 							local money = alt.money or 0
 							alt.inventoryHash = GBankClassic_Bank:ComputeInventoryHash(alt.items, money)
 							GBankClassic_Output:Debug("DATABASE", "Recomputed inventory hash after recalculation for %s: %d.", name, alt.inventoryHash)
-							--TODO
 						end
 					else
 						-- No source data, clear hash and version too
@@ -179,6 +178,16 @@ function Database:Load(name)
 							end
 						end
 						GBankClassic_Output:Debug("DATABASE", "Sampling (after recalculation) for guild bank alt %s of alt.items: %s.", name, table.concat(afterSample, ", "))
+					end
+
+					-- Recompute inventory hash
+					if alt.items then
+						local money = alt.money or 0
+						local syncHash = GBankClassic_Bank:ComputeInventoryHash(alt.items, money)
+						if syncHash ~= alt.inventoryHash then
+							alt.inventoryHash = syncHash
+							GBankClassic_Output:Debug("DATABASE", "Migrated alt data: corrected inventory hash for %s (hash=%d)", name, syncHash)
+						end
 					end
 
 					GBankClassic_Output:Debug("DATABASE", "Completed recalculation of aggregated alt.items for guild bank alt %s.", name)
@@ -390,8 +399,8 @@ function Database:GetDeltaHistory(name, altName, fromVersion, toVersion)
 	local currentVersion = fromVersion
 
 	for _, deltaEntry in ipairs(db.deltaHistory[altName]) do
-		if deltaEntry.previousVersion == currentVersion and deltaEntry.version <= toVersion then
-			table.insert(chain, { previousVersion = deltaEntry.previousVersion, version = deltaEntry.version, delta = deltaEntry.delta })
+		if deltaEntry.baseVersion == currentVersion and deltaEntry.version <= toVersion then
+			table.insert(chain, { baseVersion = deltaEntry.baseVersion, version = deltaEntry.version, delta = deltaEntry.delta })
 			currentVersion = deltaEntry.version
 
 			-- Stop if we've reached the target

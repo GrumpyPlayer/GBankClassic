@@ -854,8 +854,7 @@ local Guild = GBankClassic_Guild
 -- 		tombstones = self.Info.requestsTombstones or {},
 -- 	}
 -- 	local data = GBankClassic_Core:SerializeWithChecksum(payload)
--- 	-- Send on old prefix for backwards compat; new clients listen on both
--- 	GBankClassic_Core:SendCommMessage("gbank-d", data, "Guild", target, "BULK") -- TODO: We're no longer using togbank-d (for us, gbank-d = togbank-d3)
+--	GBankClassic_Core:SendCommMessage("gbank-rd", data, "Guild", target, "NORMAL")
 -- end
 
 -- function Guild:SendRequestsData(target)
@@ -934,11 +933,10 @@ local Guild = GBankClassic_Guild
 -- 		tombstones = tombstonesIndex,
 -- 	}
 -- 	local data = GBankClassic_Core:SerializeWithChecksum(payload)
--- 	-- Send on old prefix for backwards compat; new clients listen on both
 -- 	if target and target ~= "" then
--- 		GBankClassic_Core:SendWhisper("gbank-d", data, target, "BULK") -- TODO: We're no longer using togbank-d (for us, gbank-d = togbank-d3)
+-- 		GBankClassic_Core:SendWhisper("gbank-rd", data, target, "NORMAL")
 -- 	else
--- 		GBankClassic_Core:SendCommMessage("gbank-d", data, "Guild", nil, "BULK") -- TODO: We're no longer using togbank-d (for us, gbank-d = togbank-d3)
+-- 		GBankClassic_Core:SendCommMessage("gbank-rd", data, "Guild", nil, "NORMAL")
 -- 	end
 -- end
 
@@ -1062,11 +1060,10 @@ local Guild = GBankClassic_Guild
 -- 		tombstones = tombstones,
 -- 	}
 -- 	local data = GBankClassic_Core:SerializeWithChecksum(payload)
--- 	-- Send on old prefix for backwards compat; new clients listen on both
 -- 	if target and target ~= "" then
--- 		GBankClassic_Core:SendWhisper("gbank-d", data, target, "BULK") -- TODO: We're no longer using togbank-d (for us, gbank-d = togbank-d3)
+-- 		GBankClassic_Core:SendWhisper("gbank-rd", data, target, "NORMAL")
 -- 	else
--- 		GBankClassic_Core:SendCommMessage("gbank-d", data, "Guild", nil, "BULK") -- TODO: We're no longer using togbank-d (for us, gbank-d = togbank-d3)
+-- 		GBankClassic_Core:SendCommMessage("gbank-rd", data, "Guild", nil, "NORMAL")
 -- 	end
 -- end
 
@@ -1418,7 +1415,7 @@ local Guild = GBankClassic_Guild
 -- end
 
 -- -- Increment fulfillment for matching requests; returns amount applied.
--- function Guild:FulfillRequest(bank, requester, itemName, count)
+-- function Guild:FulfillRequest(bank, requester, itemName, count, targetRequestId)
 -- 	if not self.Info or not self.Info.requests or not bank or not requester or not itemName or not count or count <= 0 then
 -- 		return 0
 -- 	end
@@ -1440,7 +1437,10 @@ local Guild = GBankClassic_Guild
 -- 		local qty = tonumber(req.quantity or 0) or 0
 -- 		local fulfilled = tonumber(req.fulfilled or 0) or 0
 
--- 		if req.bank == normBank and req.requester == normRequester and reqItem == targetItem and fulfilled < qty then
+--      -- If targetRequestId specified, only fulfill that specific request
+--      local matchesTarget = (not targetRequestId) or (req.id == targetRequestId)
+
+--      if matchesTarget and req.bank == normBank and req.requester == normRequester and reqItem == targetItem and fulfilled < qty then
 -- 			local remaining = qty - fulfilled
 -- 			local delta = math.min(remaining, count)
 -- 			count = count - delta

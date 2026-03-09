@@ -102,6 +102,8 @@ function Core:SerializeWithChecksum(data)
     end
 
     local checksum = self:Checksum(serialized)
+    
+    return serialized .. CHECKSUM_SEPARATOR .. tostring(checksum)
 end
 
 -- Deserialize data and verify checksum; returns success, data (or nil, error)

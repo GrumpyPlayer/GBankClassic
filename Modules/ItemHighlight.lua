@@ -15,6 +15,7 @@
 -- -- Throttling to prevent Bagnon execution timeout
 -- local REFRESH_THROTTLE = 0.5 -- seconds
 -- local lastRefresh = 0
+-- local pendingRefresh = false
 
 -- -- Initialize the module
 -- function ItemHighlight:Initialize()
@@ -34,6 +35,7 @@
 -- 			if now - lastRefresh < REFRESH_THROTTLE then
 -- 				-- Schedule delayed refresh if not already pending
 -- 				if not pendingRefresh then
+				    -- local delay = math.max(0, REFRESH_THROTTLE - (now - lastRefresh))
 -- 					pendingRefresh = true
 -- 					C_Timer.After(REFRESH_THROTTLE, function()
 -- 						pendingRefresh = false

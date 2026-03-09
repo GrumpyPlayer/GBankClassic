@@ -439,6 +439,9 @@
 -- 		registerBagEvents()
 -- 	end
 
+--	-- Pull latest request state without needing to wait for the periodic timer
+--	GBankClassic_Guild:QueryRequestsIndex(nil, "NORMAL")
+
 -- 	if _G["GBankClassic"] then
 -- 		_G["GBankClassic"]:Show()
 -- 	else
@@ -1379,13 +1382,18 @@
 -- 					if row and row.fulfillButton and row.fulfillButton.frame then
 -- 						-- Special case: if split is needed, keep button enabled (PrepareFulfillMail will handle it)
 -- 						local needsSplit = fulfillReason and fulfillReason:find("Split")
--- 						local buttonEnabled = fulfillEnabled or (canFulfill and mailboxOpen and needsSplit)
+--						local isPartial = fulfillReason and string.find(fulfillReason, "Partial")
+--						local buttonEnabled = fulfillEnabled or (canFulfill and mailboxOpen and (needsSplit or isPartial))
 -- 						row.fulfillButton.frame.gbankDisabled = not buttonEnabled
 -- 						row.fulfillButton.frame:SetAlpha(buttonEnabled and 1.0 or 0.4)
 
 -- 						-- Determine icon and tooltip based on state
 -- 						local icon, tooltipDetail
--- 						if fulfillReason and fulfillReason:find("Split") then
+-- 						if fulfillReason and string.find(fulfillReason, "Partial") then
+--							-- Partial fulfillment available - show envelope icon
+--							icon = FULFILL_ICON_READY
+--							tooltipDetail = fulfillReason
+--						elsif fulfillReason and fulfillReason:find("Split") then
 -- 							-- Split needed - show special icon (shovel)
 -- 							icon = FULFILL_ICON_NEED_SPLIT
 -- 							tooltipDetail = fulfillReason
@@ -1396,11 +1404,11 @@
 -- 						elseif not mailboxOpen then
 -- 							icon = FULFILL_ICON_NO_MAILBOX
 -- 							tooltipDetail = "Open a mailbox to fulfill this request."
--- 						elseif fulfillReason and fulfillReason:find("Split") then
+-- 						elseif fulfillReason and string.find(fulfillReason, "Split") then
 -- 							-- Stack size issue
 -- 							icon = FULFILL_ICON_NEED_SPLIT
 -- 							tooltipDetail = fulfillReason
--- 						elseif fulfillReason and fulfillReason:find("not in bags") then
+-- 						elseif fulfillReason and string.find(fulfillReason, "not in bags") then
 -- 							-- Items in bank but not picked up
 -- 							icon = FULFILL_ICON_NOT_IN_BAGS
 -- 							tooltipDetail = fulfillReason
