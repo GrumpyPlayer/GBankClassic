@@ -19,10 +19,12 @@ Globals.wipe = wipe
 -- WoW APIs
 local IsInRaid = IsInRaid
 local IsInGuild = IsInGuild
+local IsInInstance = IsInInstance
 local IsShiftKeyDown = IsShiftKeyDown
 local IsControlKeyDown = IsControlKeyDown
 Globals.IsInRaid = IsInRaid
 Globals.IsInGuild = IsInGuild
+Globals.IsInInstance = IsInInstance
 Globals.IsShiftKeyDown = IsShiftKeyDown
 Globals.IsControlKeyDown = IsControlKeyDown
 local FCF_DockFrame = FCF_DockFrame

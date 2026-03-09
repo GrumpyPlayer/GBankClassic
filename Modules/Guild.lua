@@ -32,7 +32,7 @@ local Globals = GBankClassic_Globals
 local upvalues = Globals.GetUpvalues("wipe", "debugprofilestop")
 local wipe = upvalues.wipe
 local debugprofilestop = upvalues.debugprofilestop
-local upvalues = Globals.GetUpvalues("GetNormalizedRealmName", "UnitName", "NewTicker", "IsInGuild", "GetGuildInfo", "GetNumGuildMembers", "GetGuildRosterInfo", "GetAddOnMetadata", "GetServerTime", "GetTime", "GetItemInfo", "After", "CanViewOfficerNote", "GuildRoster", "GuildControlGetNumRanks", "GuildControlGetRankFlags")
+local upvalues = Globals.GetUpvalues("GetNormalizedRealmName", "UnitName", "NewTicker", "IsInGuild", "GetGuildInfo", "GetNumGuildMembers", "GetGuildRosterInfo", "GetAddOnMetadata", "GetServerTime", "GetTime", "GetItemInfo", "After", "CanViewOfficerNote", "GuildControlGetNumRanks", "GuildControlGetRankFlags")
 local GetNormalizedRealmName = upvalues.GetNormalizedRealmName
 local UnitName = upvalues.UnitName
 local NewTicker = upvalues.NewTicker
@@ -46,7 +46,6 @@ local GetTime = upvalues.GetTime
 local GetItemInfo = upvalues.GetItemInfo
 local After = upvalues.After
 local CanViewOfficerNote = upvalues.CanViewOfficerNote
-local GuildRoster = upvalues.GuildRoster
 local GuildControlGetNumRanks = upvalues.GuildControlGetNumRanks
 local GuildControlGetRankFlags = upvalues.GuildControlGetRankFlags
 local upvalues = Globals.GetUpvalues("Item")
@@ -233,9 +232,7 @@ function Guild:Reset(name)
     self.Info = GBankClassic_Database:Load(name)
 	-- self:EnsureRequestsInitialized()
 	self:MigrateTempErrors()
-	After(1, function()
-		self:RebuildGuildBankAltsRoster()
-	end)
+	self:RebuildGuildBankAltsRoster()
 end
 
 -- Resets if the data does not already exist, only runs on GUILD_RANKS_UPDATE
@@ -255,9 +252,7 @@ function Guild:Init(name)
 	if self.Info then
 		-- self:EnsureRequestsInitialized()
 		self:MigrateTempErrors()
-		After(1, function()
-			self:RebuildGuildBankAltsRoster()
-		end)
+		self:RebuildGuildBankAltsRoster()
 
 		return true
 	end
@@ -420,6 +415,14 @@ end
 -- Performed after loading screen, guild join, important GUILD_ROSTER_UPDATE events, or when roster is empty (init/wipe)
 function Guild:RebuildGuildBankAltsRoster()
 	if not self.Info then
+		return
+	end
+
+	local time = GetServerTime()
+	if self.lastRosterRebuildTime == nil or time - self.lastRosterRebuildTime > 30 then
+		self.lastRosterRebuildTime = time
+	else
+		GBankClassic_Output:Debug("ROSTER", "Skipping excessive roster rebuild (last rebuild was %.2f seconds ago)", time - self.lastRosterRebuildTime)
 		return
 	end
 

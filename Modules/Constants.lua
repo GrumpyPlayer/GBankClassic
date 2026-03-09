@@ -59,7 +59,6 @@ DEBUG_CATEGORY = {
 
 -- Communication prefix descriptions for debug logging (maximum of 16 characters)
 COMM_PREFIX_DESCRIPTIONS = {
-	["gbank-v"] = "(Version)",
 	["gbank-dv"] = "(Delta version)",
 	["gbank-dv2"] = "(Delta version - Aggregate items)",
 	["gbank-d"] = "(Data - No links)", -- togbank-d3 (we're not using togbank-d)

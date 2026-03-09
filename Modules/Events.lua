@@ -7,9 +7,10 @@ local Globals = GBankClassic_Globals
 local upvalues = Globals.GetUpvalues("After", "wipe")
 local After = upvalues.After
 local wipe = upvalues.wipe
-local upvalues = Globals.GetUpvalues("hooksecurefunc", "GuildRoster", "IsInRaid", "MailFrame", "NewTimer", "GetTime", "IsInGuild")
+local upvalues = Globals.GetUpvalues("hooksecurefunc", "GuildRoster", "IsInInstance", "IsInRaid", "MailFrame", "NewTimer", "GetTime", "IsInGuild")
 local hooksecurefunc = upvalues.hooksecurefunc
 local GuildRoster = upvalues.GuildRoster
+local IsInInstance = upvalues.IsInInstance
 local IsInRaid = upvalues.IsInRaid
 local MailFrame = upvalues.MailFrame
 local NewTimer = upvalues.NewTimer
@@ -29,6 +30,7 @@ function Events:UnregisterEvent(...)
 end
 
 function Events:RegisterGuildBankAltEvents()
+	GBankClassic_Output:Debug("EVENTS", "RegisterGuildBankAltEvents called (GBankClassic_Bank.guildBankAltEventsRegistered=%s)", tostring(GBankClassic_Bank.guildBankAltEventsRegistered))
 	if GBankClassic_Bank.guildBankAltEventsRegistered then
 		return
 	end
@@ -86,6 +88,7 @@ function Events:RegisterGuildBankAltEvents()
 end
 
 function Events:RegisterEvents()
+	GBankClassic_Output:Debug("EVENTS", "RegisterEvents called (GBankClassic_Bank.eventsRegistered=%s)", tostring(GBankClassic_Bank.eventsRegistered))
 	if GBankClassic_Bank.eventsRegistered then
 		return
 	end
@@ -131,6 +134,7 @@ function Events:RegisterEvents()
 end
 
 function Events:UnregisterGuildBankAltEvents()
+	GBankClassic_Output:Debug("EVENTS", "UnregisterGuildBankAltEvents called (GBankClassic_Bank.guildBankAltEventsRegistered=%s)", tostring(GBankClassic_Bank.guildBankAltEventsRegistered))
 	if not GBankClassic_Bank.guildBankAltEventsRegistered then
 		return
 	end
@@ -152,6 +156,7 @@ function Events:UnregisterGuildBankAltEvents()
 end
 
 function Events:UnregisterEvents()
+	GBankClassic_Output:Debug("EVENTS", "UnregisterEvents called (GBankClassic_Bank.eventsRegistered=%s)", tostring(GBankClassic_Bank.eventsRegistered))
 	if not GBankClassic_Bank.eventsRegistered then
 		return
 	end
@@ -175,31 +180,56 @@ end
 -- For all players
 function Events:PLAYER_ENTERING_WORLD(_, isInitialLogin, isReloadingUi)
 	GBankClassic_Output:Debug("EVENTS", "PLAYER_ENTERING_WORLD event fired (isInitialLogin=%s, isReloadingUi=%s)", tostring(isInitialLogin), tostring(isReloadingUi))
-	if isInitialLogin then
+	if not IsInGuild() then
+		self:ClearGuildCaches()
+
+		return
+	end
+
+	if IsInInstance() or IsInRaid() then
+		GBankClassic_Output:Debug("EVENTS", "PLAYER_ENTERING_WORLD: skipping (in instance or raid)")
+
+		return
+	end
+
+	if isInitialLogin == true then
 		GBankClassic_Guild:CleanupMalformedAlts()
 		-- GBankClassic_Guild:ShareAddonVersionData()
-	end
-	if IsInGuild() then
-		GBankClassic_Guild.rosterRefreshNeeded = true
+	elseif isReloadingUi == true then
 		GBankClassic_Guild:GetNormalizedPlayer()
+		GBankClassic_Guild.rosterRefreshNeeded = true
 		GuildRoster()
-	else
-		self:ClearGuildCaches()
 	end
 end
 
 function Events:PLAYER_GUILD_UPDATE(_)
-	if IsInGuild() then
-		GBankClassic_Guild.rosterRefreshNeeded = true
-		GuildRoster()
-	else
+	GBankClassic_Output:Debug("EVENTS", "PLAYER_GUILD_UPDATE event fired")
+	if not IsInGuild() then
 		self:ClearGuildCaches()
+
+		return
 	end
+
+	if IsInInstance() or IsInRaid() then
+		GBankClassic_Output:Debug("EVENTS", "PLAYER_GUILD_UPDATE: skipping (in instance or raid)")
+
+		return
+	end
+
+	GBankClassic_Guild.rosterRefreshNeeded = true
+	GuildRoster()
 end
 
 function Events:GUILD_ROSTER_UPDATE(_, importantChange)
+	GBankClassic_Output:Debug("EVENTS", "GUILD_ROSTER_UPDATE event fired (importantChange=%s)", tostring(importantChange))
 	if not IsInGuild() then
 		self:ClearGuildCaches()
+
+		return
+	end
+
+	if IsInInstance() or IsInRaid() then
+		GBankClassic_Output:Debug("EVENTS", "GUILD_ROSTER_UPDATE: skipping (in instance or raid)")
 
 		return
 	end
@@ -219,6 +249,19 @@ function Events:GUILD_ROSTER_UPDATE(_, importantChange)
 end
 
 function Events:GUILD_RANKS_UPDATE(_)
+	GBankClassic_Output:Debug("EVENTS", "GUILD_RANKS_UPDATE event fired")
+	if not IsInGuild() then
+		self:ClearGuildCaches()
+
+		return
+	end
+
+	if IsInInstance() or IsInRaid() then
+		GBankClassic_Output:Debug("EVENTS", "GUILD_RANKS_UPDATE: skipping (in instance or raid)")
+
+		return
+	end
+
 	local guild = GBankClassic_Guild:GetGuildName()
 	if not guild then
 		return
@@ -226,12 +269,6 @@ function Events:GUILD_RANKS_UPDATE(_)
 
 	if GBankClassic_Guild:Init(guild) then
 		GBankClassic_Options:InitGuild()
-
-		if IsInRaid() then
-			GBankClassic_Output:Debug("EVENTS", "GUILD_RANKS_UPDATE: ignoring guild ranks cleanup (in raid)")
-
-			return
-		end
         
 		local cleaned = GBankClassic_Guild:CleanupMalformedAlts()
 		if cleaned and cleaned > 0 then
@@ -250,14 +287,14 @@ function Events:GUILD_RANKS_UPDATE(_)
 end
 
 function Events:PLAYER_REGEN_DISABLED(_)
+	GBankClassic_Output:Debug("EVENTS", "PLAYER_REGEN_DISABLED event fired (GBankClassic_Options:GetCombatHide()=%s)", tostring(GBankClassic_Options:GetCombatHide()))
     if GBankClassic_Options:GetCombatHide() then
         GBankClassic_UI_Inventory:Close()
     end
 end
 
 function Events:MAIL_SHOW(_)
-	GBankClassic_Output:Debug("MAIL", "MAIL_SHOW event fired")
-
+	GBankClassic_Output:Debug("EVENTS", "MAIL_SHOW event fired")
     GBankClassic_Bank:OnUpdateStart()
 	GBankClassic_MailInventory.hasUpdated = true
 	GBankClassic_Output:Debug("MAIL", "MailInventory.hasUpdated set to %s", tostring(GBankClassic_MailInventory.hasUpdated))
@@ -276,8 +313,7 @@ function Events:MAIL_SHOW(_)
 end
 
 function Events:MAIL_CLOSED(_)
-	GBankClassic_Output:Debug("MAIL", "MAIL_CLOSED event fired")
-
+	GBankClassic_Output:Debug("EVENTS", "MAIL_CLOSED event fired")
     if GBankClassic_Mail.donationItemRegistry then
         wipe(GBankClassic_Mail.donationItemRegistry)
     end
@@ -314,7 +350,14 @@ end
 
 -- For guild bank alts
 function Events:BAG_UPDATE_DELAYED(_)
+	GBankClassic_Output:Debug("EVENTS", "BAG_UPDATE_DELAYED event fired (bagUpdateTimer=%s)", tostring(bagUpdateTimer))
     if bagUpdateTimer then
+		return
+	end
+
+	if IsInInstance() or IsInRaid() then
+		GBankClassic_Output:Debug("EVENTS", "BAG_UPDATE_DELAYED: skipping (in instance or raid)")
+
 		return
 	end
 	
@@ -362,12 +405,12 @@ function Events:TRADE_CLOSED(_)
 end
 
 function Events:CHAT_MSG_LOOT(_, message)
-	GBankClassic_Output:Debug("DONATION", "CHAT_MSG_LOOT event fired")
+	GBankClassic_Output:Debug("EVENTS", "CHAT_MSG_LOOT event fired")
 	GBankClassic_Mail:ProcessPossibleItemDonation(message)
 end
 
 function Events:PLAYER_MONEY(_)
-	GBankClassic_Output:Debug("DONATION", "PLAYER_MONEY event fired")
+	GBankClassic_Output:Debug("EVENTS", "PLAYER_MONEY event fired")
 	GBankClassic_Mail:ProcessPossibleMoneyDonation()
 end
 
@@ -383,6 +426,24 @@ end
 
 function Events:OnShareTimer()
 	GBankClassic_Output:Debug("EVENTS", "OnShareTimer fired")
+	if not IsInGuild() then
+		self:ClearGuildCaches()
+
+		return
+	end
+
+	if IsInInstance() or IsInRaid() then
+		GBankClassic_Output:Debug("EVENTS", "OnShareTimer: skipping (in instance or raid)")
+
+		return
+	end
+
+	if GBankClassic_Guild.onlineMembersCount < 1 then
+		GBankClassic_Output:Debug("EVENTS", "OnShareTimer: skipping (nobody else online)")
+
+		return
+	end
+
 	GBankClassic_Guild:Share("reply")
 	-- GBankClassic_Guild:QueryRequestsIndex(nil, "NORMAL")
 	self:SetShareTimer()
@@ -394,6 +455,6 @@ function Events:ClearGuildCaches()
 	wipe(GBankClassic_Guild.banksCache)
 	wipe(GBankClassic_Guild.guildMembersCache)
     GBankClassic_Guild.onlineMembersCount = 0
-    GBankClassic_Guild.rosterRefreshNeeded = true
+    GBankClassic_Guild.rosterRefreshNeeded = nil
     GBankClassic_Guild.canWeViewOfficerNotes = nil
 end

@@ -8,9 +8,10 @@ local upvalues = Globals.GetUpvalues("time", "date", "debugprofilestop")
 local time = upvalues.time
 local date = upvalues.date
 local debugprofilestop = upvalues.debugprofilestop
-local upvalues = Globals.GetUpvalues("GetClassColor", "IsInRaid", "After", "GetServerTime", "GetAddOnMetadata")
+local upvalues = Globals.GetUpvalues("GetClassColor", "IsInRaid", "IsInInstance", "After", "GetServerTime", "GetAddOnMetadata")
 local GetClassColor = upvalues.GetClassColor
 local IsInRaid = upvalues.IsInRaid
+local IsInInstance = upvalues.IsInInstance
 local After = upvalues.After
 local GetServerTime = upvalues.GetServerTime
 local GetAddOnMetadata = upvalues.GetAddOnMetadata
@@ -211,7 +212,7 @@ function Chat:ProcessDelayedDvMessage(sender, data, prefix, message, distributio
 	self:ProcessVersionBroadcast(prefix, data, sender, message, distribution)
 end
 
--- Process version broadcast message (gbank-v, gbank-dv, gbank-dv2)
+-- Process version broadcast message (gbank-dv, gbank-dv2)
 function Chat:ProcessVersionBroadcast(prefix, data, sender, message, distribution)
 	local isDeltaVersion = (prefix == "gbank-dv" or prefix == "gbank-dv2")
 	local isDV2 = (prefix == "gbank-dv2")
@@ -366,17 +367,10 @@ function Chat:OnCommReceived(prefix, message, distribution, sender)
 	local player = GBankClassic_Guild:GetNormalizedPlayer()
 	sender = GBankClassic_Guild:NormalizeName(sender) or sender
 
-	-- Log all incoming messages before any filtering
-	if prefix == "gbank-dv" then
-		GBankClassic_Output:Debug("COMMS", "Received: %s from %s (%d bytes)", prefix, sender, #message)
-	end
+	GBankClassic_Output:DebugComm("Received: %s via %s from %s (%d bytes)", prefix, string.upper(distribution), sender, #message)
 
-	if distribution == "WHISPER" or prefix == "gbank-r" or prefix == "gbank-rr" then
-		GBankClassic_Output:DebugComm("Received: %s via %s from %s", prefix, distribution, sender)
-	end
-
-	if IsInRaid() then
-		GBankClassic_Output:Debug("PROTOCOL", "> (ignoring)", prefix, prefixDesc, "from", colorPlayerName(sender), "(in raid)")
+	if IsInInstance() or IsInRaid() then
+		GBankClassic_Output:Debug("PROTOCOL", "> (ignoring)", prefix, prefixDesc, "from", colorPlayerName(sender), "(in instance or raid)")
 
 		return
 	end
@@ -394,26 +388,11 @@ function Chat:OnCommReceived(prefix, message, distribution, sender)
         return
 	end
 
-	GBankClassic_Output:Debug("PROTOCOL", ">", colorPlayerName(sender), ">", prefix, prefixDesc)
-	GBankClassic_Output:DebugComm("Received: %s from %s via %s (%d bytes)", prefix, sender, string.upper(distribution), #message, data.type and ", type=" .. tostring(data and data.type) or "")
+	GBankClassic_Output:Debug("PROTOCOL", ">", colorPlayerName(sender), ">", prefix, prefixDesc, data.type and ", type=" .. tostring(data and data.type) or "")
 
-
-	-- Log what we deserialized for gbank-dv
-	if prefix == "gbank-dv" then
+	if prefix == "gbank-dv" or prefix == "gbank-dv2" then
 		local altCount = data and data.alts and GBankClassic_Globals:Count(data.alts)
-		GBankClassic_Output:Debug("PROTOCOL", "gbank-dv from %s: success=%s, has data=%s, has data.alts=%s, altCount=%d", sender, tostring(success), tostring(data ~= nil), tostring(data and data.alts ~= nil), altCount)
-	end
-
-	if prefix ~= "gbank-r" then
-		-- gbank-r does its own output
-		GBankClassic_Output:Debug("PROTOCOL", ">", colorPlayerName(sender), ">", prefix, prefixDesc)
-	end
-
-	if prefix == "gbank-v" or prefix == "gbank-dv" or prefix == "gbank-dv2" then
-		-- Delta clients ignore legacy version broadcasts
-		if prefix == "gbank-v" then
-			return
-		end
+		GBankClassic_Output:Debug("PROTOCOL", "%s from %s: success=%s, has data=%s, has data.alts=%s, altCount=%d", prefix, sender, tostring(success), tostring(data ~= nil), tostring(data and data.alts ~= nil), altCount)
 
 		-- New clients only listen to gbank-dv2, ignore gbank-dv
 		-- Legacy clients only listen to gbank-dv, ignore gbank-dv2
@@ -465,8 +444,6 @@ function Chat:OnCommReceived(prefix, message, distribution, sender)
 	end
 
 	if prefix == "gbank-r" then
-		GBankClassic_Output:DebugComm("gbank-r type = %s from %s", tostring(data.type), sender)
-
 		-- Check if this is a pull-based request (has type == "alt-request")
 		if data.type == "alt-request" then
 			-- Pull-based request flow - respond with gbank-rr acknowledgment
@@ -614,7 +591,7 @@ function Chat:OnCommReceived(prefix, message, distribution, sender)
 		end
 	end
 
-	-- State summary handler (gbank-state) - Step 5 & 6 of pull-based flow
+	-- State summary handler (gbank-state)
 	if prefix == "gbank-state" then
 		if data.type == "state-summary" then
 			local altName = data.name
