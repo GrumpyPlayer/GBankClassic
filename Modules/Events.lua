@@ -194,7 +194,6 @@ function Events:PLAYER_ENTERING_WORLD(_, isInitialLogin, isReloadingUi)
 
 	if isInitialLogin == true then
 		GBankClassic_Guild:CleanupMalformedAlts()
-		-- GBankClassic_Guild:ShareAddonVersionData()
 	elseif isReloadingUi == true then
 		GBankClassic_Guild:GetNormalizedPlayer()
 		GBankClassic_Guild.rosterRefreshNeeded = true
@@ -325,12 +324,8 @@ function Events:MAIL_CLOSED(_)
     GBankClassic_Mail.isOpen = false
     -- GBankClassic_Mail.isScanning = false
 
-	GBankClassic_Output:Debug("MAIL", "Calling Bank:OnUpdateStart()")
     GBankClassic_Bank:OnUpdateStart()
-	GBankClassic_Output:Debug("MAIL", "Bank:OnUpdateStart() completed")
-	GBankClassic_Output:Debug("MAIL", "Calling Bank:OnUpdateStop()")
     GBankClassic_Bank:OnUpdateStop()
-	GBankClassic_Output:Debug("MAIL", "Bank:OnUpdateStop() completed")
 
     -- GBankClassic_UI_Mail:Close()
 	-- -- Refresh requests UI to update fulfill button states
@@ -362,12 +357,8 @@ function Events:BAG_UPDATE_DELAYED(_)
 	end
 	
     bagUpdateTimer = NewTimer(TIMER_INTERVALS.ALT_DATA_QUEUE_RETRY, function()
-		GBankClassic_Output:Debug("INVENTORY", "Calling Bank:OnUpdateStart()")
 		GBankClassic_Bank:OnUpdateStart()
-		GBankClassic_Output:Debug("INVENTORY", "Bank:OnUpdateStart() completed")
-		GBankClassic_Output:Debug("INVENTORY", "Calling Bank:OnUpdateStop()")
 		GBankClassic_Bank:OnUpdateStop()
-		GBankClassic_Output:Debug("INVENTORY", "Bank:OnUpdateStop() completed")
         bagUpdateTimer = nil
     end)
 end

@@ -5,10 +5,9 @@ local UI_Inventory = GBankClassic_UI_Inventory
 local Globals = GBankClassic_Globals
 local upvalues = Globals.GetUpvalues("date")
 local date = upvalues.date
-local upvalues = Globals.GetUpvalues("GetServerTime", "GetCoinTextureString", "SecondsToTime", "IsShiftKeyDown", "IsControlKeyDown")
+local upvalues = Globals.GetUpvalues("GetServerTime", "GetCoinTextureString", "IsShiftKeyDown", "IsControlKeyDown")
 local GetServerTime = upvalues.GetServerTime
 local GetCoinTextureString = upvalues.GetCoinTextureString
-local SecondsToTime = upvalues.SecondsToTime
 local IsShiftKeyDown = upvalues.IsShiftKeyDown
 local IsControlKeyDown = upvalues.IsControlKeyDown
 
@@ -18,9 +17,9 @@ end
 
 local function queryEmpty()
 	local now = GetServerTime()
-	local last = UI_Inventory.last_empty_sync or 0
+	local last = UI_Inventory.lastEmptySync or 0
 	if now - last > 30 then
-		UI_Inventory.last_empty_sync = now
+		UI_Inventory.lastEmptySync = now
 		GBankClassic_Guild:Share()
 	end
 end
@@ -47,7 +46,7 @@ function UI_Inventory:Open()
 	end
 
     self.isOpen = true
-    
+
     if not self.Window then
         self:DrawWindow()
     end
@@ -69,10 +68,7 @@ function UI_Inventory:Open()
 end
 
 function UI_Inventory:Close()
-	if not self.isOpen then
-		return
-	end
-	if not self.Window then
+	if not self.isOpen or not self.Window then
 		return
 	end
 
@@ -91,7 +87,7 @@ function UI_Inventory:DrawWindow()
 	if GBankClassic_Options and GBankClassic_Options.db then
 		window:SetStatusTable(GBankClassic_Options.db.char.framePositions)
 	end
-    
+
     window.frame:SetResizeBounds(500, 500)
     window.frame:EnableKeyboard(true)
     window.frame:SetPropagateKeyboardInput(true)
@@ -302,14 +298,14 @@ function UI_Inventory:DrawContent()
 
             -- Track scroll container to prevent race conditions
             scroll.callbackProcessed = false
-            
+
             local normTab = GBankClassic_Guild:NormalizeName(tab) or tab
             local alt = info.alts[normTab]
-            
+
             -- Use alt.items if available
             -- Otherwise compute from sources for backward compatibility
             local items = {}
-            
+
             if alt.items and next(alt.items) ~= nil then
                 -- Use alt.items directly (may be array or key-value)
                 for _, item in pairs(alt.items) do
@@ -321,9 +317,9 @@ function UI_Inventory:DrawContent()
                 local bankItems = (alt.bank and alt.bank.items) or {}
                 local bagItems = (alt.bags and alt.bags.items) or {}
                 local mailItems = (alt.mail and alt.mail.items) or {}
-                
+
                 GBankClassic_Output:Debug("INVENTORY", "Inventory tab %s: computing from sources bank=%d, bags=%d, mail=%d", tab, #bankItems, #bagItems, #mailItems)
-                
+
                 -- Aggregate all sources (all are now in array format), then convert the key-value result to array
                 local aggregated = GBankClassic_Item:Aggregate(bankItems, bagItems)
                 aggregated = GBankClassic_Item:Aggregate(aggregated, mailItems)
@@ -331,7 +327,7 @@ function UI_Inventory:DrawContent()
                     table.insert(items, item)
                 end
             end
-            
+
             GBankClassic_Output:Debug("INVENTORY", "Inventory tab %s: aggregated to %d unique items", tab, #items)
 
             -- Show loading indicator immediately
@@ -339,7 +335,7 @@ function UI_Inventory:DrawContent()
             loadingLabel:SetText("|cff808080Please wait...|r")
             loadingLabel:SetFullWidth(true)
             scroll:AddChild(loadingLabel)
-            
+
             if items and #items > 0 then
                 -- Check for duplicate item IDs with different links
                 local itemsByID = {}
@@ -359,7 +355,7 @@ function UI_Inventory:DrawContent()
                         end
                     end
                 end
-                
+
                 -- Validate and filter items before passing to GetItems
                 local validItems = {}
                 for i, item in ipairs(items) do
@@ -369,7 +365,7 @@ function UI_Inventory:DrawContent()
                         GBankClassic_Output:Debug("INVENTORY", "WARNING: Tab %s skipping invalid item at index %d (ID: %s, link: %s)", tab, i, tostring(item and item.ID or "nil item"), tostring(item and item.Link or "nil"))
                     end
                 end
-                
+
                 local selectedTab = tab
                 GBankClassic_Item:GetItems(validItems, function(list)
                     -- Prevent callback from running twice on same scroll container
@@ -458,6 +454,6 @@ function UI_Inventory:GetPercentColor(percent)
     elseif percent > 0.9 then
         color = "ffff0000"
     end
-    
+
     return color
 end

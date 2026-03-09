@@ -26,7 +26,6 @@ local GameFontNormal = upvalues.GameFontNormal
 local upvalues = Globals.GetUpvalues("NUM_CHAT_WINDOWS")
 local NUM_CHAT_WINDOWS = upvalues.NUM_CHAT_WINDOWS
 
--- Category filtering helpers
 function Output:IsCategoryEnabled(category)
 	if not GBankClassic_Database or not GBankClassic_Database.db then
 		return false
@@ -39,7 +38,7 @@ function Output:SetCategoryEnabled(category, enabled)
 	if not GBankClassic_Database or not GBankClassic_Database.db then
 		return
 	end
-	
+
 	GBankClassic_Database.db.global.debugCategories[category] = enabled
 end
 
@@ -227,28 +226,6 @@ function Output:CreateDebugTab()
 	GBankClassic_Core:Print("You can now right-click the tab to customize or close it")
 
 	return true
-end
-
--- Remove debug tab
-function Output:RemoveDebugTab()
-	for i = 1, NUM_CHAT_WINDOWS do
-		local name = GetChatWindowInfo(i)
-		if name == "GBankClassicDebug" then
-			local frame = _G["ChatFrame"..i]
-			-- Reset the frame completely
-			FCF_SetWindowName(frame, "Combat Log", i)
-			FCF_ResetChatWindows()
-			frame:Hide()
-			self.debugFrame = nil
-			GBankClassic_Core:Print("Removed GBankClassicDebug tab - please /reload to complete removal")
-
-			return true
-		end
-	end
-
-	GBankClassic_Core:Print("GBankClassicDebug tab not found")
-
-	return false
 end
 
 -- Core logging function

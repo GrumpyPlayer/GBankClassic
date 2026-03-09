@@ -38,7 +38,7 @@ function Items:NeedsLink(itemLink)
 	if ITEM_CLASSES_NEEDING_LINK[classID] == true then
 		return true
 	end
-	
+
 	-- Other items don't vary, so link can be stripped
 	return false
 end
@@ -50,19 +50,19 @@ function Items:GetItemKey(link)
 	if not link or link == "" then
 		return ""
 	end
-	
+
 	local itemString = link:match("|Hitem:([^|]+)|h")
 	if not itemString then
 		itemString = link:match("item:([%d:]+)")
 	end
-	
+
 	if itemString then
 		-- Split into parts
 		local parts = {}
 		for part in string.gmatch(itemString, "([^:]+)") do
 			table.insert(parts, part)
 		end
-		
+
 		-- Keep first 7 parts only (strip uniqueID and specializationID)
 		if #parts >= 7 then
 			return "item:" .. table.concat({parts[1], parts[2], parts[3], parts[4], parts[5], parts[6], parts[7]}, ":")
@@ -70,7 +70,7 @@ function Items:GetItemKey(link)
 			return "item:" .. itemString
 		end
 	end
-	
+
 	return link
 end
 
@@ -115,7 +115,7 @@ function Items:GetItems(items, callback)
 
         return
     end
-	
+
 	local function checkComplete()
 		if not callbackFired and processed >= total and pendingAsync == 0 then
 			callbackFired = true
@@ -127,10 +127,10 @@ function Items:GetItems(items, callback)
 		local itemID = wrapper.id
 		local itemLink = wrapper.link
 		local item = wrapper.original
-		
+
 		-- Log what we're about to process
 		GBankClassic_Output:Debug("ITEM", "Processing wrapper: id=%s, link=%s, original.ID=%s", tostring(itemID), tostring(itemLink), tostring(item and item.ID or "nil item"))
-		
+
 		-- Final safety check before calling WoW API
 		if not itemID or type(itemID) ~= "number" or itemID <= 0 then
 			GBankClassic_Output:Debug("ITEM", "Skipping invalid: itemID=%s (type=%s)", tostring(itemID), type(itemID))
@@ -141,7 +141,7 @@ function Items:GetItems(items, callback)
 			local capturedItemID = itemID
 			local capturedItemLink = itemLink
 			local capturedItem = item
-			
+
 			-- Double-check captured values
 			if not capturedItemID or type(capturedItemID) ~= "number" or capturedItemID <= 0 then
 				GBankClassic_Output:Debug("ITEM", "ERROR: itemID validation failed after capture!")
@@ -174,10 +174,10 @@ function Items:GetItems(items, callback)
 						-- Item not cached, need async load
 						GBankClassic_Output:Debug("ITEM", "Item %d not cached, calling CreateFromItemID", capturedItemID)
 						pendingAsync = pendingAsync + 1
-						
+
 						local success, itemData = pcall(Item.CreateFromItemID, Item, capturedItemID)
 						GBankClassic_Output:Debug("ITEM", "CreateFromItemID result: success=%s, itemData=%s, type=%s", tostring(success), tostring(itemData), type(itemData))
-						
+
 						if not success then
 							GBankClassic_Output:Debug("ITEM", "CreateFromItemID pcall failed: %s", tostring(itemData))
 							processed = processed + 1
@@ -193,14 +193,14 @@ function Items:GetItems(items, callback)
 						else
 							-- Got an item object, now inspect its internal state
 							GBankClassic_Output:Debug("ITEM", "Inspecting item object for ID %d", capturedItemID)
-							
+
 							-- Try to access internal fields safely
 							local objectItemID = nil
 							local accessSuccess = pcall(function()
 								objectItemID = itemData.itemID
 							end)
 							GBankClassic_Output:Debug("ITEM", "Internal field access: accessSuccess=%s, itemData.itemID=%s, type=%s", tostring(accessSuccess), tostring(objectItemID), type(objectItemID))
-							
+
 							-- Check if itemID matches what we expect
 							if not accessSuccess then
 								GBankClassic_Output:Debug("ITEM", "Cannot access itemData.itemID (protected?)")
@@ -221,7 +221,7 @@ function Items:GetItems(items, callback)
 							else
 								-- Everything looks good, try ContinueOnItemLoad
 								GBankClassic_Output:Debug("ITEM", "Item object valid (itemID=%d), calling ContinueOnItemLoad", objectItemID)
-								
+
 								local callbackSuccess, callbackError = pcall(function()
 									itemData:ContinueOnItemLoad(function()
 										GBankClassic_Output:Debug("ITEM", "ContinueOnItemLoad callback fired for ID %d", capturedItemID)
@@ -233,9 +233,9 @@ function Items:GetItems(items, callback)
 									end)
 								end)
 								GBankClassic_Output:Debug("ITEM", "ContinueOnItemLoad pcall result: success=%s, error=%s", tostring(callbackSuccess), tostring(callbackError))
-								
+
 								processed = processed + 1
-								
+
 								if not callbackSuccess then
 									GBankClassic_Output:Debug("ITEM", "ContinueOnItemLoad pcall failed for ID %d: %s", capturedItemID, tostring(callbackError))
 									pendingAsync = pendingAsync - 1
@@ -248,24 +248,24 @@ function Items:GetItems(items, callback)
 			end
 		end
 	end
-	
+
 	-- After processing all items, check if we can fire callback (handles case where all items had links and were processed synchronously)
 	checkComplete()
 end
 
 function Items:GetInfo(id, link)
 	local name, _, rarity, level, _, _, _, _, _, icon, price, itemClassId, itemSubClassId
-	
+
 	-- Try link first if available
 	if link and link ~= "" then
 		name, _, rarity, level, _, _, _, _, _, icon, price, itemClassId, itemSubClassId = GetItemInfo(link)
 	end
-	
+
 	-- Fallback to ID if link didn't work
 	if not name and id and id > 0 then
 		name, _, rarity, level, _, _, _, _, _, icon, price, itemClassId, itemSubClassId = GetItemInfo(id)
 	end
-	
+
 	-- If still no data, return basic info with ID only and the default grey question mark icon
 	if not name then
 		return { class = 0, subClass = 0, equipId = 0, rarity = 1, name = "Item " .. tostring(id or "?"), level = 1, price = 0, icon = 134400 }
@@ -324,7 +324,7 @@ function Items:Sort(items)
         if a.Info.class == b.Info.class and a.Info.subClass == b.Info.subClass then
             return basicSort(a, b)
         end
-		
+
         return (a.Info.subClass or 99) < (b.Info.subClass or 99)
     end)
 end
@@ -433,7 +433,7 @@ function Items:IsUnique(link)
 	if not link then
 		return false
 	end
-    
+
     local tip = CreateFrame("GameTooltip", "scanTip", UIParent, "GameTooltipTemplate")
     tip:ClearLines()
     tip:SetOwner(UIParent, "ANCHOR_NONE")

@@ -49,7 +49,7 @@ local function scanBag(bag, slots)
     return count, items
 end
 
-local function scanBags(bag_info)
+local function scanBags(baginfo)
     local total = 0
     local numslots = 0
     local bagItems = nil
@@ -74,13 +74,13 @@ local function scanBags(bag_info)
     end
 
     for _, v in pairs(bagItems) do
-        table.insert(bag_info, v)
+        table.insert(baginfo, v)
     end
 
     return total, numslots
 end
 
-local function scanBank(bank_info)
+local function scanBank(bankinfo)
     local numslots = NUM_BANKGENERIC_SLOTS
     local total, bankItems = scanBag(BANK_CONTAINER, NUM_BANKGENERIC_SLOTS)
 
@@ -100,7 +100,7 @@ local function scanBank(bank_info)
     end
 
     for _, v in pairs(bankItems) do
-        table.insert(bank_info, v)
+        table.insert(bankinfo, v)
     end
 
     return total, numslots
@@ -119,7 +119,6 @@ function Bank:Scan()
     end
 
 	local player = GBankClassic_Guild:GetNormalizedPlayer()
-    
     local isBank = false
     local guildBankAlts = GBankClassic_Guild:GetRosterGuildBankAlts()
 	if not guildBankAlts or #guildBankAlts == 0 then
@@ -141,10 +140,6 @@ function Bank:Scan()
     if not GBankClassic_Options:GetBankEnabled() then
 		return
 	end
-
-	-- Some players may be unable to view officer notes defining guild bank alts
-	info.roster.alts = guildBankAlts
-	info.roster.version = GetServerTime()
 
 	local alt = {}
 	-- Load from aggregate view (info.alts)
@@ -173,26 +168,26 @@ function Bank:Scan()
 
 	-- Scan mail inventory if mail was accessed
 	GBankClassic_Output:Debug("INVENTORY", "Bank:Scan() for player '%s', hasUpdated=%s", player, tostring(GBankClassic_MailInventory.hasUpdated))
-	
+
 	if GBankClassic_MailInventory.hasUpdated then
 		GBankClassic_Output:Debug("INVENTORY", "Starting mail scan for player '%s'", player)
-		
+
 		local mailData = GBankClassic_MailInventory:ScanMailInventory()
 		if mailData then
 			local itemCount = GBankClassic_Globals:Count(mailData.items)
-			
+
 			-- Check if alt.mail already exists
 			local hadPreviousMail = alt.mail ~= nil
 			local previousItemCount = 0
 			if hadPreviousMail and alt.mail.items then
 				previousItemCount = #alt.mail.items
 			end
-			
+
 			GBankClassic_Output:Debug("INVENTORY", "Replacing mail data for '%s': old=%d items, new=%d items", player, previousItemCount, itemCount)
-			
+
 			alt.mail = mailData
 			GBankClassic_Output:Debug("INVENTORY", "Assigned alt.mail with %d items, version=%s, lastScan=%s", #mailData.items, tostring(mailData.version), tostring(mailData.lastScan))
-			
+
 			-- Verify assignment worked
 			if alt.mail then
 				GBankClassic_Output:Debug("INVENTORY", "Confirmed: alt.mail exists with %d items", #alt.mail.items)
@@ -240,17 +235,17 @@ function Bank:Scan()
 		end
 		GBankClassic_Output:Debug("INVENTORY", "  mail.items (first 3): %s", table.concat(mailSample, ", "))
 	end
-	
+
 	-- Aggregate all three sources (returns table with composite keys, deduplicates by ID)
 	local aggregated = GBankClassic_Item:Aggregate(bankItems, bagItems)
 	aggregated = GBankClassic_Item:Aggregate(aggregated, mailItems)
-	
+
 	-- Convert back to array format for storage/sync/display
 	alt.items = {}
 	for _, item in pairs(aggregated) do
 		table.insert(alt.items, item)
 	end
-	
+
 	-- Log sample counts after aggregation
 	if alt.items and #alt.items > 0 then
 		local scanSample = {}
@@ -262,7 +257,7 @@ function Bank:Scan()
 		end
 		GBankClassic_Output:Debug("INVENTORY", "After scan aggregation - First 5 items: %s", table.concat(scanSample, ", "))
 	end
-	
+
 	-- Also clean up source arrays to remove any duplicates (in case of corrupted data)
 	-- This ensures future scans start fresh
 	if alt.bank and alt.bank.items then
@@ -284,7 +279,7 @@ function Bank:Scan()
 
 	-- Only update version if inventory actually changed
 	-- Compute a hash of the current inventory state (use aggregated alt.items)
-	local currentHash = self:ComputeInventoryHash(alt.items,  money)
+	local currentHash = self:ComputeInventoryHash(alt.items, money)
 	local previousHash = alt.inventoryHash
 
 	if currentHash ~= previousHash then
@@ -319,7 +314,7 @@ function Bank:Scan()
 			alt.mailHash = currentMailHash
 			GBankClassic_Output:Debug("INVENTORY", "Mail hash unchanged for %s: %s (%d items)", player, tostring(currentMailHash), #alt.mail.items)
 		end
-		
+
 	else
 		-- No mail data structure (mail was never scanned this session)
 		-- Keep previous mailHash if it exists to preserve data across sessions
@@ -349,7 +344,7 @@ function Bank:Scan()
 
 	-- Write to aggregate view (info.alts) for normal use
 	info.alts[player] = alt
-	
+
 	if alt.mail then
 		GBankClassic_Output:Debug("INVENTORY", "Saved mail to info.alts[%s] (%d items)", player, #alt.mail.items)
 	else
@@ -366,6 +361,7 @@ function Bank:Scan()
     GBankClassic_Guild:Share()
 end
 
+--[[
 function Bank:HasInventorySpace()
     local total = 0
     for bag = 0, 4 do
@@ -376,43 +372,44 @@ function Bank:HasInventorySpace()
     return total > 0
 end
 
--- -- Find all slots containing an item by name (case-insensitive)
--- -- Returns: table of {bag, slot, count, link}
--- function Bank:FindItemsByName(itemName)
--- 	local results = {}
--- 	if not itemName or itemName == "" then
--- 		return results
--- 	end
+-- Find all slots containing an item by name (case-insensitive)
+-- Returns: table of {bag, slot, count, link}
+function Bank:FindItemsByName(itemName)
+	local results = {}
+	if not itemName or itemName == "" then
+		return results
+	end
 
--- 	local targetName = string.lower(itemName)
+	local targetName = string.lower(itemName)
 
--- 	for bag = 0, 4 do
--- 		local slots = GetContainerNumSlots(bag)
--- 		for slot = 1, slots do
--- 			local itemInfo = GetContainerItemInfo(bag, slot)
--- 			if itemInfo and itemInfo.hyperlink then
--- 				local name = GetItemInfo(itemInfo.hyperlink)
--- 				if name and string.lower(name) == targetName then
--- 					table.insert(results, { bag = bag, slot = slot, count = itemInfo.stackCount or 1, link = itemInfo.hyperlink })
--- 				end
--- 			end
--- 		end
--- 	end
+	for bag = 0, 4 do
+		local slots = GetContainerNumSlots(bag)
+		for slot = 1, slots do
+			local itemInfo = GetContainerItemInfo(bag, slot)
+			if itemInfo and itemInfo.hyperlink then
+				local name = GetItemInfo(itemInfo.hyperlink)
+				if name and string.lower(name) == targetName then
+					table.insert(results, { bag = bag, slot = slot, count = itemInfo.stackCount or 1, link = itemInfo.hyperlink })
+				end
+			end
+		end
+	end
 
--- 	return results
--- end
+	return results
+end
 
--- -- Count total of named item in bags (0-4)
--- -- Returns: totalCount, itemsTable
--- function Bank:CountItemInBags(itemName)
--- 	local items = self:FindItemsByName(itemName)
--- 	local total = 0
--- 	for _, item in ipairs(items) do
--- 		total = total + item.count
--- 	end
+-- Count total of named item in bags (0-4)
+-- Returns: totalCount, itemsTable
+function Bank:CountItemInBags(itemName)
+	local items = self:FindItemsByName(itemName)
+	local total = 0
+	for _, item in ipairs(items) do
+		total = total + item.count
+	end
     
--- 	return total, items
--- end
+	return total, items
+end
+]]--
 
 function Bank:OnUpdateStart()
     self.hasUpdated = true
@@ -447,7 +444,7 @@ function Bank:RecalculateAggregatedItems(alt)
 		-- Write deduplicated bank items back to source to fix SV file
 		alt.bank.items = bankItems
 	end
-	
+
 	local bagItems = {}
 	if alt.bags and alt.bags.items then
 		local deduped = GBankClassic_Item:Aggregate(alt.bags.items, nil)
@@ -457,7 +454,7 @@ function Bank:RecalculateAggregatedItems(alt)
 		-- Write deduplicated bag items back to source to fix SV file
 		alt.bags.items = bagItems
 	end
-	
+
 	local mailItems = {}
 	if alt.mail and alt.mail.items then
 		GBankClassic_Output:Debug("INVENTORY", "Before mail deduplication: %d items.", #alt.mail.items)
@@ -479,7 +476,7 @@ function Bank:RecalculateAggregatedItems(alt)
 				end
 			end
 		end
-		
+
 		-- Mail items are now stored as array (same as bank/bags)
 		local deduped = GBankClassic_Item:Aggregate(alt.mail.items, nil)
 		for _, item in pairs(deduped) do
@@ -489,14 +486,14 @@ function Bank:RecalculateAggregatedItems(alt)
 		-- Write deduplicated mail items back to source to fix SV file
 		alt.mail.items = mailItems
 	end
-	
+
 	-- Aggregate all three sources
 	GBankClassic_Output:Debug("INVENTORY", "Before aggregation of items: bank=%d, bags=%d, and mail=%d.", #bankItems, #bagItems, #mailItems)
 	local aggregated = GBankClassic_Item:Aggregate(bankItems, bagItems)
 	GBankClassic_Output:Debug("INVENTORY", "After aggregating bank + bags: %d unique items.", GBankClassic_Globals:Count(aggregated))
 	aggregated = GBankClassic_Item:Aggregate(aggregated, mailItems)
 	GBankClassic_Output:Debug("INVENTORY", "After adding mail: %d unique items.", GBankClassic_Globals:Count(aggregated))
-	
+
 	-- Convert back to array format
 	alt.items = {}
 	for _, item in pairs(aggregated) do
@@ -504,7 +501,7 @@ function Bank:RecalculateAggregatedItems(alt)
 			table.insert(alt.items, item)
 		end
 	end
-	
+
 	GBankClassic_Output:Debug("INVENTORY", "After aggregation of items: bank=%d, bags=%d, mail=%d, total=%d", #bankItems, #bagItems, #mailItems, #alt.items)
 end
 

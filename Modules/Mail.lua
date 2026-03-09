@@ -28,62 +28,63 @@ Mail.itemDonationVerificationQueue = {}
 Mail.isGoldDonationPending = nil
 Mail.goldBalanceBeforeDonation = nil
 
--- -- Initialize split stack popup dialog
--- if not StaticPopupDialogs["GBANK_SPLIT_STACK"] then
--- 	StaticPopupDialogs["GBANK_SPLIT_STACK"] = {
--- 		text = "%s",
--- 		button1 = "Split",
--- 		button2 = "Cancel",
--- 		OnAccept = function(self, data)
--- 			if not data then
---              return
---          end
---
--- 			ClearCursor()
--- 			-- Find an empty bag slot to place the split items
--- 			local emptyBag, emptySlot
--- 			for bag = 0, 4 do
--- 				local numSlots = GetContainerNumSlots(bag)
--- 				for slot = 1, numSlots do
--- 					if not GetContainerItemInfo(bag, slot) then
--- 						emptyBag, emptySlot = bag, slot
--- 						break
--- 					end
--- 				end
--- 				if emptyBag then
- --                 break
---              end
--- 			end
--- 			if not emptyBag then
--- 				return
--- 			end
+--[[
+-- Initialize split stack popup dialog
+if not StaticPopupDialogs["GBANK_SPLIT_STACK"] then
+	StaticPopupDialogs["GBANK_SPLIT_STACK"] = {
+		text = "%s",
+		button1 = "Split",
+		button2 = "Cancel",
+		OnAccept = function(self, data)
+			if not data then
+             return
+         end
 
--- 			-- Step 1: Split - puts amount on cursor
--- 			SplitContainerItem(data.bag, data.slot, data.amount)
--- 			After(0.1, function()
--- 				-- Step 2: Place split items into empty slot to "commit" the split
--- 				PickupContainerItem(emptyBag, emptySlot)
--- 				After(0.05, function()
--- 					-- Done! The split stack is now in inventory
--- 					if GBankClassic_UI_Requests and GBankClassic_UI_Requests.Window then
--- 						local message = string.format("Split %d %s complete. Click fulfill again to attach items.",
--- 							data.amount, data.itemName)
--- 						GBankClassic_UI_Requests.Window:SetStatusText(message)
--- 						-- Refresh the request list to update the fulfill button icon
--- 						GBankClassic_UI_Requests:DrawContent()
--- 					end
--- 				end)
--- 			end)
--- 		end,
--- 		OnCancel = function()
--- 			-- Nothing to clean up
--- 		end,
--- 		timeout = 0,
--- 		whileDead = true,
--- 		hideOnEscape = true,
--- 		preferredIndex = 3,
--- 	}
--- end
+			ClearCursor()
+			-- Find an empty bag slot to place the split items
+			local emptyBag, emptySlot
+			for bag = 0, 4 do
+				local numSlots = GetContainerNumSlots(bag)
+				for slot = 1, numSlots do
+					if not GetContainerItemInfo(bag, slot) then
+						emptyBag, emptySlot = bag, slot
+						break
+					end
+				end
+				if emptyBag then
+                 break
+             end
+			end
+			if not emptyBag then
+				return
+			end
+
+			-- Step 1: Split - puts amount on cursor
+			SplitContainerItem(data.bag, data.slot, data.amount)
+			After(0.1, function()
+				-- Step 2: Place split items into empty slot to "commit" the split
+				PickupContainerItem(emptyBag, emptySlot)
+				After(0.05, function()
+					-- Done! The split stack is now in inventory
+					if GBankClassic_UI_Requests and GBankClassic_UI_Requests.Window then
+						local message = string.format("Split %d %s complete. Click fulfill again to attach items.",
+							data.amount, data.itemName)
+						GBankClassic_UI_Requests.Window:SetStatusText(message)
+						-- Refresh the request list to update the fulfill button icon
+						GBankClassic_UI_Requests:DrawContent()
+					end
+				end)
+			end)
+		end,
+		OnCancel = function()
+			-- Nothing to clean up
+		end,
+		timeout = 0,
+		whileDead = true,
+		hideOnEscape = true,
+		preferredIndex = 3,
+	}
+end
 
 function Mail:IsMailboxOpen()
 	local frameOpen = MailFrame and MailFrame:IsShown() or false
@@ -93,6 +94,7 @@ function Mail:IsMailboxOpen()
 
 	return frameOpen
 end
+]]--
 
 function Mail:Check()
     CheckInbox()
@@ -103,7 +105,7 @@ function Mail:RecordDonationInLedger(sender, itemLink, quantity, money, isMoney)
     if not sender then
         return
     end
-    
+
     local senderNorm = GBankClassic_Guild:NormalizeName(sender) or sender
     if self.Roster and self.Roster[senderNorm] then
         GBankClassic_Output:Debug("DONATION", "Only items and money sent by non-guild bank alts are consider a donation")
@@ -116,7 +118,7 @@ function Mail:RecordDonationInLedger(sender, itemLink, quantity, money, isMoney)
     if not info or not info.alts or not info.alts[playerNorm] then
         return
     end
-    
+
     if not info.alts[playerNorm].ledger then
         info.alts[playerNorm].ledger = {}
     end
@@ -156,7 +158,7 @@ function Mail:ProcessMail(mailId, attachmentIndex)
     if not sender or wasReturned or isGM then
         GBankClassic_Output:Debug("DONATION", "Processing aborted - invalid mail state")
 
-        return 
+        return
     end
 
     local key, itemLink, itemID, quantity
@@ -169,7 +171,7 @@ function Mail:ProcessMail(mailId, attachmentIndex)
             if not (itemLink and itemID) or quantity <= 0 then 
                 GBankClassic_Output:Debug("DONATION", "Processing aborted - invalid item")
 
-                return 
+                return
             end
 
             -- Create a truly unique key for this mail attachment
@@ -197,7 +199,7 @@ function Mail:ProcessDonation(mailId)
     GBankClassic_Output:Debug("DONATION", "Processing donated mail for mailId %s", mailId)
 
     local sender, _, money, _, _, _, itemCount = self:ProcessMail(mailId)
-    
+
     -- Handle money
     if sender and money then
         self:ProcessMoneyDonation(mailId)
@@ -433,204 +435,202 @@ function Mail:Scan()
 		end
 	end
 end
-]]--
 
--- -- Hook SendMail to update request fulfillment when sending items from bank alts
--- function Mail:InitSendHook()
--- 	if self.sendHooked then
--- 		return
--- 	end
+-- Hook SendMail to update request fulfillment when sending items from bank alts
+function Mail:InitSendHook()
+	if self.sendHooked then
+		return
+	end
 
--- 	self.sendHooked = true
+	self.sendHooked = true
 
--- 	hooksecurefunc("SendMail", function(recipient, subject, body)
--- 		self:OnSendMail(recipient)
--- 	end)
--- end
+	hooksecurefunc("SendMail", function(recipient, subject, body)
+		self:OnSendMail(recipient)
+	end)
+end
 
--- function Mail:OnSendMail(recipient)
--- 	GBankClassic_Output:Debug("MAIL", "OnSendMail: hook fired for recipient=%s", tostring(recipient))
+function Mail:OnSendMail(recipient)
+	GBankClassic_Output:Debug("MAIL", "OnSendMail: hook fired for recipient=%s", tostring(recipient))
 	
--- 	-- If pendingSend was set recently by PrepareFulfillMail (within 10 seconds), keep it
--- 	-- Otherwise, read items from mail attachments (fallback for non-fulfill mails)
--- 	local now = GetTime()
--- 	if self.pendingSend and self.pendingSendAt and (now - self.pendingSendAt) < 10 then
--- 		GBankClassic_Output:Debug("MAIL", "OnSendMail: Using pendingSend from PrepareFulfillMail")
+	-- If pendingSend was set recently by PrepareFulfillMail (within 10 seconds), keep it
+	-- Otherwise, read items from mail attachments (fallback for non-fulfill mails)
+	local now = GetTime()
+	if self.pendingSend and self.pendingSendAt and (now - self.pendingSendAt) < 10 then
+		GBankClassic_Output:Debug("MAIL", "OnSendMail: Using pendingSend from PrepareFulfillMail")
 
--- 		return
--- 	end
+		return
+	end
 	
--- 	-- Clear old pendingSend and read from mail attachments
--- 	self.pendingSend = nil
--- 	self.pendingSendAt = nil
+	-- Clear old pendingSend and read from mail attachments
+	self.pendingSend = nil
+	self.pendingSendAt = nil
 
--- 	local sender = GBankClassic_Guild:GetNormalizedPlayer()
--- 	local items = {}
+	local sender = GBankClassic_Guild:GetNormalizedPlayer()
+	local items = {}
 
--- 	for attachmentIndex = 1, ATTACHMENTS_MAX_SEND do
--- 		local itemName, _, _, quantity = GetSendMailItem(attachmentIndex)
--- 		if itemName and quantity and quantity > 0 then
--- 			table.insert(items, { name = itemName, quantity = quantity })
--- 		end
--- 	end
+	for attachmentIndex = 1, ATTACHMENTS_MAX_SEND do
+		local itemName, _, _, quantity = GetSendMailItem(attachmentIndex)
+		if itemName and quantity and quantity > 0 then
+			table.insert(items, { name = itemName, quantity = quantity })
+		end
+	end
 
--- 	GBankClassic_Output:Debug("UI", "OnSendMail: sender=%s, recipient=%s, items=%d", tostring(sender), tostring(recipient), #items)
+	GBankClassic_Output:Debug("UI", "OnSendMail: sender=%s, recipient=%s, items=%d", tostring(sender), tostring(recipient), #items)
 
--- 	if #items == 0 then
--- 		return
--- 	end
+	if #items == 0 then
+		return
+	end
 
--- 	local info = GBankClassic_Guild.Info
--- 	if not info or not info.requests or #info.requests == 0 then
--- 		return
--- 	end
+	local info = GBankClassic_Guild.Info
+	if not info or not info.requests or #info.requests == 0 then
+		return
+	end
 
--- 	if not sender or not GBankClassic_Guild:IsGuildBankAlt(sender) then
--- 		GBankClassic_Output:Debug("MAIL", "OnSendMail: Sender %s is not a guild bank alt, skipping", tostring(sender))
+	if not sender or not GBankClassic_Guild:IsGuildBankAlt(sender) then
+		GBankClassic_Output:Debug("MAIL", "OnSendMail: Sender %s is not a guild bank alt, skipping", tostring(sender))
 
--- 		return
--- 	end
+		return
+	end
 
--- 	GBankClassic_Output:Debug("MAIL", "OnSendMail: Sender %s IS a guild bank alt, setting pendingSend", tostring(sender))
--- 	local normRecipient = GBankClassic_Guild:NormalizeName(recipient) or recipient
+	GBankClassic_Output:Debug("MAIL", "OnSendMail: Sender %s IS a guild bank alt, setting pendingSend", tostring(sender))
+	local normRecipient = GBankClassic_Guild:NormalizeName(recipient) or recipient
 
--- 	self.pendingSend = {
--- 		sender = sender,
--- 		recipient = normRecipient,
--- 		items = items,
--- 	}
--- 	self.pendingSendAt = GetTime()
+	self.pendingSend = {
+		sender = sender,
+		recipient = normRecipient,
+		items = items,
+	}
+	self.pendingSendAt = GetTime()
 	
--- 	-- Log at info level so user can see manual sends are tracked
--- 	local itemList = {}
--- 	for _, item in ipairs(items) do
--- 		table.insert(itemList, string.format("%dx %s", item.quantity, item.name))
--- 	end
--- 	GBankClassic_Output:Info("Tracking manual mail to %s: %s.", recipient, table.concat(itemList, ", "))
--- end
+	-- Log at info level so user can see manual sends are tracked
+	local itemList = {}
+	for _, item in ipairs(items) do
+		table.insert(itemList, string.format("%dx %s", item.quantity, item.name))
+	end
+	GBankClassic_Output:Info("Tracking manual mail to %s: %s.", recipient, table.concat(itemList, ", "))
+end
 
--- function GBankClassic_Mail:DebugSendMailState(contextMessage)
--- 	local recipient = SendMailNameEditBox and SendMailNameEditBox:GetText() or nil
--- 	local subject = SendMailSubjectEditBox and SendMailSubjectEditBox:GetText() or nil
--- 	local items = {}
--- 	local totalCount = 0
--- 	for attachmentIndex = 1, (ATTACHMENTS_MAX_SEND or 12) do
--- 		local itemName, itemID, texture, quantity = GetSendMailItem(attachmentIndex)
--- 		if itemName and quantity and quantity > 0 then
--- 			table.insert(items, { name = itemName, id = itemID, quantity = quantity })
--- 			totalCount = totalCount + quantity
--- 		end
--- 	end
+function GBankClassic_Mail:DebugSendMailState(contextMessage)
+	local recipient = SendMailNameEditBox and SendMailNameEditBox:GetText() or nil
+	local subject = SendMailSubjectEditBox and SendMailSubjectEditBox:GetText() or nil
+	local items = {}
+	local totalCount = 0
+	for attachmentIndex = 1, (ATTACHMENTS_MAX_SEND or 12) do
+		local itemName, itemID, texture, quantity = GetSendMailItem(attachmentIndex)
+		if itemName and quantity and quantity > 0 then
+			table.insert(items, { name = itemName, id = itemID, quantity = quantity })
+			totalCount = totalCount + quantity
+		end
+	end
 
--- 	GBankClassic_Output:Debug("MAIL", "SendMail error: %s | recipient=%s subject=%s items=%d total=%d", tostring(contextMessage), tostring(recipient), tostring(subject), #items, totalCount)
+	GBankClassic_Output:Debug("MAIL", "SendMail error: %s | recipient=%s subject=%s items=%d total=%d", tostring(contextMessage), tostring(recipient), tostring(subject), #items, totalCount)
 
--- 	for i, item in ipairs(items) do
--- 		GBankClassic_Output:Debug("MAIL", "  Attachment %d: %s (id=%s) x%d", i, tostring(item.name), tostring(item.id), item.quantity)
--- 	end
+	for i, item in ipairs(items) do
+		GBankClassic_Output:Debug("MAIL", "  Attachment %d: %s (id=%s) x%d", i, tostring(item.name), tostring(item.id), item.quantity)
+	end
 
--- 	if self.pendingSend then
--- 		GBankClassic_Output:Debug("MAIL", "  pendingSend: sender=%s recipient=%s items=%d", tostring(self.pendingSend.sender), tostring(self.pendingSend.recipient), self.pendingSend.items and #self.pendingSend.items or 0)
--- 	end
--- end
+	if self.pendingSend then
+		GBankClassic_Output:Debug("MAIL", "  pendingSend: sender=%s recipient=%s items=%d", tostring(self.pendingSend.sender), tostring(self.pendingSend.recipient), self.pendingSend.items and #self.pendingSend.items or 0)
+	end
+end
 
--- function Mail:ApplyPendingSend()
--- 	GBankClassic_Output:Debug("MAIL", "ApplyPendingSend: Called, pendingSend=%s", tostring(self.pendingSend ~= nil))
--- 	local pending = self.pendingSend
--- 	if not pending then
--- 		GBankClassic_Output:Debug("MAIL", "ApplyPendingSend: No pendingSend, returning")
+function Mail:ApplyPendingSend()
+	GBankClassic_Output:Debug("MAIL", "ApplyPendingSend: Called, pendingSend=%s", tostring(self.pendingSend ~= nil))
+	local pending = self.pendingSend
+	if not pending then
+		GBankClassic_Output:Debug("MAIL", "ApplyPendingSend: No pendingSend, returning")
 
--- 		return
--- 	end
+		return
+	end
 
--- 	self.pendingSend = nil
--- 	self.pendingSendAt = nil
+	self.pendingSend = nil
+	self.pendingSendAt = nil
 
--- 	GBankClassic_Output:Info("Applying fulfillment for mail sent to %s.", pending.recipient)
+	GBankClassic_Output:Info("Applying fulfillment for mail sent to %s.", pending.recipient)
 
--- 	local totalApplied = 0
--- 	for _, item in ipairs(pending.items) do
--- 		local applied = GBankClassic_Guild:FulfillRequest(pending.sender, pending.recipient, item.name, item.quantity, pending.requestId)
--- 		if applied > 0 then
--- 			GBankClassic_Output:Info("  Applied %dx %s toward %s's request (ID: %s)", applied, item.name, pending.recipient, tostring(pending.requestId))
--- 		end
--- 		totalApplied = totalApplied + applied
--- 	end
+	local totalApplied = 0
+	for _, item in ipairs(pending.items) do
+		local applied = GBankClassic_Guild:FulfillRequest(pending.sender, pending.recipient, item.name, item.quantity, pending.requestId)
+		if applied > 0 then
+			GBankClassic_Output:Info("  Applied %dx %s toward %s's request (ID: %s)", applied, item.name, pending.recipient, tostring(pending.requestId))
+		end
+		totalApplied = totalApplied + applied
+	end
 
--- 	if totalApplied > 0 then
--- 		GBankClassic_Output:Info("Total fulfilled: %d item(s) for %s.", totalApplied, pending.recipient)
--- 		GBankClassic_Guild:RefreshRequestsUI()
--- 	else
--- 		GBankClassic_Output:Info("No matching requests found for items sent to %s.", pending.recipient)
--- 	end
--- end
+	if totalApplied > 0 then
+		GBankClassic_Output:Info("Total fulfilled: %d item(s) for %s.", totalApplied, pending.recipient)
+		GBankClassic_Guild:RefreshRequestsUI()
+	else
+		GBankClassic_Output:Info("No matching requests found for items sent to %s.", pending.recipient)
+	end
+end
 
--- -- Check if a request can be fulfilled by the current player
--- -- Returns: canFulfill (boolean), reason (string), itemsInBags (number), smallestStack (number)
--- function Mail:CanFulfillRequest(request, actor)
--- 	local normActor = GBankClassic_Guild:NormalizeName(actor or GBankClassic_Guild:GetNormalizedPlayer())
+-- Check if a request can be fulfilled by the current player
+-- Returns: canFulfill (boolean), reason (string), itemsInBags (number), smallestStack (number)
+function Mail:CanFulfillRequest(request, actor)
+	local normActor = GBankClassic_Guild:NormalizeName(actor or GBankClassic_Guild:GetNormalizedPlayer())
 
--- 	-- Must be a bank alt
--- 	if not GBankClassic_Guild:IsGuildBankAlt(normActor) then
--- 		return false, "Only bank alts can fulfill requests.", 0, 0
--- 	end
+	-- Must be a bank alt
+	if not GBankClassic_Guild:IsGuildBankAlt(normActor) then
+		return false, "Only bank alts can fulfill requests.", 0, 0
+	end
 
--- 	-- Request must be valid and not completed
--- 	if not request or not request.item then
--- 		return false, "Invalid request.", 0, 0
--- 	end
+	-- Request must be valid and not completed
+	if not request or not request.item then
+		return false, "Invalid request.", 0, 0
+	end
 
--- 	local qtyRequested = tonumber(request.quantity or 0) or 0
--- 	local qtyFulfilled = tonumber(request.fulfilled or 0) or 0
--- 	local qtyNeeded = qtyRequested - qtyFulfilled
+	local qtyRequested = tonumber(request.quantity or 0) or 0
+	local qtyFulfilled = tonumber(request.fulfilled or 0) or 0
+	local qtyNeeded = qtyRequested - qtyFulfilled
 
--- 	if request.status == "complete" or request.status == "fulfilled" or request.status == "cancelled" then
--- 		return false, "Request is already completed.", 0, 0
--- 	end
+	if request.status == "complete" or request.status == "fulfilled" or request.status == "cancelled" then
+		return false, "Request is already completed.", 0, 0
+	end
 
--- 	if qtyFulfilled >= qtyRequested and qtyRequested > 0 then
--- 		return false, "Request is already fulfilled.", 0, 0
--- 	end
+	if qtyFulfilled >= qtyRequested and qtyRequested > 0 then
+		return false, "Request is already fulfilled.", 0, 0
+	end
 
--- 	-- Check if items are in bags and find usable stacks
--- 	local totalInBags, items = GBankClassic_Bank:CountItemInBags(request.item)
+	-- Check if items are in bags and find usable stacks
+	local totalInBags, items = GBankClassic_Bank:CountItemInBags(request.item)
 
--- 	if totalInBags == 0 then
--- 		return false, "Items not in bags. Pick up from bank first.", 0, 0
--- 	end
+	if totalInBags == 0 then
+		return false, "Items not in bags. Pick up from bank first.", 0, 0
+	end
 
--- 	-- Use unified fulfillment calc (make copy of items array to avoid mutation)
--- 	local itemsCopy = {}
--- 	for i, item in ipairs(items) do
--- 		itemsCopy[i] = {bag = item.bag, slot = item.slot, count = item.count}
--- 	end
+	-- Use unified fulfillment calc (make copy of items array to avoid mutation)
+	local itemsCopy = {}
+	for i, item in ipairs(items) do
+		itemsCopy[i] = {bag = item.bag, slot = item.slot, count = item.count}
+	end
 
--- 	local plan = self:CalculateFulfillmentPlan(itemsCopy, qtyNeeded, totalInBags)
+	local plan = self:CalculateFulfillmentPlan(itemsCopy, qtyNeeded, totalInBags)
 
--- 	-- Find smallest stack for legacy return value
--- 	local smallestStack = nil
--- 	for _, item in ipairs(items) do
--- 		if not smallestStack or item.count < smallestStack then
--- 			smallestStack = item.count
--- 		end
--- 	end
+	-- Find smallest stack for legacy return value
+	local smallestStack = nil
+	for _, item in ipairs(items) do
+		if not smallestStack or item.count < smallestStack then
+			smallestStack = item.count
+		end
+	end
 
--- 	return plan.canFulfill, plan.reason, totalInBags, smallestStack or 0
--- end
+	return plan.canFulfill, plan.reason, totalInBags, smallestStack or 0
+end
 
--- function GBankClassic_Mail:ResetScan()
--- 	-- have to wait for server to remove item from inbox before we can take another
--- 	-- so we wait a second before trying the next item
--- 	GBankClassic_Core:ScheduleTimer(function(...)
--- 		GBankClassic_Mail:OnTimer()
--- 	end, 1)
--- end
+function GBankClassic_Mail:ResetScan()
+	-- have to wait for server to remove item from inbox before we can take another
+	-- so we wait a second before trying the next item
+	GBankClassic_Core:ScheduleTimer(function(...)
+		GBankClassic_Mail:OnTimer()
+	end, 1)
+end
 
--- function GBankClassic_Mail:OnTimer()
--- 	self.isScanning = false
--- 	GBankClassic_Mail:Scan()
--- end
+function GBankClassic_Mail:OnTimer()
+	self.isScanning = false
+	GBankClassic_Mail:Scan()
+end
 
---[[
 function Mail:Open(mailId)
 	local _, _, sender, _, money, _, _, itemCount, _, _, _, _, _, _ = GetInboxHeaderInfo(mailId)
 	if not sender then

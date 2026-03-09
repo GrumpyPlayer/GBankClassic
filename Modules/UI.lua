@@ -161,7 +161,7 @@ function UI:ShowItemTooltip(link)
         return
     end
 
--- Throttle tooltip updates to prevent performance issues
+    -- Throttle tooltip updates to prevent performance issues
     local now = debugprofilestop()
     if self.currentTooltipLink == link and (now - self.tooltipThrottle) < self.TOOLTIP_THROTTLE_MS then
         return

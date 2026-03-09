@@ -9,8 +9,6 @@ local debugprofilestop = upvalues.debugprofilestop
 local UnitName = upvalues.UnitName
 local GetNormalizedRealmName = upvalues.GetNormalizedRealmName
 
--- Validation functions --
-
 -- Validate that a delta structure is well-formed
 function DeltaComms:ValidateDeltaStructure(delta)
 	if not delta or type(delta) ~= "table" then
@@ -234,17 +232,6 @@ function DeltaComms:ComputeInventoryHash(bank, bags, mailOrMoney, money)
 	return sum
 end
 
--- Delta protocol functions --
-
--- Get peer protocol capabilities
-function DeltaComms:GetPeerCapabilities(guildName, sender)
-	if not guildName or not sender then
-		return nil
-	end
-
-	return GBankClassic_Database:GetPeerProtocol(guildName, sender)
-end
-
 -- Strip links from delta for bandwidth savings
 function DeltaComms:StripDeltaLinks(delta)
 	if not delta or not delta.changes then
@@ -324,8 +311,6 @@ function DeltaComms:StripDeltaLinks(delta)
 
 	return strippedDelta
 end
-
--- Delta computation functions --
 
 -- Compare two items for equality
 function DeltaComms:ItemsEqual(item1, item2)
@@ -632,18 +617,6 @@ function DeltaComms:ComputeDelta(guildName, altName, currentAlt, requesterInvent
 	return delta
 end
 
--- Estimate serialized size of a data structure
-function DeltaComms:EstimateSize(data)
-	if not data then
-		return 0
-	end
-
-	-- Rough estimate: serialize and measure length
-	local serialized = GBankClassic_Core:SerializeWithChecksum(data)
-
-	return string.len(serialized or "")
-end
-
 -- Check if delta has any actual changes
 function DeltaComms:DeltaHasChanges(delta)
 	if not delta or not delta.changes then
@@ -692,8 +665,6 @@ function DeltaComms:DeltaHasChanges(delta)
 
 	return false
 end
-
--- Delta application functions --
 
 -- Apply item delta to an items table
 function DeltaComms:ApplyItemDelta(items, delta)
@@ -1126,78 +1097,7 @@ function DeltaComms:ApplyDelta(guildInfo, altName, deltaData, sender)
 	return ADOPTION_STATUS.ADOPTED
 end
 
--- Apply a chain of deltas sequentially
-function DeltaComms:ApplyDeltaChain(guildInfo, altName, deltaChain)
-	if not altName or not deltaChain or type(deltaChain) ~= "table" or #deltaChain == 0 then
-		return ADOPTION_STATUS.INVALID
-	end
-
-	local norm = GBankClassic_Guild:NormalizeName(altName)
-	local current = guildInfo and guildInfo.alts and guildInfo.alts[norm]
-
-	if not current then
-		GBankClassic_Output:Debug("DELTA", "No existing data for %s, cannot apply delta chain", norm)
-
-		return ADOPTION_STATUS.INVALID
-	end
-
-	-- Validate chain
-	if #deltaChain > (PROTOCOL.DELTA_CHAIN_MAX_HOPS or 10) then
-		GBankClassic_Output:Debug("DELTA", "Delta chain too long for %s (%d hops > %d max)", norm, #deltaChain, PROTOCOL.DELTA_CHAIN_MAX_HOPS or 10)
-
-		return ADOPTION_STATUS.INVALID
-	end
-
-	-- Estimate total chain size
-	local totalSize = self:EstimateSize(deltaChain)
-	if totalSize > (PROTOCOL.DELTA_CHAIN_MAX_SIZE or 5000) then
-		GBankClassic_Output:Debug("DELTA", "Delta chain too large for %s (%d bytes > %d max), requesting full sync", norm, totalSize, PROTOCOL.DELTA_CHAIN_MAX_SIZE or 5000)
-		GBankClassic_Guild:QueryAlt(nil, norm, nil)
-
-		return ADOPTION_STATUS.INVALID
-	end
-
-	-- Apply each delta in sequence
-	local chainStart = debugprofilestop()
-	local currentVersion = current.version or 0
-
-	for i, deltaEntry in ipairs(deltaChain) do
-		-- Validate this delta applies to our current version
-		if deltaEntry.baseVersion ~= currentVersion then
-			GBankClassic_Output:Debug("DELTA", "Delta chain broken for %s at hop %d: have v%d, delta expects v%d", norm, i, currentVersion, deltaEntry.baseVersion)
-			GBankClassic_Guild:QueryAlt(nil, norm, nil)
-
-			return ADOPTION_STATUS.INVALID
-		end
-
-		-- Apply this delta
-		local deltaData = {
-			type = "alt-delta",
-			name = altName,
-			version = deltaEntry.version,
-			updatedAt = deltaEntry.updatedAt or deltaEntry.version,
-			baseVersion = deltaEntry.baseVersion,
-			changes = deltaEntry.delta
-		}
-
-		local status = self:ApplyDelta(guildInfo, altName, deltaData)
-		if status ~= ADOPTION_STATUS.ADOPTED then
-			GBankClassic_Output:Debug("DELTA", "Failed to apply delta chain for %s at hop %d (v%d->v%d)", norm, i, deltaEntry.baseVersion, deltaEntry.version)
-
-			return status
-		end
-
-		currentVersion = deltaEntry.version
-	end
-
-	local chainTime = debugprofilestop() - chainStart
-	GBankClassic_Output:Debug("DELTA", "Applied delta chain for %s (%d hops, v%d->v%d) in %.2fms", norm, #deltaChain, deltaChain[1].baseVersion, deltaChain[#deltaChain].version, chainTime)
-
-	return ADOPTION_STATUS.ADOPTED
-end
-
--- Error tracking functions --
-
+-- Error tracking
 function DeltaComms:RecordDeltaError(guildName, altName, errorType, errorMessage)
 	local error = {
 		altName = altName,
@@ -1299,24 +1199,6 @@ function DeltaComms:ResetDeltaErrorCount(guildName, altName)
 	end
 end
 
--- Get failure count for an alt
-function DeltaComms:GetDeltaFailureCount(guildName, altName)
-	-- Check database first if available
-	if guildName then
-		local db = GBankClassic_Database.db.factionrealm[guildName]
-		if db and db.deltaErrors then
-			return db.deltaErrors.failureCounts[altName] or 0
-		end
-	end
-
-	-- Fallback to temporary storage
-	if GBankClassic_Guild.tempDeltaErrors then
-		return GBankClassic_Guild.tempDeltaErrors.failureCounts[altName] or 0
-	end
-
-	return 0
-end
-
 -- Clear error counters for all offline players (called on roster update)
 function DeltaComms:ClearOfflineErrorCounters(guildName)
 	if not guildName then
@@ -1334,43 +1216,5 @@ function DeltaComms:ClearOfflineErrorCounters(guildName)
 			db.deltaErrors.failureCounts[altName] = nil
 			db.deltaErrors.notifiedAlts[altName] = nil
 		end
-	end
-end
-
--- Pull-based protocol functions --
-
--- Fast-fill missing alts using pull-based protocol
-function DeltaComms:FastFillMissingAlts(guildInfo)
-	if not guildInfo then
-		return
-	end
-
-	-- Get live guild bank alt roster from current guild instead of using cached roster.alts
-	-- The cached roster may contain stale cross-guild data
-	local rosterAlts = GBankClassic_Guild:GetBanks()
-	if not rosterAlts or #rosterAlts == 0 then
-		return
-	end
-
-	local missing = {}
-	for _, altName in ipairs(rosterAlts) do
-		local norm = GBankClassic_Guild:NormalizeName(altName)
-		-- Check if we have this alt locally
-		if not guildInfo.alts or not guildInfo.alts[norm] then
-			table.insert(missing, norm)
-		end
-	end
-
-	if #missing == 0 then
-		GBankClassic_Output:Debug("DELTA", "All %d roster alts present locally", #rosterAlts)
-		
-		return
-	end
-
-	GBankClassic_Output:Info("Requesting %d missing alts (have %d/%d)", #missing, #rosterAlts - #missing, #rosterAlts)
-
-	-- Query each missing alt using pull-based protocol
-	for _, norm in ipairs(missing) do
-		GBankClassic_Guild:QueryAltPullBased(norm, false)
 	end
 end

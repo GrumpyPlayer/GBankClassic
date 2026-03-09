@@ -1,411 +1,413 @@
--- GBankClassic_ItemHighlight = GBankClassic_ItemHighlight or {}
+--[[
+GBankClassic_ItemHighlight = GBankClassic_ItemHighlight or {}
 
--- local ItemHighlight = GBankClassic_ItemHighlight
+local ItemHighlight = GBankClassic_ItemHighlight
 
--- -- State
--- ItemHighlight.enabled = false
--- ItemHighlight.neededItems = {} -- {itemName: quantityNeeded}
--- ItemHighlight.overlays = {} -- Texture overlays for dimming items
--- ItemHighlight.lastBagnonSearch = nil -- Cache last Bagnon search string to avoid redundant signals
+-- State
+ItemHighlight.enabled = false
+ItemHighlight.neededItems = {} -- {itemName: quantityNeeded}
+ItemHighlight.overlays = {} -- Texture overlays for dimming items
+ItemHighlight.lastBagnonSearch = nil -- Cache last Bagnon search string to avoid redundant signals
 
--- -- Settings
--- local OVERLAY_ALPHA = 0.7 -- Alpha for grey overlay (0=transparent, 1=opaque)
--- local OVERLAY_COLOR = {0.2, 0.2, 0.2} -- RGB grey color
+-- Settings
+local OVERLAY_ALPHA = 0.7 -- Alpha for grey overlay (0=transparent, 1=opaque)
+local OVERLAY_COLOR = {0.2, 0.2, 0.2} -- RGB grey color
 
--- -- Throttling to prevent Bagnon execution timeout
--- local REFRESH_THROTTLE = 0.5 -- seconds
--- local lastRefresh = 0
--- local pendingRefresh = false
+-- Throttling to prevent Bagnon execution timeout
+local REFRESH_THROTTLE = 0.5 -- seconds
+local lastRefresh = 0
+local pendingRefresh = false
 
--- -- Initialize the module
--- function ItemHighlight:Initialize()
--- 	-- Don't auto-enable from saved settings - let the checkbox control it
--- 	self.enabled = false
+-- Initialize the module
+function ItemHighlight:Initialize()
+	-- Don't auto-enable from saved settings - let the checkbox control it
+	self.enabled = false
 
--- 	-- Register events
--- 	local frame = CreateFrame("GBankClassicItemHighlightFrame")
--- 	frame:RegisterEvent("BAG_UPDATE_DELAYED")
--- 	frame:RegisterEvent("PLAYERBANKSLOTS_CHANGED")
--- 	frame:RegisterEvent("BANKFRAME_OPENED")
--- 	frame:RegisterEvent("BANKFRAME_CLOSED")
--- 	frame:SetScript("OnEvent", function(_, event, ...)
--- 		if self.enabled then
--- 			-- Throttle refresh to prevent Bagnon execution timeout during rapid BAG_UPDATE_DELAYED spam
--- 			local now = GetTime()
--- 			if now - lastRefresh < REFRESH_THROTTLE then
--- 				-- Schedule delayed refresh if not already pending
--- 				if not pendingRefresh then
-				    -- local delay = math.max(0, REFRESH_THROTTLE - (now - lastRefresh))
--- 					pendingRefresh = true
--- 					C_Timer.After(REFRESH_THROTTLE, function()
--- 						pendingRefresh = false
--- 						if self.enabled then
--- 							lastRefresh = GetTime()
--- 							ItemHighlight:RefreshHighlighting()
--- 						end
--- 					end)
--- 				end
--- 				return
--- 			end
--- 			lastRefresh = now
--- 			ItemHighlight:RefreshHighlighting()
--- 		end
--- 	end)
+	-- Register events
+	local frame = CreateFrame("GBankClassicItemHighlightFrame")
+	frame:RegisterEvent("BAG_UPDATE_DELAYED")
+	frame:RegisterEvent("PLAYERBANKSLOTS_CHANGED")
+	frame:RegisterEvent("BANKFRAME_OPENED")
+	frame:RegisterEvent("BANKFRAME_CLOSED")
+	frame:SetScript("OnEvent", function(_, event, ...)
+		if self.enabled then
+			-- Throttle refresh to prevent Bagnon execution timeout during rapid BAG_UPDATE_DELAYED spam
+			local now = GetTime()
+			if now - lastRefresh < REFRESH_THROTTLE then
+				-- Schedule delayed refresh if not already pending
+				if not pendingRefresh then
+				    local delay = math.max(0, REFRESH_THROTTLE - (now - lastRefresh))
+					pendingRefresh = true
+					C_Timer.After(REFRESH_THROTTLE, function()
+						pendingRefresh = false
+						if self.enabled then
+							lastRefresh = GetTime()
+							ItemHighlight:RefreshHighlighting()
+						end
+					end)
+				end
+				return
+			end
+			lastRefresh = now
+			ItemHighlight:RefreshHighlighting()
+		end
+	end)
 
--- 	GBankClassic_Output:Debug("REQUESTS", "ItemHighlight initialized")
--- end
+	GBankClassic_Output:Debug("REQUESTS", "ItemHighlight initialized")
+end
 
--- -- Enable/disable highlighting
--- function ItemHighlight:SetEnabled(enabled)
--- 	-- Only allow guild bank alts to use highlighting
--- 	local banks = GBankClassic_Guild:GetCachedGuildBankAlts()
--- 	if not banks then
--- 		GBankClassic_Output:Debug("REQUESTS", "Highlighting disabled: no banks found")
+-- Enable/disable highlighting
+function ItemHighlight:SetEnabled(enabled)
+	-- Only allow guild bank alts to use highlighting
+	local banks = GBankClassic_Guild:GetCachedGuildBankAlts()
+	if not banks then
+		GBankClassic_Output:Debug("REQUESTS", "Highlighting disabled: no banks found")
 
--- 		return
--- 	end
+		return
+	end
 
--- 	local currentPlayer = GBankClassic_Guild:GetNormalizedPlayer()
--- 	local isBank = false
--- 	for _, bankName in ipairs(banks) do
--- 		local normBank = GBankClassic_Guild:NormalizeName(bankName) or bankName
--- 		if normBank == currentPlayer then
--- 			isBank = true
--- 			break
--- 		end
--- 	end
+	local currentPlayer = GBankClassic_Guild:GetNormalizedPlayer()
+	local isBank = false
+	for _, bankName in ipairs(banks) do
+		local normBank = GBankClassic_Guild:NormalizeName(bankName) or bankName
+		if normBank == currentPlayer then
+			isBank = true
+			break
+		end
+	end
 
--- 	if not isBank then
--- 		GBankClassic_Output:Debug("REQUESTS", "Highlighting disabled: not a guild bank alt")
+	if not isBank then
+		GBankClassic_Output:Debug("REQUESTS", "Highlighting disabled: not a guild bank alt")
 
--- 		return
--- 	end
+		return
+	end
 
--- 	self.enabled = enabled
+	self.enabled = enabled
 
--- 	-- Save to settings
--- 	if not GBankClassicDB.settings then
--- 		GBankClassicDB.settings = {}
--- 	end
--- 	GBankClassicDB.settings.highlightEnabled = enabled
+	-- Save to settings
+	if not GBankClassicDB.settings then
+		GBankClassicDB.settings = {}
+	end
+	GBankClassicDB.settings.highlightEnabled = enabled
 
--- 	if enabled then
--- 		self:RefreshHighlighting()
--- 	else
--- 		self:ClearAllOverlays()
--- 		-- Clear Bagnon search when disabling (only if it was previously set)
--- 		if Bagnon and self.lastBagnonSearch ~= nil then
--- 			self.lastBagnonSearch = nil
--- 			local addon = Bagnon
--- 			addon.search = nil
--- 			addon.canSearch = false
--- 			addon:SendSignal('SEARCH_CHANGED')
--- 		end
--- 	end
--- end
+	if enabled then
+		self:RefreshHighlighting()
+	else
+		self:ClearAllOverlays()
+		-- Clear Bagnon search when disabling (only if it was previously set)
+		if Bagnon and self.lastBagnonSearch ~= nil then
+			self.lastBagnonSearch = nil
+			local addon = Bagnon
+			addon.search = nil
+			addon.canSearch = false
+			addon:SendSignal('SEARCH_CHANGED')
+		end
+	end
+end
 
--- -- Build table of needed items from all pending requests
--- function ItemHighlight:BuildNeededItemsList()
--- 	local info = GBankClassic_Guild.Info
--- 	if not info or not info.requests then
--- 		return false
--- 	end
+-- Build table of needed items from all pending requests
+function ItemHighlight:BuildNeededItemsList()
+	local info = GBankClassic_Guild.Info
+	if not info or not info.requests then
+		return false
+	end
 
--- 	-- Clear and rebuild
--- 	self.neededItems = {}
+	-- Clear and rebuild
+	self.neededItems = {}
 
--- 	-- Get current guild bank alts from the requests UI filter
--- 	local currentGuildBankAlt = GBankClassic_UI_Requests.bankFilter
--- 	local currentPlayer = GBankClassic_Guild:GetNormalizedPlayer()
+	-- Get current guild bank alts from the requests UI filter
+	local currentGuildBankAlt = GBankClassic_UI_Requests.bankFilter
+	local currentPlayer = GBankClassic_Guild:GetNormalizedPlayer()
 
--- 	-- If no filter set, default to current player if they're a guild bank alt
--- 	if not currentGuildBankAlt or currentGuildBankAlt == "__gbank_any__" then
--- 		if currentPlayer and GBankClassic_Guild:IsGuildBankAlt(currentPlayer) then
--- 			currentGuildBankAlt = currentPlayer
--- 		else
--- 			return false
--- 		end
--- 	end
+	-- If no filter set, default to current player if they're a guild bank alt
+	if not currentGuildBankAlt or currentGuildBankAlt == "__gbank_any__" then
+		if currentPlayer and GBankClassic_Guild:IsGuildBankAlt(currentPlayer) then
+			currentGuildBankAlt = currentPlayer
+		else
+			return false
+		end
+	end
 
--- 	-- Aggregate quantities from all pending requests for this guild bank alt
--- 	-- Use pairs() since requests is now a map keyed by ID, not an array
--- 	for _, request in pairs(info.requests or {}) do
--- 		if request.bank == currentGuildBankAlt and request.status ~= "complete" and request.status ~= "fulfilled" and request.status ~= "cancelled" then
+	-- Aggregate quantities from all pending requests for this guild bank alt
+	-- Use pairs() since requests is now a map keyed by ID, not an array
+	for _, request in pairs(info.requests or {}) do
+		if request.bank == currentGuildBankAlt and request.status ~= "complete" and request.status ~= "fulfilled" and request.status ~= "cancelled" then
 
--- 			local itemName = request.item
--- 			local qtyNeeded = (request.quantity or 0) - (request.quantityFulfilled or 0)
+			local itemName = request.item
+			local qtyNeeded = (request.quantity or 0) - (request.quantityFulfilled or 0)
 
--- 			if qtyNeeded > 0 then
--- 				self.neededItems[itemName] = (self.neededItems[itemName] or 0) + qtyNeeded
--- 			end
--- 		end
--- 	end
+			if qtyNeeded > 0 then
+				self.neededItems[itemName] = (self.neededItems[itemName] or 0) + qtyNeeded
+			end
+		end
+	end
 
--- 	local uniqueCount = GBankClassic_Globals:Count(self.neededItems)
--- 	GBankClassic_Output:Debug("REQUESTS", "Built needed items list: %d unique items", uniqueCount)
+	local uniqueCount = GBankClassic_Globals:Count(self.neededItems)
+	GBankClassic_Output:Debug("REQUESTS", "Built needed items list: %d unique items", uniqueCount)
 
--- 	return true
--- end
+	return true
+end
 
--- -- Check if an item is needed
--- function ItemHighlight:IsItemNeeded(itemName)
--- 	if not itemName then
--- 		return false
--- 	end
+-- Check if an item is needed
+function ItemHighlight:IsItemNeeded(itemName)
+	if not itemName then
+		return false
+	end
 
--- 	return self.neededItems[itemName] ~= nil
--- end
+	return self.neededItems[itemName] ~= nil
+end
 
--- -- Apply grey desaturation to a button
--- function ItemHighlight:ApplyOverlay(button)
--- 	if not button or not button:IsVisible() then
--- 		return
--- 	end
+-- Apply grey desaturation to a button
+function ItemHighlight:ApplyOverlay(button)
+	if not button or not button:IsVisible() then
+		return
+	end
 
--- 	-- Get the icon texture (works for both default and Bagnon buttons)
--- 	local icon = button.icon or button.Icon or _G[button:GetName().."IconTexture"]
--- 	if icon then
--- 		-- Grey out by reducing color saturation (use very dark grey)
--- 		icon:SetVertexColor(0.2, 0.2, 0.2)
--- 	end
--- 	self.overlays[button:GetName() or tostring(button)] = true
--- end
+	-- Get the icon texture (works for both default and Bagnon buttons)
+	local icon = button.icon or button.Icon or _G[button:GetName().."IconTexture"]
+	if icon then
+		-- Grey out by reducing color saturation (use very dark grey)
+		icon:SetVertexColor(0.2, 0.2, 0.2)
+	end
+	self.overlays[button:GetName() or tostring(button)] = true
+end
 
--- -- Remove grey desaturation from a button
--- function ItemHighlight:RemoveOverlay(button)
--- 	if not button then
---        return
---    end
+-- Remove grey desaturation from a button
+function ItemHighlight:RemoveOverlay(button)
+	if not button then
+       return
+   end
    
--- 	local buttonName = button:GetName()
--- 	-- Reset texture color to normal (FULL COLOR)
--- 	local icon = button.icon or button.Icon or _G[buttonName.."IconTexture"]
--- 	if icon then
--- 		icon:SetVertexColor(1, 1, 1)
--- 	end
--- 	self.overlays[buttonName or tostring(button)] = nil
--- end
+	local buttonName = button:GetName()
+	-- Reset texture color to normal (FULL COLOR)
+	local icon = button.icon or button.Icon or _G[buttonName.."IconTexture"]
+	if icon then
+		icon:SetVertexColor(1, 1, 1)
+	end
+	self.overlays[buttonName or tostring(button)] = nil
+end
 
--- -- Clear all overlays
--- function ItemHighlight:ClearAllOverlays()
--- 	for buttonKey, _ in pairs(self.overlays) do
--- 		local button = _G[buttonKey] or buttonKey
--- 		if type(button) ~= "string" then
--- 			self:RemoveOverlay(button)
--- 		end
--- 	end
--- 	self.overlays = {}
--- end
+-- Clear all overlays
+function ItemHighlight:ClearAllOverlays()
+	for buttonKey, _ in pairs(self.overlays) do
+		local button = _G[buttonKey] or buttonKey
+		if type(button) ~= "string" then
+			self:RemoveOverlay(button)
+		end
+	end
+	self.overlays = {}
+end
 
--- -- Update highlighting for bag slots
--- function ItemHighlight:UpdateBagHighlighting()
--- 	GBankClassic_Output:Debug("REQUESTS", "UpdateBagHighlighting called")
--- 	-- Try Bagnon first
--- 	local bagnonWorked = self:UpdateBagnonHighlighting()
--- 	if bagnonWorked then
--- 		GBankClassic_Output:Debug("REQUESTS", "Using Bagnon highlighting")
+-- Update highlighting for bag slots
+function ItemHighlight:UpdateBagHighlighting()
+	GBankClassic_Output:Debug("REQUESTS", "UpdateBagHighlighting called")
+	-- Try Bagnon first
+	local bagnonWorked = self:UpdateBagnonHighlighting()
+	if bagnonWorked then
+		GBankClassic_Output:Debug("REQUESTS", "Using Bagnon highlighting")
 
--- 		return
--- 	end
+		return
+	end
 
--- 	-- Fall back to default bags only if Bagnon didn't work
--- 	GBankClassic_Output:Debug("REQUESTS", "Falling back to default bag highlighting")
--- 	self:UpdateDefaultBagHighlighting()
--- end
+	-- Fall back to default bags only if Bagnon didn't work
+	GBankClassic_Output:Debug("REQUESTS", "Falling back to default bag highlighting")
+	self:UpdateDefaultBagHighlighting()
+end
 
--- -- Update highlighting for Bagnon bags
--- function ItemHighlight:UpdateBagnonHighlighting()
--- 	-- Check if Bagnon addon is loaded
--- 	if not Bagnon and not BagBrother then
--- 		GBankClassic_Output:Debug("REQUESTS", "Bagnon not found")
+-- Update highlighting for Bagnon bags
+function ItemHighlight:UpdateBagnonHighlighting()
+	-- Check if Bagnon addon is loaded
+	if not Bagnon and not BagBrother then
+		GBankClassic_Output:Debug("REQUESTS", "Bagnon not found")
 
--- 		return false
--- 	end
+		return false
+	end
 
--- 	GBankClassic_Output:Debug("REQUESTS", "Bagnon found, building search string")
+	GBankClassic_Output:Debug("REQUESTS", "Bagnon found, building search string")
 
--- 	-- Build search string from needed items
--- 	-- Bagnon search is case-insensitive and matches partial names
--- 	-- Use | as OR operator to match any of the item names
--- 	local searchTerms = {}
--- 	for itemName, _ in pairs(self.neededItems) do
--- 		-- Strip common prefixes that don't match the actual item name
--- 		-- Formula: Enchant Bracer -> Enchant Bracer
--- 		-- Pattern: Robe of Power -> Robe of Power
--- 		local cleanName = itemName:gsub("^Formula: ", "")
--- 		cleanName = cleanName:gsub("^Pattern: ", "")
--- 		cleanName = cleanName:gsub("^Recipe: ", "")
--- 		cleanName = cleanName:gsub("^Plans: ", "")
--- 		cleanName = cleanName:gsub("^Schematic: ", "")
--- 		cleanName = cleanName:gsub("^Design: ", "")
--- 		cleanName = cleanName:gsub("^Manual: ", "")
--- 		table.insert(searchTerms, cleanName)
--- 	end
+	-- Build search string from needed items
+	-- Bagnon search is case-insensitive and matches partial names
+	-- Use | as OR operator to match any of the item names
+	local searchTerms = {}
+	for itemName, _ in pairs(self.neededItems) do
+		-- Strip common prefixes that don't match the actual item name
+		-- Formula: Enchant Bracer -> Enchant Bracer
+		-- Pattern: Robe of Power -> Robe of Power
+		local cleanName = itemName:gsub("^Formula: ", "")
+		cleanName = cleanName:gsub("^Pattern: ", "")
+		cleanName = cleanName:gsub("^Recipe: ", "")
+		cleanName = cleanName:gsub("^Plans: ", "")
+		cleanName = cleanName:gsub("^Schematic: ", "")
+		cleanName = cleanName:gsub("^Design: ", "")
+		cleanName = cleanName:gsub("^Manual: ", "")
+		table.insert(searchTerms, cleanName)
+	end
 
--- 	if #searchTerms == 0 then
--- 		GBankClassic_Output:Debug("REQUESTS", "No items to search for")
+	if #searchTerms == 0 then
+		GBankClassic_Output:Debug("REQUESTS", "No items to search for")
 
--- 		return false
--- 	end
+		return false
+	end
 
--- 	-- Limit to 20 items max to prevent Bagnon timeout with complex search strings
--- 	local MAX_SEARCH_ITEMS = 20
--- 	if #searchTerms > MAX_SEARCH_ITEMS then
--- 		GBankClassic_Output:Debug("REQUESTS", "Too many items (%d), limiting to %d", #searchTerms, MAX_SEARCH_ITEMS)
--- 		local limited = {}
--- 		for i = 1, MAX_SEARCH_ITEMS do
--- 			limited[i] = searchTerms[i]
--- 		end
--- 		searchTerms = limited
--- 	end
+	-- Limit to 20 items max to prevent Bagnon timeout with complex search strings
+	local MAX_SEARCH_ITEMS = 20
+	if #searchTerms > MAX_SEARCH_ITEMS then
+		GBankClassic_Output:Debug("REQUESTS", "Too many items (%d), limiting to %d", #searchTerms, MAX_SEARCH_ITEMS)
+		local limited = {}
+		for i = 1, MAX_SEARCH_ITEMS do
+			limited[i] = searchTerms[i]
+		end
+		searchTerms = limited
+	end
 
--- 	-- Join with | (OR operator) so Bagnon matches items containing ANY of these names
--- 	local searchString = table.concat(searchTerms, "|")
+	-- Join with | (OR operator) so Bagnon matches items containing ANY of these names
+	local searchString = table.concat(searchTerms, "|")
 	
--- 	-- Only trigger SEARCH_CHANGED if the search string actually changed
--- 	-- This prevents redundant Bagnon UI rebuilds that can cause execution timeout
--- 	if self.lastBagnonSearch == searchString then
--- 		GBankClassic_Output:Debug("REQUESTS", "Search string unchanged, skipping SEARCH_CHANGED signal")
--- 		return true
--- 	end
+	-- Only trigger SEARCH_CHANGED if the search string actually changed
+	-- This prevents redundant Bagnon UI rebuilds that can cause execution timeout
+	if self.lastBagnonSearch == searchString then
+		GBankClassic_Output:Debug("REQUESTS", "Search string unchanged, skipping SEARCH_CHANGED signal")
+		return true
+	end
 	
--- 	self.lastBagnonSearch = searchString
--- 	GBankClassic_Output:Debug("REQUESTS", "Setting Bagnon search (%d items): %s", #searchTerms, searchString)
+	self.lastBagnonSearch = searchString
+	GBankClassic_Output:Debug("REQUESTS", "Setting Bagnon search (%d items): %s", #searchTerms, searchString)
 
--- 	-- Set Bagnon's search string (use whichever global is available)
--- 	local addon = Bagnon or BagBrother
--- 	if addon.sets then
--- 		addon.sets.search = searchString
--- 	end
--- 	addon.search = searchString
--- 	addon.canSearch = true
+	-- Set Bagnon's search string (use whichever global is available)
+	local addon = Bagnon or BagBrother
+	if addon.sets then
+		addon.sets.search = searchString
+	end
+	addon.search = searchString
+	addon.canSearch = true
 
--- 	-- Trigger search update
--- 	addon:SendSignal('SEARCH_CHANGED')
--- 	GBankClassic_Output:Debug("REQUESTS", "Sent SEARCH_CHANGED signal")
+	-- Trigger search update
+	addon:SendSignal('SEARCH_CHANGED')
+	GBankClassic_Output:Debug("REQUESTS", "Sent SEARCH_CHANGED signal")
 
--- 	return true
--- end
+	return true
+end
 
--- -- Update highlighting for default WoW bags
--- function ItemHighlight:UpdateDefaultBagHighlighting()
--- 	-- Iterate through all bags
--- 	for bag = 0, 4 do
--- 		local containerID = (bag == 0) and 1 or (bag + 1)
--- 		local numSlots = GetContainerNumSlots(bag)
+-- Update highlighting for default WoW bags
+function ItemHighlight:UpdateDefaultBagHighlighting()
+	-- Iterate through all bags
+	for bag = 0, 4 do
+		local containerID = (bag == 0) and 1 or (bag + 1)
+		local numSlots = GetContainerNumSlots(bag)
 
--- 		-- Iterate through API slot numbers (1 to numSlots)
--- 		for apiSlot = 1, numSlots do
--- 			-- WoW bag buttons are ordered opposite of API slots
--- 			-- API slot 1 = button slot numSlots, API slot 2 = button slot numSlots-1, etc.
--- 			local buttonSlot = numSlots - apiSlot + 1
--- 			local buttonName = string.format("ContainerFrame%dItem%d", containerID, buttonSlot)
--- 			local button = _G[buttonName]
--- 			if button then
--- 				local itemInfo = GetContainerItemInfo(bag, apiSlot)
--- 				if itemInfo then
--- 					local itemName = GetItemNameByID(itemInfo.itemID)
--- 					if not self:IsItemNeeded(itemName) then
--- 						-- Item not needed - grey it out
--- 						self:ApplyOverlay(button)
--- 					end
--- 				end
--- 			end
--- 		end
--- 	end
--- end
+		-- Iterate through API slot numbers (1 to numSlots)
+		for apiSlot = 1, numSlots do
+			-- WoW bag buttons are ordered opposite of API slots
+			-- API slot 1 = button slot numSlots, API slot 2 = button slot numSlots-1, etc.
+			local buttonSlot = numSlots - apiSlot + 1
+			local buttonName = string.format("ContainerFrame%dItem%d", containerID, buttonSlot)
+			local button = _G[buttonName]
+			if button then
+				local itemInfo = GetContainerItemInfo(bag, apiSlot)
+				if itemInfo then
+					local itemName = GetItemNameByID(itemInfo.itemID)
+					if not self:IsItemNeeded(itemName) then
+						-- Item not needed - grey it out
+						self:ApplyOverlay(button)
+					end
+				end
+			end
+		end
+	end
+end
 
--- -- Update highlighting for bank slots
--- function ItemHighlight:UpdateBankHighlighting()
--- 	if not BankFrame or not BankFrame:IsVisible() then
---         return
---     end
+-- Update highlighting for bank slots
+function ItemHighlight:UpdateBankHighlighting()
+	if not BankFrame or not BankFrame:IsVisible() then
+        return
+    end
 
--- 	-- Bank slots (1-28)
--- 	for slot = 1, 28 do
--- 		local itemInfo = GetContainerItemInfo(-1, slot)
--- 		if itemInfo then
--- 			local itemName = GetItemNameByID(itemInfo.itemID)
--- 			local button = self:GetBankSlotButton(slot)
--- 			if button then
--- 				if self:IsItemNeeded(itemName) then
--- 					self:RemoveOverlay(button)
--- 				else
--- 					self:ApplyOverlay(button)
--- 				end
--- 			end
--- 		end
--- 	end
--- 	-- Bank bag slots (5-11)
--- 	for bag = 5, 11 do
--- 		local numSlots = GetContainerNumSlots(bag)
--- 		for slot = 1, numSlots do
--- 			local itemInfo = GetContainerItemInfo(bag, slot)
--- 			if itemInfo then
--- 				local itemName = GetItemNameByID(itemInfo.itemID)
--- 				local button = self:GetBagSlotButton(bag, slot)
--- 				if button then
--- 					if self:IsItemNeeded(itemName) then
--- 						self:RemoveOverlay(button)
--- 					else
--- 						self:ApplyOverlay(button)
--- 					end
--- 				end
--- 			end
--- 		end
--- 	end
--- end
+	-- Bank slots (1-28)
+	for slot = 1, 28 do
+		local itemInfo = GetContainerItemInfo(-1, slot)
+		if itemInfo then
+			local itemName = GetItemNameByID(itemInfo.itemID)
+			local button = self:GetBankSlotButton(slot)
+			if button then
+				if self:IsItemNeeded(itemName) then
+					self:RemoveOverlay(button)
+				else
+					self:ApplyOverlay(button)
+				end
+			end
+		end
+	end
+	-- Bank bag slots (5-11)
+	for bag = 5, 11 do
+		local numSlots = GetContainerNumSlots(bag)
+		for slot = 1, numSlots do
+			local itemInfo = GetContainerItemInfo(bag, slot)
+			if itemInfo then
+				local itemName = GetItemNameByID(itemInfo.itemID)
+				local button = self:GetBagSlotButton(bag, slot)
+				if button then
+					if self:IsItemNeeded(itemName) then
+						self:RemoveOverlay(button)
+					else
+						self:ApplyOverlay(button)
+					end
+				end
+			end
+		end
+	end
+end
 
--- -- Get button frame for a bag slot
--- function ItemHighlight:GetBagSlotButton(bag, slot)
--- 	-- Classic Era uses direct frame names
--- 	-- Bag 0 = ContainerFrame1, Bag 1-4 = ContainerFrame2-5
--- 	local containerID = (bag == 0) and 1 or (bag + 1)
--- 	local frameName = string.format("ContainerFrame%dItem%d", containerID, slot)
+-- Get button frame for a bag slot
+function ItemHighlight:GetBagSlotButton(bag, slot)
+	-- Classic Era uses direct frame names
+	-- Bag 0 = ContainerFrame1, Bag 1-4 = ContainerFrame2-5
+	local containerID = (bag == 0) and 1 or (bag + 1)
+	local frameName = string.format("ContainerFrame%dItem%d", containerID, slot)
 
--- 	return _G[frameName]
--- end
+	return _G[frameName]
+end
 
--- -- Get button frame for a bank slot
--- function ItemHighlight:GetBankSlotButton(slot)
--- 	-- Bank slots use BankFrameItem1, BankFrameItem2, etc.
--- 	local frameName = string.format("BankFrameItem%d", slot)
+-- Get button frame for a bank slot
+function ItemHighlight:GetBankSlotButton(slot)
+	-- Bank slots use BankFrameItem1, BankFrameItem2, etc.
+	local frameName = string.format("BankFrameItem%d", slot)
 
--- 	return _G[frameName]
--- end
+	return _G[frameName]
+end
 
--- -- Refresh all highlighting
--- function ItemHighlight:RefreshHighlighting()
--- 	if not self.enabled then
--- 		-- If disabled, clear Bagnon search (only if it was previously set)
--- 		if Bagnon and self.lastBagnonSearch ~= nil then
--- 			self.lastBagnonSearch = nil
--- 			local addon = Bagnon
--- 			addon.search = nil
--- 			addon.canSearch = false
--- 			addon:SendSignal('SEARCH_CHANGED')
--- 		end
+-- Refresh all highlighting
+function ItemHighlight:RefreshHighlighting()
+	if not self.enabled then
+		-- If disabled, clear Bagnon search (only if it was previously set)
+		if Bagnon and self.lastBagnonSearch ~= nil then
+			self.lastBagnonSearch = nil
+			local addon = Bagnon
+			addon.search = nil
+			addon.canSearch = false
+			addon:SendSignal('SEARCH_CHANGED')
+		end
 
--- 		return
--- 	end
+		return
+	end
 
--- 	-- Rebuild needed items list
--- 	local rebuilt = self:BuildNeededItemsList()
--- 	if not rebuilt then
--- 		GBankClassic_Output:Debug("REQUESTS", "BuildNeededItemsList returned false, exiting")
+	-- Rebuild needed items list
+	local rebuilt = self:BuildNeededItemsList()
+	if not rebuilt then
+		GBankClassic_Output:Debug("REQUESTS", "BuildNeededItemsList returned false, exiting")
 
--- 		return
--- 	end
+		return
+	end
 
--- 	GBankClassic_Output:Debug("REQUESTS", "About to clear overlays")
--- 	-- Clear old overlays (for default bags)
--- 	self:ClearAllOverlays()
+	GBankClassic_Output:Debug("REQUESTS", "About to clear overlays")
+	-- Clear old overlays (for default bags)
+	self:ClearAllOverlays()
 
--- 	GBankClassic_Output:Debug("REQUESTS", "Cleared overlays, updating highlighting")
+	GBankClassic_Output:Debug("REQUESTS", "Cleared overlays, updating highlighting")
 
--- 	-- Apply new highlighting
--- 	self:UpdateBagHighlighting()
--- 	self:UpdateBankHighlighting()
+	-- Apply new highlighting
+	self:UpdateBagHighlighting()
+	self:UpdateBankHighlighting()
 
--- 	GBankClassic_Output:Debug("REQUESTS", "Refreshed item highlighting")
--- end
+	GBankClassic_Output:Debug("REQUESTS", "Refreshed item highlighting")
+end
+]]--

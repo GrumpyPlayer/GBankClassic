@@ -23,7 +23,7 @@ function Options:Init()
 	self.db.global.bank["commDebug"] = self.db.global.bank["commDebug"] or false
 	-- self.db.global.requests = self.db.global.requests or { maxRequestPercent = 100}
 	-- self.db.global.requests["maxRequestPercent"] = self.db.global.requests["maxRequestPercent"] or 100
-	
+
 	-- Migrate from old shutup toggle to new logLevel
 	if self.db.global.bank["shutup"] ~= nil then
 		if self.db.global.bank["shutup"] == true then
@@ -487,8 +487,6 @@ function Options:InitGuild()
         type = "group",
 		name = "Bank",
         hidden = function()
-            local player = GBankClassic_Guild:GetNormalizedPlayer()
-			
             return not GBankClassic_Guild:IsGuildBankAlt(player)
         end,
         args = {
@@ -544,6 +542,7 @@ function Options:InitGuild()
                     if not guild then
                         return
                     end
+
                     GBankClassic_Database:ResetPlayer(guild, player)
                 end,
             },
@@ -592,18 +591,20 @@ function Options:GetCombatHide()
     return self.db.char.combat["hide"]
 end
 
--- function Options:GetMaxRequestPercent()
--- 	-- Read from guild-synced settings first (officer-configured, syncs to all clients)
--- 	if GBankClassic_Guild and GBankClassic_Guild.Info and GBankClassic_Guild.Info.settings then
--- 		return GBankClassic_Guild.Info.settings.maxRequestPercent or 100
--- 	end
--- 	-- Fall back to local setting if guild data not loaded yet
--- 	if not self.db or not self.db.global or not self.db.global.requests then
--- 		return 100
--- 	end
+--[[
+function Options:GetMaxRequestPercent()
+	-- Read from guild-synced settings first (officer-configured, syncs to all clients)
+	if GBankClassic_Guild and GBankClassic_Guild.Info and GBankClassic_Guild.Info.settings then
+		return GBankClassic_Guild.Info.settings.maxRequestPercent or 100
+	end
+	-- Fall back to local setting if guild data not loaded yet
+	if not self.db or not self.db.global or not self.db.global.requests then
+		return 100
+	end
 
--- 	return self.db.global.requests.maxRequestPercent or 100
--- end
+	return self.db.global.requests.maxRequestPercent or 100
+end
+]]--
 
 function Options:Open()
     Settings.OpenToCategory("GBankClassic - Revived")

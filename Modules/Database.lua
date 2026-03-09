@@ -244,8 +244,6 @@ function Database:Load(name)
     return db
 end
 
--- Snapshot management functions
-
 -- Save a snapshot of alt data for future delta computation
 function Database:SaveSnapshot(name, altName, altData)
 	if not name or not altName or not altData then
@@ -266,76 +264,6 @@ function Database:SaveSnapshot(name, altName, altData)
 	return true
 end
 
--- Retrieve a snapshot of alt data for delta computation
-function Database:GetSnapshot(name, altName)
-	if not name or not altName then
-		return nil
-	end
-
-	local db = self.db.factionrealm[name]
-	if not db or not db.deltaSnapshots then
-		return nil
-	end
-
-	local snapshot = db.deltaSnapshots[altName]
-	if not snapshot then
-		return nil
-	end
-
-	-- Check if snapshot is still valid (not too old)
-	local age = GetServerTime() - (snapshot.timestamp or 0)
-	if age > PROTOCOL.DELTA_SNAPSHOT_MAX_AGE then
-		-- Snapshot expired, remove it
-		db.deltaSnapshots[altName] = nil
-
-		return nil
-	end
-
-	-- Validate snapshot structure
-	if not self:ValidateSnapshot(snapshot.data) then
-		-- Corrupted snapshot, remove it
-		db.deltaSnapshots[altName] = nil
-		
-		return nil
-	end
-
-	return snapshot.data
-end
-
--- Validate snapshot structure
-function Database:ValidateSnapshot(snapshot)
-	if not snapshot or type(snapshot) ~= "table" then
-		return false
-	end
-
-	-- Check required fields
-	if not snapshot.version or type(snapshot.version) ~= "number" then
-		return false
-	end
-
-	-- Validate bank structure if present
-	if snapshot.bank then
-		if type(snapshot.bank) ~= "table" then
-			return false
-		end
-		if snapshot.bank.items and type(snapshot.bank.items) ~= "table" then
-			return false
-		end
-	end
-
-	-- Validate bags structure if present
-	if snapshot.bags then
-		if type(snapshot.bags) ~= "table" then
-			return false
-		end
-		if snapshot.bags.items and type(snapshot.bags.items) ~= "table" then
-			return false
-		end
-	end
-
-	return true
-end
-
 -- Deep copy function for snapshot creation
 function Database:DeepCopy(obj)
 	if type(obj) ~= "table" then
@@ -349,76 +277,6 @@ function Database:DeepCopy(obj)
 
 	return copy
 end
-
--- Delta history management
-
--- Save a delta to history for potential chain replay
-function Database:SaveDeltaHistory(name, altName, previousVersion, version, delta)
-	if not name or not altName or not previousVersion or not version or not delta then
-		return false
-	end
-
-	local db = self.db.factionrealm[name]
-	if not db then
-		return false
-	end
-
-	-- Initialize deltaHistory if needed
-	if not db.deltaHistory then
-		db.deltaHistory = {}
-	end
-	if not db.deltaHistory[altName] then
-		db.deltaHistory[altName] = {}
-	end
-
-	-- Add delta to history
-	table.insert(db.deltaHistory[altName], { previousVersion = previousVersion, version = version, delta = self:DeepCopy(delta), timestamp = GetServerTime() })
-
-	-- Enforce max count limit (keep most recent)
-	local maxCount = PROTOCOL.DELTA_HISTORY_MAX_COUNT or 10
-	while #db.deltaHistory[altName] > maxCount do
-		table.remove(db.deltaHistory[altName], 1) -- Remove oldest
-	end
-
-	return true
-end
-
--- Get delta history for an alt within a version range
-function Database:GetDeltaHistory(name, altName, fromVersion, toVersion)
-	if not name or not altName then
-		return nil
-	end
-
-	local db = self.db.factionrealm[name]
-	if not db or not db.deltaHistory or not db.deltaHistory[altName] then
-		return nil
-	end
-
-	-- Build chain of deltas from fromVersion to toVersion
-	local chain = {}
-	local currentVersion = fromVersion
-
-	for _, deltaEntry in ipairs(db.deltaHistory[altName]) do
-		if deltaEntry.baseVersion == currentVersion and deltaEntry.version <= toVersion then
-			table.insert(chain, { baseVersion = deltaEntry.baseVersion, version = deltaEntry.version, delta = deltaEntry.delta })
-			currentVersion = deltaEntry.version
-
-			-- Stop if we've reached the target
-			if currentVersion == toVersion then
-				break
-			end
-		end
-	end
-
-	-- Return nil if we couldn't build a complete chain
-	if currentVersion ~= toVersion then
-		return nil
-	end
-
-	return chain
-end
-
--- Protocol version tracking
 
 -- Update protocol version for a guild member
 function Database:UpdatePeerProtocol(name, sender, protocolVersion, supportsDelta)
@@ -440,22 +298,6 @@ function Database:UpdatePeerProtocol(name, sender, protocolVersion, supportsDelt
 	return true
 end
 
--- Get protocol version for a guild member
-function Database:GetPeerProtocol(name, sender)
-	if not name or not sender then
-		return nil
-	end
-
-	local db = self.db.factionrealm[name]
-	if not db or not db.guildProtocolVersions then
-		return nil
-	end
-
-	return db.guildProtocolVersions[sender]
-end
-
--- Delta metrics
-
 -- Record bytes sent via delta protocol
 function Database:RecordDeltaSent(name, bytes)
 	if not name or not bytes then
@@ -465,18 +307,6 @@ function Database:RecordDeltaSent(name, bytes)
 	local db = self.db.factionrealm[name]
 	if db and db.deltaMetrics then
 		db.deltaMetrics.bytesSentDelta = (db.deltaMetrics.bytesSentDelta or 0) + bytes
-	end
-end
-
--- Record bytes sent via full sync protocol
-function Database:RecordFullSyncSent(name, bytes)
-	if not name or not bytes then
-		return
-	end
-
-	local db = self.db.factionrealm[name]
-	if db and db.deltaMetrics then
-		db.deltaMetrics.bytesSentFull = (db.deltaMetrics.bytesSentFull or 0) + bytes
 	end
 end
 
@@ -528,56 +358,4 @@ function Database:RecordDeltaApplyTime(name, milliseconds)
 		db.deltaMetrics.totalApplyTime = (db.deltaMetrics.totalApplyTime or 0) + milliseconds
 		db.deltaMetrics.applyCount = (db.deltaMetrics.applyCount or 0) + 1
 	end
-end
-
--- Reset delta metrics (for testing or cleanup)
-function Database:ResetDeltaMetrics(name)
-	if not name then
-		return false
-	end
-
-	local db = self.db.factionrealm[name]
-	if not db then
-		return false
-	end
-
-	db.deltaMetrics = {
-		bytesSentDelta = 0,
-		bytesSentFull = 0,
-		deltasApplied = 0,
-		deltasFailed = 0,
-		fullSyncFallbacks = 0,
-		totalComputeTime = 0,
-		computeCount = 0,
-		totalApplyTime = 0,
-		applyCount = 0,
-	}
-
-	return true
-end
-
--- Record fallback to full sync
-function Database:RecordFullSyncFallback(name)
-	if not name then
-		return
-	end
-
-	local db = self.db.factionrealm[name]
-	if db and db.deltaMetrics then
-		db.deltaMetrics.fullSyncFallbacks = (db.deltaMetrics.fullSyncFallbacks or 0) + 1
-	end
-end
-
--- Get delta metrics
-function Database:GetDeltaMetrics(name)
-	if not name then
-		return nil
-	end
-
-	local db = self.db.factionrealm[name]
-	if not db or not db.deltaMetrics then
-		return nil
-	end
-
-	return db.deltaMetrics
 end
