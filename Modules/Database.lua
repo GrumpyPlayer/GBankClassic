@@ -111,20 +111,10 @@ function Database:Load(name)
 		end
     end
 
-	-- Migrate old alt data to ensure slots fields exist
-	-- Characters may have bank/bags without slots
+	-- Data migration
 	if db.alts then
 		for name, alt in pairs(db.alts) do
 			if type(alt) == "table" then
-				if alt.bank and not alt.bank.slots then
-					alt.bank.slots = { count = 0, total = 0 }
-					GBankClassic_Output:Debug("DATABASE", "Migrated alt data: initialized bank.slots for %s", name)
-				end
-				if alt.bags and not alt.bags.slots then
-					alt.bags.slots = { count = 0, total = 0 }
-					GBankClassic_Output:Debug("DATABASE", "Migrated alt data: initialized bags.slots for %s", name)
-				end
-
 				-- Clear and rebuild items from bank, bags, and mail
 				if (alt.bank and alt.bank.items) or (alt.bags and alt.bags.items) or (alt.mail and alt.mail.items) then
 					-- Don't create stub entries with hash but no content

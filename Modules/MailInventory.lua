@@ -95,14 +95,12 @@ function MailInventory:ScanMailInventory()
 
 	-- Build result structure (match bank/bags format for consistency)
 	local result = {
-		slots = { count = #mailItems, total = 100 }, -- Match bank/bags structure
-		items = mailItems, -- Now an array like bank/bags
+		items = mailItems,
 		version = GetServerTime()
 	}
 
 	-- Verify result structure
 	GBankClassic_Output:Debug("MAIL", "Mail result structure: items type=%s, length=%d", type(result.items), #result.items)
-	GBankClassic_Output:Debug("MAIL", "Mail result slots.count=%d", result.slots.count)
 	GBankClassic_Output:Debug("MAIL", "Mail scan complete: %d unique items across %d mail messages", #mailItems, numItems)
 
 	return result

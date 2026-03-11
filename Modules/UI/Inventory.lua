@@ -168,8 +168,6 @@ function UI_Inventory:DrawContent()
     local tabs = {}
     local first_tab = nil
     local total_gold = 0
-    local slots = 0
-    local total_slots = 0
 
     for i = 1, #roster_alts do
         local guildBankAltName = roster_alts[i]
@@ -183,14 +181,6 @@ function UI_Inventory:DrawContent()
             if alt.money then
                 total_gold = total_gold + alt.money
             end
-			if alt.bank and alt.bank.slots then
-                slots = slots + alt.bank.slots.count
-                total_slots = total_slots + alt.bank.slots.total
-            end
-			if alt.bags and alt.bags.slots then
-                slots = slots + alt.bags.slots.count
-                total_slots = total_slots + alt.bags.slots.total
-            end
         end
     end
 
@@ -203,15 +193,7 @@ function UI_Inventory:DrawContent()
 	end
 
     self.TabGroup:SetTabs(tabs)
-
-	local percent = total_slots > 0 and (slots / total_slots) or 0
-	local color = self:GetPercentColor(percent)
-    local defaultStatus
-    if slots > 0 and total_slots > 0 then
-	    defaultStatus = string.format("%s    |c%s%d/%d|r", GetCoinTextureString(total_gold), color, slots, total_slots)
-    else
-	    defaultStatus = string.format("%s    |c%s|r", GetCoinTextureString(total_gold), color)
-    end
+    local defaultStatus = string.format("%s    ", GetCoinTextureString(total_gold))
     self.Window:SetStatusText(defaultStatus)
 
     self.Window:SetCallback("OnEnterStatusBar", function(_)
@@ -223,38 +205,17 @@ function UI_Inventory:DrawContent()
         end
 
         local datetime = date("%b %d, %Y %H:%M", alt.version)
-        local slot_count = 0
-        local slot_total = 0
-        if alt.bank and alt.bank.slots then
-            slot_count = slot_count + alt.bank.slots.count
-            slot_total = slot_total + alt.bank.slots.total
-        end
-        if alt.bags and alt.bags.slots then
-            slot_count = slot_count + alt.bags.slots.count
-            slot_total = slot_total + alt.bags.slots.total
-        end
-
-		-- Add mail item count if available
 		local mailCount = alt.mail and alt.mail.items and GBankClassic_Globals:Count(alt.mail.items) or 0
-
         local money = 0
         if alt.money then
             money = alt.money
         end
-
-		local percent = slot_total > 0 and (slot_count / slot_total) or 0
-		local color = self:GetPercentColor(percent)
 		local mailText = ""
         local mailIcon = "|TInterface\\Icons\\INV_Letter_15:12:12:0:0|t"
 		if mailCount > 0 then
 			mailText = string.format("    |cff87ceeb%s %d item%s|r", mailIcon, mailCount, mailCount > 1 and "s" or "")
 		end
-        local status
-        if slot_count > 0 and slot_total > 0 then
-            status = string.format("As of %s    %s    |c%s%d/%d|r%s", datetime, GetCoinTextureString(money), color, slot_count, slot_total, mailText)
-        else
-            status = string.format("As of %s    %s    |c%s|r%s", datetime, GetCoinTextureString(money), color, mailText)
-        end
+        local status = string.format("As of %s    %s    %s", datetime, GetCoinTextureString(money), mailText)
         self.Window:SetStatusText(status)
     end)
 
@@ -439,21 +400,4 @@ function UI_Inventory:RefreshCurrentTab()
 
     group:ReleaseChildren()
     group:Fire("OnGroupSelected", current)
-end
-
-function UI_Inventory:GetPercentColor(percent)
-    local color = nil
-    if percent <= 0.25 then
-        color = "ffffffff"
-    elseif percent <= 0.5 then
-        color = "ff00ff00"
-    elseif percent <= 0.75 then
-        color = "ffffff00"
-    elseif percent <= 0.9 then
-        color = "ffff9900"
-    elseif percent > 0.9 then
-        color = "ffff0000"
-    end
-
-    return color
 end
