@@ -124,82 +124,35 @@ function Database:Load(name)
 					alt.bags.slots = { count = 0, total = 0 }
 					GBankClassic_Output:Debug("DATABASE", "Migrated alt data: initialized bags.slots for %s", name)
 				end
-				-- Compute inventory hash for alts that don't have one
-				-- This enables pull-based protocol for existing alt data
-				if not alt.inventoryHash and alt.bank and alt.bags then
-					local money = alt.money or 0
-					alt.inventoryHash = GBankClassic_DeltaComms:ComputeInventoryHash(alt.bank, alt.bags, money)
-				GBankClassic_Output:Debug("DATABASE", "Migrated alt data: computed inventory hash for %s (hash=%d)", name, alt.inventoryHash)
-				end
-				-- Recalculate aggregated items from bank/bags/mail with corrected aggregate function
-				-- This fixes item count duplication without requiring a full scan
-				-- Clear and rebuild alt.items on every load to prevent accumulation
-				if (alt.bank and alt.bank.items) or (alt.bags and alt.bags.items) or (alt.mail and alt.mail.items) then
-					-- Guild bank alt with bank/bags - force reconstruct from sources
-					-- Log sample counts before clearing
-					if alt.items and #alt.items > 0 then
-						local beforeSample = {}
-						for i = 1, math.min(5, #alt.items) do
-							local item = alt.items[i]
-							if item then
-								table.insert(beforeSample, string.format("%s:%d", item.ID or "?", item.Count or 0))
-							end
-						end
-						GBankClassic_Output:Debug("DATABASE", "Recalculation of aggregated alt.items (from bank, bags, and mail) starting for guild bank alt %s.", name)
-						GBankClassic_Output:Debug("DATABASE", "Sampling (before recalculation) for guild bank alt %s of alt.items: %s.", name, table.concat(beforeSample, ", "))
-					end
 
+				-- Clear and rebuild items from bank, bags, and mail
+				if (alt.bank and alt.bank.items) or (alt.bags and alt.bags.items) or (alt.mail and alt.mail.items) then
 					-- Don't create stub entries with hash but no content
 					if (alt.bank and alt.bank.items and #alt.bank.items > 0) or (alt.bags and alt.bags.items and #alt.bags.items > 0) or (alt.mail and alt.mail.items and #alt.mail.items > 0) then
-						-- Only recalc if source data exists
+						-- Only rebuild if source data exists
 						alt.items = nil
 						GBankClassic_Bank:RecalculateAggregatedItems(alt)
-
-						-- Verify recalculation produced valid data
-						if alt.items and #alt.items > 0 then
-							-- Recompute hash after recalculation
-							local money = alt.money or 0
-							alt.inventoryHash = GBankClassic_Bank:ComputeInventoryHash(alt.items, money)
-							GBankClassic_Output:Debug("DATABASE", "Recomputed inventory hash after recalculation for %s: %d.", name, alt.inventoryHash)
-						end
 					else
 						-- No source data, clear hash and version too
 						alt.inventoryHash = nil
 						alt.version = nil
 					end
-
-					-- Log sample counts after recalculation
-					if alt.items and #alt.items > 0 then
-						local afterSample = {}
-						for i = 1, math.min(5, #alt.items) do
-							local item = alt.items[i]
-							if item then
-								table.insert(afterSample, string.format("%s:%d", item.ID or "?", item.Count or 0))
-							end
-						end
-						GBankClassic_Output:Debug("DATABASE", "Sampling (after recalculation) for guild bank alt %s of alt.items: %s.", name, table.concat(afterSample, ", "))
-					end
-
-					-- Recompute inventory hash
-					if alt.items then
-						local money = alt.money or 0
-						local syncHash = GBankClassic_Bank:ComputeInventoryHash(alt.items, money)
-						if syncHash ~= alt.inventoryHash then
-							alt.inventoryHash = syncHash
-							GBankClassic_Output:Debug("DATABASE", "Migrated alt data: corrected inventory hash for %s (hash=%d)", name, syncHash)
-						end
-					end
-
-					GBankClassic_Output:Debug("DATABASE", "Completed recalculation of aggregated alt.items for guild bank alt %s.", name)
 				elseif alt.items then
-					-- Synced alt - force deduplicate
-					-- Do not merge mail here - alt.items from sync already includes mail from sender's scan
 					local aggregated = GBankClassic_Item:Aggregate(alt.items, nil)
 					alt.items = {}
 					for _, item in pairs(aggregated) do
 						table.insert(alt.items, item)
 					end
-					GBankClassic_Output:Debug("DATABASE", "Forced deduplication for synced guild bank alt %s: %d items", name, #alt.items)
+					GBankClassic_Output:Debug("DATABASE", "Forced deduplication for synced guild bank alt %s: %d items.", name, #alt.items)
+				end
+
+				-- Recompute inventory hash
+				if alt.items then
+					local money = alt.money or 0
+					alt.inventoryHash = GBankClassic_DeltaComms:ComputeInventoryHash(alt.items, nil, nil, money)
+					alt.improvedInventoryHash = self:ComputeImprovedInventoryHash(alt.items, money)
+					GBankClassic_Output:Debug("DATABASE", "Recomputed inventory hash after recalculation for %s: %d.", name, alt.inventoryHash)
+					GBankClassic_Output:Debug("DATABASE", "Recomputed improved inventory hash after recalculation for %s: %d.", name, alt.improvedInventoryHash)
 				end
 			end
 		end

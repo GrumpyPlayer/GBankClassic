@@ -1555,7 +1555,7 @@ function Guild:CheckMailFulfillment(request)
 				if item.ID == itemID then
 					local count = item.Count
 					inMail = inMail + count
-					table.insert(alts, { name = name, count = count, lastScan = alt.mail.lastScan or 0 })
+					table.insert(alts, { name = name, count = count, version = alt.mail.version or 0 })
 					break -- Found the item, no need to continue
 				end
 			end

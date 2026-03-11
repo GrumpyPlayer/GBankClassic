@@ -480,7 +480,7 @@ function Guild:RebuildGuildBankAltsRoster()
 				--   senderIsAuthority: true, 
 				--   self.areOfficerNotesUsedToDefineGuildBankAlts: true,
 				--   version: unix timestamp
-				--   hash: GBankClassic_Bank:ComputeInventoryHash(guildBankAlts.items, true)
+				--   hash: GBankClassic_Bank:ComputeImprovedInventoryHash(guildBankAlts.items, true)
 
 				-- when player receives the heartbeat, and if they are not an authority:
 				--   gbank-roster-request WHISPER to sender that is an authority: send me your roster
@@ -553,7 +553,7 @@ function Guild:RebuildGuildBankAltsRoster()
 				money = 0,
 				inventoryHash = 0,
 				items = {},
-				mail = { items = {}, slots = { count = 0, total = 0 }, lastScan = 0, version = 0 },
+				mail = { items = {}, slots = { count = 0, total = 0 }, version = 0 },
 				mailHash = 0,
 			}
 			self:EnsureLegacyFields(self.Info.alts[normName])
@@ -1650,18 +1650,6 @@ function Guild:SendAltData(name, requesterInventoryHash, requesterMailHash, targ
 	local bagsCount = (currentAlt.bags and currentAlt.bags.items) and #currentAlt.bags.items or 0
 	GBankClassic_Output:Debug("SYNC", "Sending %s: alt.items=%d, alt.bank.items=%d (includes mail), alt.bags.items=%d", norm, itemsCount, bankCount, bagsCount)
 
-	-- Log sample counts from what we're about to send
-	if currentAlt.items and #currentAlt.items > 0 then
-		local sampleItems = {}
-		for i = 1, math.min(5, #currentAlt.items) do
-			local item = currentAlt.items[i]
-			if item then
-				table.insert(sampleItems, string.format("%s:%d", item.ID or "?", item.Count or 0))
-			end
-		end
-		GBankClassic_Output:Debug("SYNC", "First 5 items in alt.items being sent: %s", table.concat(sampleItems, ", "))
-	end
-
 	local deltaData = nil
 	local computeStart = debugprofilestop()
 	local onChunkSent = createOnChunkSentCallback(norm)
@@ -1830,20 +1818,6 @@ function Guild:ReceiveAltData(name, alt, sender)
 			GBankClassic_Output:Debug("SYNC", "No items to reconstruct for %s (bank and bags both empty)", name)
 		end
 	else
-		-- alt.items exists, deduplicate and ensure array format
-		-- Items may have duplicates from corrupted syncs, so aggregate to dedupe
-		-- Log sample counts before deduplication
-		if alt.items and #alt.items > 0 then
-			local beforeSample = {}
-			for i = 1, math.min(5, #alt.items) do
-				local item = alt.items[i]
-				if item then
-					table.insert(beforeSample, string.format("%s:%d", item.ID or "?", item.Count or 0))
-				end
-			end
-			GBankClassic_Output:Debug("SYNC", "Before dedupe - First 5 items received: %s", table.concat(beforeSample, ", "))
-		end
-
 		-- Check if we need to merge mail items into alt.items
 		-- Only merge if this is old data (no mailHash = created before mail sync existed)
 		-- If mailHash exists, alt.items already includes mail from sender's Bank:Scan()
@@ -1874,18 +1848,6 @@ function Guild:ReceiveAltData(name, alt, sender)
 			end
 			alt.items = arrayItems
 			GBankClassic_Output:Debug("SYNC", "alt.items exists for %s, deduplicated and converted to array: %d items", name, #alt.items)
-		end
-
-		-- Log sample counts after deduplication
-		if alt.items and #alt.items > 0 then
-			local afterSample = {}
-			for i = 1, math.min(5, #alt.items) do
-				local item = alt.items[i]
-				if item then
-					table.insert(afterSample, string.format("%s:%d", item.ID or "?", item.Count or 0))
-				end
-			end
-			GBankClassic_Output:Debug("SYNC", "After dedupe - First 5 items stored: %s", table.concat(afterSample, ", "))
 		end
 	end
 
@@ -2038,7 +2000,7 @@ function Guild:ReceiveAltData(name, alt, sender)
 		self.Info.alts[norm].mail = existingMail
 		local mailItemCount = existingMail.items and #existingMail.items or 0
 		GBankClassic_Output:Debug("MAIL", "Restored mail for %s (%d items) - incoming sync lacked mail", norm, mailItemCount)
-		GBankClassic_Output:Debug("MAIL", "Preserved mail data for %s (%d items, lastScan=%s) - backward compat", norm, mailItemCount, tostring(existingMail.lastScan))
+		GBankClassic_Output:Debug("MAIL", "Preserved mail data for %s (%d items, version=%s) - backward compat", norm, mailItemCount, tostring(existingMail.version))
 
 		-- Re-aggregate alt.items to include the restored mail
 		-- The incoming alt.items doesn't have mail, so we need to merge it back in

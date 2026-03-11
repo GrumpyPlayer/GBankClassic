@@ -74,6 +74,37 @@ function Items:GetItemKey(link)
 	return link
 end
 
+-- Get normalized item key for deduplication (strips unique instance ID)
+-- Items with same ID+suffix but different instance IDs will have same key
+-- Format: itemID:enchant:suffixID (3 parts)
+function Items:GetImprovedItemKey(link)
+	if not link or link == "" then
+		return ""
+	end
+
+	local itemString = link:match("|Hitem:([^|]+)|h")
+	if not itemString then
+		itemString = link:match("item:([%d:]+)")
+	end
+
+	if itemString then
+		-- Split into parts
+		local parts = {}
+		for part in string.gmatch(itemString, "([^:]+)") do
+			table.insert(parts, part)
+		end
+
+		-- Keep only item ID, enchant, and suffix
+		if #parts >= 7 then
+			return table.concat({parts[1], parts[2], parts[7]}, ":")
+		else
+			GBankClassic_Output:Error("Unexpected item link (link=%s, itemString=%s, parts=%d)", tostring(link), tostring(itemString), #parts)
+		end
+	end
+
+	return link
+end
+
 function Items:GetItems(items, callback)
 	if not items or type(items) ~= "table" then
 		callback({})
@@ -331,12 +362,9 @@ end
 
 function Items:Aggregate(a, b)
     local items = {}
-    -- Build ID index to avoid O(n²) lookups for linkless deduplication
     local itemsByID = {}
-    local itemsByKey = {} -- Track by full key to prevent duplicates
-	-- Track which IDs have been seen to handle hash table to array conversion
-    local seenIDs = {}
-
+    local itemsByKey = {}
+	
     local function processItem(v)
         if not v or not v.ID then
             -- Skip malformed entries (missing required ID field)
@@ -346,49 +374,41 @@ function Items:Aggregate(a, b)
         -- Ensure Count is set
         v.Count = v.Count or 1
 
-        -- Use normalized key (strips unique instance ID) for deduplication
-        -- This allows identical items with different instance IDs to merge
-        local itemKey = v.Link and self:GetItemKey(v.Link) or ""
-        local key = tostring(v.ID) .. ":" .. itemKey
+        -- Define a key for deduplication
+		local idStr = tostring(v.ID)
+		local key = idStr
+
+		-- For weapons/armor, include enchant and suffix differences
+		if v.Link then
+			if self:NeedsLink(v.Link) then
+				local linkKey = self:GetImprovedItemKey(v.Link)
+				if linkKey and linkKey ~= "" then
+					key = linkKey
+				end
+			else
+				v.Link = nil
+			end
+		end
 
         -- Skip if we already have this exact key
         if itemsByKey[key] then
             local existingItem = itemsByKey[key]
-            existingItem.Count = (existingItem.Count or 1) + (v.Count or 1)
-            existingItem.Link = existingItem.Link or v.Link
+            existingItem.Count = existingItem.Count + v.Count
+            local existingItemLink = existingItem.Link or v.Link
+			if self:NeedsLink(existingItemLink) then
+				existingItem.Link = existingItemLink
+			end
 
             return
         end
 
-        -- If no link, also check if there's an existing entry with same ID but with link
-        -- This handles deduplication between linked (bank/bags) and linkless (mail) items
-        if not v.Link and itemKey == "" then
-            -- Use ID index for O(1) lookup instead of O(n) iteration
-            local idStr = tostring(v.ID)
-            local existingKeys = itemsByID[idStr]
-            if existingKeys and #existingKeys > 0 then
-                -- Found item(s) with same ID - merge into first entry
-                local existingKey = existingKeys[1]
-                local existingItem = items[existingKey]
-                local itemCount = existingItem.Count or 1
-                local vCount = v.Count or 1
-                existingItem.Count = itemCount + vCount
-                existingItem.Link = existingItem.Link or v.Link
-                key = existingKey
-            end
-        end
-
         if key and not itemsByKey[key] then
-            -- Ensure stored item has count field
-            items[key] = { ID = v.ID, Count = v.Count or 1, Link = v.Link }
+            items[key] = { ID = v.ID, Count = v.Count, Link = v.Link }
             itemsByKey[key] = items[key]
-            -- Add to ID index
-            local idStr = tostring(v.ID)
             if not itemsByID[idStr] then
                 itemsByID[idStr] = {}
             end
             table.insert(itemsByID[idStr], key)
-            seenIDs[v.ID] = true
         end
     end
 

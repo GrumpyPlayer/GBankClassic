@@ -97,8 +97,7 @@ function MailInventory:ScanMailInventory()
 	local result = {
 		slots = { count = #mailItems, total = 100 }, -- Match bank/bags structure
 		items = mailItems, -- Now an array like bank/bags
-		version = GetServerTime(),
-		lastScan = GetServerTime()
+		version = GetServerTime()
 	}
 
 	-- Verify result structure
@@ -123,7 +122,7 @@ function MailInventory:GetItemsInMail(itemID)
 			-- Search for matching ID
 			for _, item in ipairs(alt.mail.items) do
 				if item.ID == itemID then
-					table.insert(alts, { name = name, count = item.Count, lastScan = alt.mail.lastScan or 0 })
+					table.insert(alts, { name = name, count = item.Count, version = alt.mail.version or 0 })
 					break -- Found the item, no need to continue
 				end
 			end
@@ -147,11 +146,11 @@ end
 
 -- Returns age of mail scan data in seconds
 function MailInventory:GetMailDataAge(alt)
-	if not alt or not alt.mail or not alt.mail.lastScan then
+	if not alt or not alt.mail or not alt.mail.version then
 		return nil
 	end
 
-	return time() - alt.mail.lastScan
+	return time() - alt.mail.version
 end
 
 -- Checks if alt has mail inventory data
