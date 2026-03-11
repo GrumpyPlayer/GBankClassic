@@ -23,6 +23,78 @@ local function hasUpdated()
     return Bank.hasUpdated
 end
 
+local function scanBag(bag, slots)
+    local items = {}
+
+    for slot = 1, slots do
+        local itemInfo = GetContainerItemInfo(bag, slot)
+        if itemInfo then
+            local itemCount = itemInfo.stackCount
+            local itemLink = itemInfo.hyperlink
+            local itemID = itemInfo.itemID
+            if itemLink then
+                local key = itemID .. itemLink
+                if items[key] then
+                    local item = items[key]
+                    items[key] = { ID = item.ID, Count = item.Count + itemCount, Link = item.Link }
+                else
+                    items[key] = { ID = itemID, Count = itemCount, Link = itemLink }
+                end
+            end
+        end
+    end
+
+    return items
+end
+
+local function scanBags(bagTable)
+    local bagItems = nil
+
+    for bag = 0, 4 do
+        local slots = GetContainerNumSlots(bag)
+        local items = scanBag(bag, slots)
+        if bagItems == nil then
+            bagItems = items
+        else
+            for k, v in pairs(items) do
+                if bagItems[k] then
+                    local item = bagItems[k]
+                    bagItems[k] = { ID = item.ID, Count = item.Count + v.Count, Link = item.Link }
+                else
+                    bagItems[k] = v
+                end
+            end
+        end
+    end
+
+    for _, v in pairs(bagItems) do
+        table.insert(bagTable, v)
+    end
+end
+
+local function scanBank(bankTable)
+	if isBankAvailable() then
+		local bankItems = scanBag(BANK_CONTAINER, NUM_BANKGENERIC_SLOTS)
+
+		for bag = 5, 11 do
+			local slots = GetContainerNumSlots(bag)
+			local items = scanBag(bag, slots)
+			for k, v in pairs(items) do
+				if bankItems[k] then
+					local item = bankItems[k]
+					bankItems[k] = { ID = item.ID, Count = item.Count + v.Count, Link = item.Link }
+				else
+					bankItems[k] = v
+				end
+			end
+		end
+
+		for _, v in pairs(bankItems) do
+			table.insert(bankTable, v)
+		end
+	end
+end
+
 function Bank:Scan()
     if Bank.eventsRegistered then
         if not hasUpdated() then
@@ -62,15 +134,20 @@ function Bank:Scan()
 	if info.alts and info.alts[player] then
 		alt = info.alts[player]
 	end
-	if isBankAvailable() then
-		alt.bank = {
-			items = {},
-		}
-	end
+
+	-- Scan bank if available
+	alt.bank = {
+		items = {},
+	}
+	scanBank(alt.bank.items)
+
+	-- Scan bags
 	alt.bags = {
 		items = {},
 	}
+	scanBags(alt.bags.items)
 
+	-- Scan money
 	local money = GetMoney()
 	alt.money = money
 
