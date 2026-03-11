@@ -421,6 +421,22 @@ function Bank:OnUpdateStop()
 		GBankClassic_Output:Debug("INVENTORY", "Calling scan")
         self:Scan()
 		GBankClassic_Output:Debug("INVENTORY", "Scan completed")
+		
+		-- Trigger UI refresh if inventory window is open
+		if GBankClassic_UI_Inventory.isOpen then
+			if not GBankClassic_UI_Inventory.currentTab or GBankClassic_UI_Inventory.currentTab == GBankClassic_Guild.player then
+				GBankClassic_UI_Inventory:DrawContent()
+				GBankClassic_UI_Inventory:RefreshCurrentTab()
+			end
+		end
+		if GBankClassic_UI_Search.isOpen then
+			GBankClassic_UI_Search:BuildSearchData()
+			GBankClassic_UI_Search:DrawContent()
+			GBankClassic_UI_Search.searchField:Fire("OnEnterPressed")
+		end
+		if GBankClassic_UI_Donations.isOpen then
+			GBankClassic_UI_Donations:DrawContent()
+		end
 	else
 		GBankClassic_Output:Debug("INVENTORY", "Skipping scan because hasUpdated is false")
     end

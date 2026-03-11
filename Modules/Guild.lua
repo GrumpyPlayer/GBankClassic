@@ -923,18 +923,6 @@ function Guild:QueryAltPullBased(name)
 		self.requestCount = self.requestCount + 1
 	end
 
-	-- Skip repeated triggers if last query < cooldown (per alt)
-	self._lastQueryTime = self._lastQueryTime or {}
-	local now = GetTime()
-	local last = self._lastQueryTime[norm] or 0
-	local cooldown = 15 -- Seconds
-	if now - last < cooldown then
-		GBankClassic_Output:Debug("SYNC", "QueryAltPullBased: Skipping %s due to cooldown (%.2fs remaining)", norm, cooldown - (now - last))
-
-		return
-	end
-	self._lastQueryTime[norm] = now
-
 	-- Check if we have an online guild bank alt
 	local guildBankAlt = nil
 	local onlineGuildBankAltCount = 0
@@ -1223,17 +1211,6 @@ function Guild:RespondToStateSummary(name, summary, requester)
 
 	GBankClassic_Output:DebugComm("RespondToStateSummary: %s requesterV=%d currentV=%d requesterHash=%s currentHash=%s requesterMailHash=%s currentMailHash=%s", norm, requesterVersion, currentVersion, tostring(requesterHash), tostring(currentHash), tostring(requesterMailHash), tostring(currentMailHash))
 
-	-- Track last sent hash per guild+alt+requester
-	self._lastSentState = self._lastSentState or {}
-	local key = norm .. ":" .. requester
-	local hashOrVersion = currentHash or 0
-	if self._lastSentState[key] == hashOrVersion then
-		GBankClassic_Output:DebugComm("RespondToStateSummary: already sent data to %s for %s (hash/version unchanged), skipping", requester, norm)
-		GBankClassic_Output:Debug("SYNC", "RespondToStateSummary: already sent data to %s for %s (hash/version unchanged), skipping", requester, norm)
-
-		return
-	end
-
 	-- Delta mode - only use hashes, no version fallback
 	-- If current alt doesn't have a hash, send full data (might be from pre-hash version)
 	if not currentHash then
@@ -1241,7 +1218,6 @@ function Guild:RespondToStateSummary(name, summary, requester)
 		GBankClassic_Output:Debug("SYNC", "Sending full data to %s for %s (responder has no hash)", requester, norm)
 		-- Pass zero hashes (requester baseline unknown, send everything)
 		self:SendAltData(norm, 0, 0, requester, nil)
-		self._lastSentState[key] = hashOrVersion
 
 		return
 	end
@@ -1252,7 +1228,6 @@ function Guild:RespondToStateSummary(name, summary, requester)
 		GBankClassic_Output:Debug("SYNC", "Sending full data to %s for %s (requester has no data)", requester, norm)
 		-- Pass zero hashes (requester has no data, everything is new)
 		self:SendAltData(norm, 0, 0, requester, nil)
-		self._lastSentState[key] = hashOrVersion
 
 		return
 	end
@@ -1274,7 +1249,6 @@ function Guild:RespondToStateSummary(name, summary, requester)
 		end
 
 		GBankClassic_Output:Debug("SYNC", "Sent no-change reply to %s for %s (hash=%d, mailHash=%d)", requester, norm, currentHash, currentMailHash)
-		self._lastSentState[key] = hashOrVersion
 
 		return
 	elseif requesterHash == currentHash and requesterMailHash ~= currentMailHash then
@@ -1283,7 +1257,6 @@ function Guild:RespondToStateSummary(name, summary, requester)
 		GBankClassic_Output:Debug("SYNC", "Sending data to %s for %s (mail-only change: requester=%d, current=%d)", requester, norm, requesterMailHash, currentMailHash)
 		-- Pass requester baseline for accurate delta computation
 		self:SendAltData(norm, requesterHash, requesterMailHash, requester, requesterBaseline)
-		self._lastSentState[key] = hashOrVersion
 
 		return
 	else
@@ -1292,7 +1265,6 @@ function Guild:RespondToStateSummary(name, summary, requester)
 		GBankClassic_Output:Debug("SYNC", "Sending data to %s for %s (hash mismatch: inv=%d->%d, mail=%d->%d)", requester, norm, requesterHash, currentHash, requesterMailHash, currentMailHash)
 		-- Pass requester baseline for accurate delta computation
 		self:SendAltData(norm, requesterHash, requesterMailHash, requester, requesterBaseline)
-		self._lastSentState[key] = hashOrVersion
 
 		return
 	end
@@ -1335,12 +1307,17 @@ local function throttledUIRefresh()
 	lastUIRefresh = now
 
 	-- Only refresh if UI is actually open
-	if GBankClassic_UI_Inventory and GBankClassic_UI_Inventory.isOpen then
+	if GBankClassic_UI_Inventory.isOpen then
 		GBankClassic_UI_Inventory:DrawContent()
 		GBankClassic_UI_Inventory:RefreshCurrentTab()
 	end
-	if GBankClassic_UI_Search and GBankClassic_UI_Search.isOpen then
+	if GBankClassic_UI_Search.isOpen then
+		GBankClassic_UI_Search:BuildSearchData()
 		GBankClassic_UI_Search:DrawContent()
+    	GBankClassic_UI_Search.searchField:Fire("OnEnterPressed")
+	end
+	if GBankClassic_UI_Donations.isOpen then
+		GBankClassic_UI_Donations:DrawContent()
 	end
 end
 
@@ -1685,7 +1662,6 @@ function Guild:SendAltData(name, requesterInventoryHash, requesterMailHash, targ
 		GBankClassic_Output:Debug("SYNC", "First 5 items in alt.items being sent: %s", table.concat(sampleItems, ", "))
 	end
 
-	local useDelta = false
 	local deltaData = nil
 	local computeStart = debugprofilestop()
 	local onChunkSent = createOnChunkSentCallback(norm)
@@ -2326,9 +2302,6 @@ function Guild:ShareAllGuildBankAltData(priority)
 
 	local version = self:GetVersion()
 	if version == nil then
-		return
-	end
-	if version.roster == nil then
 		return
 	end
 

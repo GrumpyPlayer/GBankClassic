@@ -711,9 +711,19 @@ function Chat:OnCommReceived(prefix, message, distribution, sender)
 				end
 
 				-- ReceiveAltData already applied/rejected; refresh UI if open
-				if status == ADOPTION_STATUS.ADOPTED and GBankClassic_UI_Inventory and GBankClassic_UI_Inventory.isOpen then
-					GBankClassic_UI_Inventory:DrawContent()
-					GBankClassic_UI_Inventory:RefreshCurrentTab()
+				if status == ADOPTION_STATUS.ADOPTED then
+					if GBankClassic_UI_Inventory.isOpen then
+						GBankClassic_UI_Inventory:DrawContent()
+						GBankClassic_UI_Inventory:RefreshCurrentTab()
+					end
+					if GBankClassic_UI_Search.isOpen then
+						GBankClassic_UI_Search:BuildSearchData()
+						GBankClassic_UI_Search:DrawContent()
+						GBankClassic_UI_Search.searchField:Fire("OnEnterPressed")
+					end
+					if GBankClassic_UI_Donations.isOpen then
+						GBankClassic_UI_Donations:DrawContent()
+					end
 				end
 			else
 				-- Ignore spoofed alt data
@@ -761,6 +771,11 @@ function Chat:OnCommReceived(prefix, message, distribution, sender)
 						GBankClassic_Guild:ReconstructItemLinks(data.changes.bags.added)
 						GBankClassic_Guild:ReconstructItemLinks(data.changes.bags.modified)
 						GBankClassic_Guild:ReconstructItemLinks(data.changes.bags.removed)
+					end
+					if data.changes.mail then
+						GBankClassic_Guild:ReconstructItemLinks(data.changes.mail.added)
+						GBankClassic_Guild:ReconstructItemLinks(data.changes.mail.modified)
+						GBankClassic_Guild:ReconstructItemLinks(data.changes.mail.removed)
 					end
 				end
 

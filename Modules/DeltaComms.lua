@@ -745,7 +745,7 @@ function DeltaComms:ApplyItemDelta(items, delta)
 					-- Item doesn't exist (shouldn't happen), add as new
 					local guardBlock = false
 					if not changes.Link then
-						local needsLink = GBankClassic_Item:ItemClassNeedsLink(changes.ID)
+						local needsLink = GBankClassic_Item:NeedsLink(changes.ID)
 						if needsLink == true then
 							guardBlock = true
 							GBankClassic_Output:Debug("DELTA", "Blocked linkless modified-as-new weapon/armor ID=%d", changes.ID)
@@ -775,7 +775,7 @@ function DeltaComms:ApplyItemDelta(items, delta)
 		local added = 0
 
 		for _, newItem in ipairs(delta.added) do
-			if newItem and newItem.ID and newItem.Link then
+			if newItem and newItem.ID then
 				local existingItem = nil
 				local newNormKey = GBankClassic_Item:GetItemKey(newItem.Link)
 				local newFullKey = tostring(newItem.ID) .. newNormKey
@@ -813,7 +813,7 @@ function DeltaComms:ApplyItemDelta(items, delta)
 					-- Item doesn't exist - add it
 					local guardBlock = false
 					if not newItem.Link and GBankClassic_Item then
-						local needsLink = GBankClassic_Item:ItemClassNeedsLink(newItem.ID)
+						local needsLink = GBankClassic_Item:NeedsLink(newItem.ID)
 						if needsLink == true then
 							guardBlock = true
 							GBankClassic_Output:Debug("DELTA", "Bocked linkless weapon/armor ID=%d (class confirmed)", newItem.ID)
@@ -952,7 +952,7 @@ function DeltaComms:ApplyDelta(guildInfo, altName, deltaData, sender)
 			end
 			self:ApplyItemDelta(current.bank.items, changes.bank)
 			-- Deduplicate bank items after delta application
-			if GBankClassic_Item and #current.bank.items > 0 then
+			if #current.bank.items > 0 then
 				local deduped = GBankClassic_Item:Aggregate(current.bank.items, nil)
 				current.bank.items = {}
 				local keys = {}
@@ -975,7 +975,7 @@ function DeltaComms:ApplyDelta(guildInfo, altName, deltaData, sender)
 			end
 			self:ApplyItemDelta(current.bags.items, changes.bags)
 			-- Deduplicate bags items after delta application
-			if GBankClassic_Item and #current.bags.items > 0 then
+			if #current.bags.items > 0 then
 				local deduped = GBankClassic_Item:Aggregate(current.bags.items, nil)
 				current.bags.items = {}
 				local keys = {}
@@ -998,7 +998,7 @@ function DeltaComms:ApplyDelta(guildInfo, altName, deltaData, sender)
 			end
 			self:ApplyItemDelta(current.mail.items, changes.mail)
 			-- Deduplicate mail items after delta application
-			if GBankClassic_Item and #current.mail.items > 0 then
+			if #current.mail.items > 0 then
 				local deduped = GBankClassic_Item:Aggregate(current.mail.items, nil)
 				current.mail.items = {}
 				local keys = {}
@@ -1087,11 +1087,19 @@ function DeltaComms:ApplyDelta(guildInfo, altName, deltaData, sender)
 	self:ResetDeltaErrorCount(guildInfo.name, norm)
 
 	-- Trigger UI refresh if inventory window is open
-	if GBankClassic_UI_Inventory and GBankClassic_UI_Inventory.isOpen then
+	if GBankClassic_UI_Inventory.isOpen then
 		if not GBankClassic_UI_Inventory.currentTab or GBankClassic_UI_Inventory.currentTab == norm then
 			GBankClassic_UI_Inventory:DrawContent()
 			GBankClassic_UI_Inventory:RefreshCurrentTab()
 		end
+	end
+	if GBankClassic_UI_Search.isOpen then
+		GBankClassic_UI_Search:BuildSearchData()
+		GBankClassic_UI_Search:DrawContent()
+		GBankClassic_UI_Search.searchField:Fire("OnEnterPressed")
+	end
+	if GBankClassic_UI_Donations.isOpen then
+		GBankClassic_UI_Donations:DrawContent()
 	end
 
 	return ADOPTION_STATUS.ADOPTED
