@@ -575,27 +575,6 @@ function DeltaComms:DeltaHasChanges(delta)
 		return true
 	end
 
-	-- Check bank changes
-	if changes.bank then
-		if next(changes.bank.added) or next(changes.bank.modified) or next(changes.bank.removed) then
-			return true
-		end
-	end
-
-	-- Check bags changes
-	if changes.bags then
-		if next(changes.bags.added) or next(changes.bags.modified) or next(changes.bags.removed) then
-			return true
-		end
-	end
-
-	-- Check mail changes
-	if changes.mail then
-		if next(changes.mail.added) or next(changes.mail.modified) or next(changes.mail.removed) then
-			return true
-		end
-	end
-
 	-- Check items changes
 	if changes.items then
 		if next(changes.items.added) or next(changes.items.modified) or next(changes.items.removed) then
