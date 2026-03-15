@@ -553,10 +553,9 @@ function Guild:RebuildGuildBankAltsRoster()
 				money = 0,
 				inventoryHash = 0,
 				items = {},
-				mail = { items = {}, slots = { count = 0, total = 0 }, version = 0 },
+				mail = { version = 0 },
 				mailHash = 0,
 			}
-			self:EnsureLegacyFields(self.Info.alts[normName])
 			GBankClassic_Output:Debug("ROSTER", "Added missing guild bank alt stub data for %s", normName)
 		end
 	end
@@ -1082,7 +1081,7 @@ function Guild:ComputeStateSummary(name)
 
 	-- If we don't have data for this alt, return a "no data" summary
 	if not self.Info or not self.Info.alts or not self.Info.alts[norm] then
-		return { version = 0, hash = nil, money = 0, items = {}, bank = {}, bags = {}, mail = {} }
+		return { version = 0, hash = nil, money = 0, items = {} }
 	end
 
 	local alt = self.Info.alts[norm]
@@ -1092,42 +1091,8 @@ function Guild:ComputeStateSummary(name)
 		updatedAt = alt.inventoryUpdatedAt or alt.version or 0,
 		mailHash = alt.mailHash or 0,
 		money = alt.money or 0,
-		bank = {},
-		bags = {},
-		mail = {}
+		items = alt.items,
 	}
-
-	-- Extract minimal item data (ID and Count only, no Links) for delta computation baseline
-	local function extractMinimalItems(items)
-		local minimal = {}
-		if not items then
-			return minimal
-		end
-
-		for _, item in ipairs(items) do
-			if item and item.ID then
-				table.insert(minimal, {
-					ID = item.ID,
-					Count = item.Count or 1
-				})
-			end
-		end
-
-		return minimal
-	end
-
-	-- Send bank/bags/mail structures separately so sender can compute accurate delta
-	if alt.bank and alt.bank.items then
-		summary.bank = extractMinimalItems(alt.bank.items)
-	end
-
-	if alt.bags and alt.bags.items then
-		summary.bags = extractMinimalItems(alt.bags.items)
-	end
-
-	if alt.mail and alt.mail.items then
-		summary.mail = extractMinimalItems(alt.mail.items)
-	end
 
 	return summary
 end
@@ -1160,13 +1125,7 @@ function Guild:SendStateSummary(name, target)
 	if not GBankClassic_Core:SendWhisper("gbank-state", data, target, "NORMAL") then
 		return
 	end
-
-	-- Count total items from bank/bags/mail structures
-	local itemCount = 0
-	if summary.bank then itemCount = itemCount + #summary.bank end
-	if summary.bags then itemCount = itemCount + #summary.bags end
-	if summary.mail then itemCount = itemCount + #summary.mail end
-	GBankClassic_Output:Debug("SYNC", "Sent state summary for %s to %s (%d total items: bank=%d, bags=%d, mail=%d, %d bytes)", name, target, itemCount, summary.bank and #summary.bank or 0, summary.bags and #summary.bags or 0, summary.mail and #summary.mail or 0, string.len(data))
+	GBankClassic_Output:Debug("SYNC", "Sent state summary for %s to %s (items=%d, %d bytes)", name, target, summary.items and #summary.items or 0, string.len(data))
 end
 
 -- Respond to state summary
@@ -1203,9 +1162,7 @@ function Guild:RespondToStateSummary(name, summary, requester)
 	
 	-- Extract requester's baseline from state summary for accurate delta computation
 	local requesterBaseline = {
-		bank = summary.bank or {},
-		bags = summary.bags or {},
-		mail = summary.mail or {},
+		items = summary.items or {},
 		money = summary.money or 0
 	}
 
@@ -1435,48 +1392,6 @@ function Guild:ReconstructItemLinks(items)
 	end
 end
 
--- Ensure legacy fields (bank.items, bags.items) exist for backward compatibility with old clients
--- New clients use alt.items, but old clients need bank.items and bags.items
--- This also ensures mail items are included in legacy fields for old clients
-function Guild:EnsureLegacyFields(alt)
-	if not alt or not alt.items then
-		return alt
-	end
-
-	-- If no legacy fields exist, reconstruct from alt.items
-	if not alt.bank or not alt.bank.items then
-		GBankClassic_Output:Debug("SYNC", "Reconstructing legacy fields from alt.items for %s", alt.name or "unknown")
-
-		if not alt.bank then
-			alt.bank = {}
-		end
-		alt.bank.items = {}
-		-- Copy all items from alt.items to bank.items (includes mail)
-		for _, item in ipairs(alt.items) do
-			table.insert(alt.bank.items, item)
-		end
-
-		if not alt.bags then
-			alt.bags = {}
-		end
-		if not alt.bags.items then
-			alt.bags.items = {}
-		end
-
-		return alt
-	end
-
-	-- Ensure bags.items exists (even if empty)
-	if not alt.bags then
-		alt.bags = {}
-	end
-	if not alt.bags.items then
-		alt.bags.items = {}
-	end
-
-	return alt
-end
-
 -- SendAddonMessageResult enum values from ChatThrottleLib
 local SEND_RESULT = {
 	Success = 0,
@@ -1638,17 +1553,11 @@ function Guild:SendAltData(name, requesterInventoryHash, requesterMailHash, targ
 	local channel = target and "WHISPER" or "GUILD"
     local dest = target or nil
 
-	-- Ensure legacy fields exist for backward compatibility with old clients
-	-- This ensures old clients that only read bank.items/bags.items still get data
-	self:EnsureLegacyFields(currentAlt) -- Modifies in place, no need to reassign
-
 	GBankClassic_Output:Debug("SYNC", "SendAltData for %s: mailHash=%s", norm, tostring(currentAlt.mailHash))
 
-	-- Log what we're about to send (all 3 arrays for backward compatibility)
+	-- Log what we're about to send
 	local itemsCount = currentAlt.items and #currentAlt.items or 0
-	local bankCount = (currentAlt.bank and currentAlt.bank.items) and #currentAlt.bank.items or 0
-	local bagsCount = (currentAlt.bags and currentAlt.bags.items) and #currentAlt.bags.items or 0
-	GBankClassic_Output:Debug("SYNC", "Sending %s: alt.items=%d, alt.bank.items=%d (includes mail), alt.bags.items=%d", norm, itemsCount, bankCount, bagsCount)
+	GBankClassic_Output:Debug("SYNC", "Sending %s: alt.items=%d", norm, itemsCount)
 
 	local deltaData = nil
 	local computeStart = debugprofilestop()
@@ -1743,37 +1652,6 @@ function Guild:ReceiveAltData(name, alt, sender)
 			a.items = cleaned
 		end
 
-		-- Sanitize bank items (array) - compact after removing invalids
-		if a.bank and type(a.bank) == "table" and a.bank.items then
-			local cleaned = {}
-			for k, v in pairs(a.bank.items) do
-				if v and type(v) == "table" and v.ID then
-					table.insert(cleaned, v)
-				end
-			end
-			a.bank.items = cleaned
-		end
-
-		-- Sanitize bag items (array) - compact after removing invalids
-		if a.bags and type(a.bags) == "table" and a.bags.items then
-			local cleaned = {}
-			local beforeCount = 0
-			local validCount = 0
-			local invalidCount = 0
-			for k, v in pairs(a.bags.items) do
-				beforeCount = beforeCount + 1
-				if v and type(v) == "table" and v.ID then
-					table.insert(cleaned, v)
-					validCount = validCount + 1
-				else
-					invalidCount = invalidCount + 1
-					GBankClassic_Output:Debug("SYNC", "  Sanitize: invalid bag item at [%s]: v=%s, type=%s, ID=%s", tostring(k), tostring(v), type(v), v and tostring(v.ID) or "nil")
-				end
-			end
-			GBankClassic_Output:Debug("SYNC", "Sanitized bags: before=%d, valid=%d, invalid=%d", beforeCount, validCount, invalidCount)
-			a.bags.items = cleaned
-		end
-
 		return a
 	end
 
@@ -1783,72 +1661,17 @@ function Guild:ReceiveAltData(name, alt, sender)
 	end
 
 	-- Log what we received
-	GBankClassic_Output:Debug("SYNC", "ReceiveAltData for %s: alt.items=%d, alt.bank.items=%d, alt.bags.items=%d", name, GBankClassic_Globals:Count(alt.items), (alt.bank and alt.bank.items) and GBankClassic_Globals:Count(alt.bank.items) or 0, (alt.bags and alt.bags.items) and GBankClassic_Globals:Count(alt.bags.items) or 0)
+	GBankClassic_Output:Debug("SYNC", "ReceiveAltData for %s: alt.items=%d", name, GBankClassic_Globals:Count(alt.items))
 
-	-- Backward compatibility: Compute alt.items from sources if missing
-	-- This handles data from players who haven't rescanned after the aggregation update
-	-- Previously, only bank and bags were synced (mail was local-only)
-
-	-- Check if alt.items has any content (handles both array and key-value formats)
-	local function hasAnyItems(items)
-		if not items or type(items) ~= "table" then
-			return false
+	-- Dedupe
+	if next(alt.items) then
+		local aggregated = GBankClassic_Item:Aggregate(alt.items, nil)
+		local arrayItems = {}
+		for _, item in pairs(aggregated) do
+			table.insert(arrayItems, item)
 		end
-
-		return next(items) ~= nil
-	end
-
-	local needsReconstruction = not hasAnyItems(alt.items)
-
-	if needsReconstruction then
-		local bankItems = (alt.bank and alt.bank.items) or {}
-		local bagItems = (alt.bags and alt.bags.items) or {}
-
-		GBankClassic_Output:Debug("SYNC", "Reconstructing alt.items for %s: bank=%d, bags=%d", name, #bankItems, #bagItems)
-
-		-- Aggregate bank + bags only (mail was never synced in old system)
-		if #bankItems > 0 or #bagItems > 0 then
-			local aggregated = GBankClassic_Item:Aggregate(bankItems, bagItems)
-			alt.items = {}
-			for _, item in pairs(aggregated) do
-				table.insert(alt.items, item)
-			end
-			GBankClassic_Output:Debug("SYNC", "Reconstructed alt.items for %s: %d items from bank+bags", name, #alt.items)
-		else
-			GBankClassic_Output:Debug("SYNC", "No items to reconstruct for %s (bank and bags both empty)", name)
-		end
-	else
-		-- Check if we need to merge mail items into alt.items
-		-- Only merge if this is old data (no mailHash = created before mail sync existed)
-		-- If mailHash exists, alt.items already includes mail from sender's Bank:Scan()
-		local hasMailHash = alt.mailHash ~= nil
-		local mailItems = (alt.mail and alt.mail.items) or {}
-		local hasMailItems = mailItems and #mailItems > 0
-		local needsMailMerge = hasMailItems and not hasMailHash
-
-		if needsMailMerge then
-			GBankClassic_Output:Debug("SYNC", "Old data: Merging %d mail items into alt.items for %s (no mailHash)", #mailItems, name)
-			-- Aggregate alt.items with mail to ensure mail is included
-			local aggregated = GBankClassic_Item:Aggregate(alt.items, mailItems)
-			local arrayItems = {}
-			for _, item in pairs(aggregated) do
-				table.insert(arrayItems, item)
-			end
-			alt.items = arrayItems
-			GBankClassic_Output:Debug("SYNC", "Merged alt.items for %s: %d items (including mail)", name, #alt.items)
-		else
-			if hasMailHash then
-				GBankClassic_Output:Debug("SYNC", "New data: alt.items already includes mail (mailHash present) for %s", name)
-			end
-			-- No mail merge needed, just deduplicate
-			local aggregated = GBankClassic_Item:Aggregate(alt.items, nil)
-			local arrayItems = {}
-			for _, item in pairs(aggregated) do
-				table.insert(arrayItems, item)
-			end
-			alt.items = arrayItems
-			GBankClassic_Output:Debug("SYNC", "alt.items exists for %s, deduplicated and converted to array: %d items", name, #alt.items)
-		end
+		alt.items = arrayItems
+		GBankClassic_Output:Debug("SYNC", "alt.items exists for %s, deduplicated and converted to array: %d items", name, #alt.items)
 	end
 
 	local norm = self:NormalizeName(name) or name
@@ -2062,11 +1885,8 @@ function Guild:HasAltContent(alt, altName)
 	end
 
 	local hasItems = alt.items and next(alt.items)
-    local hasBankItems = alt.bank and alt.bank.items and (type(alt.bank.items) == "table" and next(alt.bank.items))
-    local hasBagsItems = alt.bags and alt.bags.items and (type(alt.bags.items) == "table" and next(alt.bags.items))
-    local hasMailItems = alt.mail and alt.mail.items and (type(alt.mail.items) == "table" and next(alt.mail.items))
-    local result = hasItems or hasBankItems or hasBagsItems or hasMailItems
-    GBankClassic_Output:Debug("DELTA", "Content check for %s: items=%s (%d), bank=%s (%d), bags=%s (%d), mail=%s (%d) => %s", altName or alt.name or "unknown", tostring(hasItems and "Y" or "N"), alt.items and #alt.items or 0, tostring(hasBankItems and "Y" or "N"), alt.bank.items and #alt.bank.items or 0, tostring(hasBagsItems and "Y" or "N"), alt.bags.items and #alt.bags.items or 0, tostring(hasMailItems and "Y" or "N"), alt.mail.items and #alt.mail.items or 0, tostring(result))
+    local result = hasItems
+    GBankClassic_Output:Debug("DELTA", "Content check for %s: items=%s (%d) => %s", altName or alt.name or "unknown", tostring(hasItems and "Y" or "N"), alt.items and #alt.items or 0, tostring(result))
 
 	return result
 end

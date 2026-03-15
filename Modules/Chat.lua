@@ -761,22 +761,10 @@ function Chat:OnCommReceived(prefix, message, distribution, sender)
 
 				-- Reconstruct item links in background using batched queue system
 				-- Processes 5 items every 0.1s to prevent stuttering
-				if data.changes then
-					if data.changes.bank then
-						GBankClassic_Guild:ReconstructItemLinks(data.changes.bank.added)
-						GBankClassic_Guild:ReconstructItemLinks(data.changes.bank.modified)
-						GBankClassic_Guild:ReconstructItemLinks(data.changes.bank.removed)
-					end
-					if data.changes.bags then
-						GBankClassic_Guild:ReconstructItemLinks(data.changes.bags.added)
-						GBankClassic_Guild:ReconstructItemLinks(data.changes.bags.modified)
-						GBankClassic_Guild:ReconstructItemLinks(data.changes.bags.removed)
-					end
-					if data.changes.mail then
-						GBankClassic_Guild:ReconstructItemLinks(data.changes.mail.added)
-						GBankClassic_Guild:ReconstructItemLinks(data.changes.mail.modified)
-						GBankClassic_Guild:ReconstructItemLinks(data.changes.mail.removed)
-					end
+				if data.changes and data.changes.items then
+					GBankClassic_Guild:ReconstructItemLinks(data.changes.items.added)
+					GBankClassic_Guild:ReconstructItemLinks(data.changes.items.modified)
+					GBankClassic_Guild:ReconstructItemLinks(data.changes.items.removed)
 				end
 
 				local status = GBankClassic_DeltaComms:ApplyDelta(GBankClassic_Guild.Info, claimedNorm, data, sender)

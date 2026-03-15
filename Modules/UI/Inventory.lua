@@ -262,31 +262,12 @@ function UI_Inventory:DrawContent()
 
             local normTab = GBankClassic_Guild:NormalizeName(tab) or tab
             local alt = info.alts[normTab]
-
-            -- Use alt.items if available
-            -- Otherwise compute from sources for backward compatibility
             local items = {}
-
             if alt.items and next(alt.items) ~= nil then
-                -- Use alt.items directly (may be array or key-value)
                 for _, item in pairs(alt.items) do
                     table.insert(items, item)
                 end
                 GBankClassic_Output:Debug("INVENTORY", "Inventory tab %s: using alt.items (%d items)", tab, #items)
-            else
-                -- Fallback: compute from sources (backward compatibility for very old data)
-                local bankItems = (alt.bank and alt.bank.items) or {}
-                local bagItems = (alt.bags and alt.bags.items) or {}
-                local mailItems = (alt.mail and alt.mail.items) or {}
-
-                GBankClassic_Output:Debug("INVENTORY", "Inventory tab %s: computing from sources bank=%d, bags=%d, mail=%d", tab, #bankItems, #bagItems, #mailItems)
-
-                -- Aggregate all sources (all are now in array format), then convert the key-value result to array
-                local aggregated = GBankClassic_Item:Aggregate(bankItems, bagItems)
-                aggregated = GBankClassic_Item:Aggregate(aggregated, mailItems)
-                for _, item in pairs(aggregated) do
-                    table.insert(items, item)
-                end
             end
 
             GBankClassic_Output:Debug("INVENTORY", "Inventory tab %s: aggregated to %d unique items", tab, #items)

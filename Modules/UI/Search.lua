@@ -438,22 +438,11 @@ function UI_Search:BuildSearchData()
         local alt = info.alts[norm]
 		GBankClassic_Output:Debug("SEARCH", "Search corpus loop: processing guildBankAltName=%s, norm=%s, has alt=%s", guildBankAltName, norm, tostring(alt ~= nil))
         if alt and type(alt) == "table" then
-			-- Use alt.items if available (aggregated format)
 			if alt.items and next(alt.items) ~= nil then
-				-- Use alt.items which includes bank+bags+mail
 				local beforeCount = #items
 				items = GBankClassic_Item:Aggregate(items, alt.items)
 				local afterCount = #items
 				GBankClassic_Output:Debug("SEARCH", "Search corpus: using alt.items for %s (%d items before, %d after aggregation)", guildBankAltName, beforeCount, afterCount)
-			else
-				-- Fallback: aggregate from sources for backward compatibility
-				if alt.bank then
-					items = GBankClassic_Item:Aggregate(items, alt.bank.items)
-				end
-				if alt.bags then
-					items = GBankClassic_Item:Aggregate(items, alt.bags.items)
-				end
-                -- Don't aggregate mail separately, it's already in alt.items
 			end
         end
     end
@@ -507,22 +496,11 @@ function UI_Search:BuildSearchData()
             local alt = info.alts[norm]
 			GBankClassic_Output:Debug("SEARCH", "Search results loop: processing player=%s, norm=%s, has alt=%s", player, norm, tostring(alt ~= nil))
             if alt and type(alt) == "table" then
-				-- Use alt.items if available (aggregated format)
 				if alt.items and next(alt.items) ~= nil then
-				    -- Use alt.items which includes bank+bags+mail
 					for _, item in pairs(alt.items) do
 						table.insert(altItems, item)
 					end
 					GBankClassic_Output:Debug("SEARCH", "Search results: using alt.items for %s", player)
-				else
-					-- Fallback: aggregate from sources for backward compatibility
-					if alt.bank then
-						altItems = GBankClassic_Item:Aggregate(altItems, alt.bank.items)
-					end
-					if alt.bags then
-						altItems = GBankClassic_Item:Aggregate(altItems, alt.bags.items)
-					end
-					-- Don't aggregate mail separately, it's already in alt.items
 				end
             end
 

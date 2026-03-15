@@ -115,34 +115,34 @@ function Database:Load(name)
 	if db.alts then
 		for name, alt in pairs(db.alts) do
 			if type(alt) == "table" then
-				-- Clear and rebuild items from bank, bags, and mail
-				if (alt.bank and alt.bank.items) or (alt.bags and alt.bags.items) or (alt.mail and alt.mail.items) then
-					-- Don't create stub entries with hash but no content
-					if (alt.bank and alt.bank.items and #alt.bank.items > 0) or (alt.bags and alt.bags.items and #alt.bags.items > 0) or (alt.mail and alt.mail.items and #alt.mail.items > 0) then
-						-- Only rebuild if source data exists
-						alt.items = nil
-						GBankClassic_Bank:RecalculateAggregatedItems(alt)
-					else
-						-- No source data, clear hash and version too
-						alt.inventoryHash = nil
-						alt.version = nil
-					end
-				elseif alt.items then
+				-- Clear and rebuild items from bank, bags, and mail if legacy data exists
+				if (alt.bank and alt.bank.items and #alt.bank.items > 0) or (alt.bags and alt.bags.items and #alt.bags.items > 0) or (alt.mail and alt.mail.items and #alt.mail.items > 0) then
+					alt.items = nil
+					GBankClassic_Bank:RecalculateAggregatedItems(alt.bank, alt.bags, alt.mail, alt)
+					alt.bank = nil
+					alt.bags = nil
+					alt.mail = nil
+				else
+					alt.inventoryHash = nil
+					alt.version = nil
+				end
+
+				-- Ensure items is always fully aggregated and then recompute the hash
+				if alt.items then
 					local aggregated = GBankClassic_Item:Aggregate(alt.items, nil)
 					alt.items = {}
 					for _, item in pairs(aggregated) do
 						table.insert(alt.items, item)
 					end
-					GBankClassic_Output:Debug("DATABASE", "Forced deduplication for synced guild bank alt %s: %d items.", name, #alt.items)
-				end
+					GBankClassic_Output:Debug("DATABASE", "Forced deduplication for guild bank alt %s: %d items.", name, #alt.items)
 
-				-- Recompute inventory hash
-				if alt.items then
 					local money = alt.money or 0
 					alt.inventoryHash = GBankClassic_DeltaComms:ComputeInventoryHash(alt.items, nil, nil, money)
-					alt.improvedInventoryHash = self:ComputeImprovedInventoryHash(alt.items, money)
+					alt.improvedInventoryHash = GBankClassic_Bank:ComputeImprovedInventoryHash(alt.items, money)
 					GBankClassic_Output:Debug("DATABASE", "Recomputed inventory hash after recalculation for %s: %d.", name, alt.inventoryHash)
 					GBankClassic_Output:Debug("DATABASE", "Recomputed improved inventory hash after recalculation for %s: %d.", name, alt.improvedInventoryHash)
+
+					GBankClassic_Guild:ReconstructItemLinks(alt.items)
 				end
 			end
 		end

@@ -136,42 +136,29 @@ function Bank:Scan()
 	end
 
 	-- Scan bank if available
-	alt.bank = {
-		items = {},
-	}
-	scanBank(alt.bank.items)
+	local bankData = {}
+	scanBank(bankData)
 
 	-- Scan bags
-	alt.bags = {
-		items = {},
-	}
-	scanBags(alt.bags.items)
+	local bagData = {}
+	scanBags(bagData)
 
 	-- Scan money
 	local money = GetMoney()
 	alt.money = money
 
 	-- Scan mail inventory if mail was accessed
+	local mailData = nil
 	GBankClassic_Output:Debug("INVENTORY", "Mail scan for %s (GBankClassic_MailInventory.hasUpdated=%s)", player, tostring(GBankClassic_MailInventory.hasUpdated))
 	if GBankClassic_MailInventory.hasUpdated then
 		GBankClassic_Output:Debug("INVENTORY", "Starting mail scan for %s", player)
-		local mailData = GBankClassic_MailInventory:ScanMailInventory()
-		if mailData then
-			local itemCount = GBankClassic_Globals:Count(mailData.items)
-			local hadPreviousMail = alt.mail ~= nil
-			local previousItemCount = 0
-			if hadPreviousMail and alt.mail.items then
-				previousItemCount = #alt.mail.items
-			end
-			GBankClassic_Output:Debug("INVENTORY", "Replacing mail data for %s (old=%d items, new=%d items, version=%s)", player, previousItemCount, itemCount, mailData.version)
-			alt.mail = mailData
-		end
+		mailData = GBankClassic_MailInventory:ScanMailInventory()
 		GBankClassic_Output:Debug("INVENTORY", "Clearing hasUpdated flag after successful scan")
 		GBankClassic_MailInventory.hasUpdated = false
 	end
 
 	-- Aggregate bank + bags + mail into alt.items
-	self:RecalculateAggregatedItems(alt)
+	self:RecalculateAggregatedItems(bankData, bagData, mailData, alt)
 
 	-- Compute hash of the current inventory state
 	local currentHash = GBankClassic_DeltaComms:ComputeInventoryHash(alt.items, nil, nil, money)
@@ -190,10 +177,10 @@ function Bank:Scan()
 
 	-- Compute hash for current mailbox state
 	-- mailHash is computed whenever mail is scanned (even if empty) to track all mail state changes (mailHash is nil when mail was never scanned)
-	if alt.mail and alt.mail.items then
-		local currentMailHash = GBankClassic_DeltaComms:ComputeInventoryHash(alt.mail.items, nil, nil, nil)
+	if mailData and mailData.items then
+		local currentMailHash = GBankClassic_DeltaComms:ComputeInventoryHash(mailData.items, nil, nil, nil)
 		local previousMailHash = alt.mailHash
-		local currentImprovedMailHash = self:ComputeImprovedInventoryHash(alt.mail.items, nil)
+		local currentImprovedMailHash = self:ComputeImprovedInventoryHash(mailData.items, nil)
 		local previousImprovedMailHash = alt.improvedMailHash
 		alt.mailHash = currentMailHash
 		alt.improvedMailHash = currentImprovedMailHash
@@ -308,37 +295,30 @@ function Bank:OnUpdateStop()
     self.hasUpdated = false
 end
 
--- Recalculate alt.items from existing bank/bags/mail data
-function Bank:RecalculateAggregatedItems(alt)
-	if not alt then
-		return
-	end
-
+-- Recalculate aggregate alt.items from bank, bags, mail, and money
+function Bank:RecalculateAggregatedItems(bankData, bagData, mailData, alt)
 	local bankItems = {}
-	if alt.bank and alt.bank.items then
-		local deduped = GBankClassic_Item:Aggregate(alt.bank.items, nil)
+	if bankData and bankData.items then
+		local deduped = GBankClassic_Item:Aggregate(bankData.items, nil)
 		for _, item in pairs(deduped) do
 			table.insert(bankItems, item)
 		end
-		alt.bank.items = bankItems
 	end
 
 	local bagItems = {}
-	if alt.bags and alt.bags.items then
-		local deduped = GBankClassic_Item:Aggregate(alt.bags.items, nil)
+	if bagData and bagData.items then
+		local deduped = GBankClassic_Item:Aggregate(bagData.items, nil)
 		for _, item in pairs(deduped) do
 			table.insert(bagItems, item)
 		end
-		alt.bags.items = bagItems
 	end
 
 	local mailItems = {}
-	if alt.mail and alt.mail.items then
-		local deduped = GBankClassic_Item:Aggregate(alt.mail.items, nil)
+	if mailData and mailData.items then
+		local deduped = GBankClassic_Item:Aggregate(mailData.items, nil)
 		for _, item in pairs(deduped) do
 			table.insert(mailItems, item)
 		end
-		alt.mail.items = mailItems
 	end
 
 	-- Aggregate all three sources

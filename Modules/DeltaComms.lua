@@ -52,27 +52,11 @@ function DeltaComms:ValidateDeltaStructure(delta)
 		return false, "invalid money in changes"
 	end
 
-	-- Validate bank delta if present
-	if changes.bank then
-		local valid, err = self:ValidateItemDelta(changes.bank)
+	-- Validate items delta if present
+	if changes.items then
+		local valid, err = self:ValidateItemDelta(changes.items)
 		if not valid then
-			return false, "invalid bank delta: " .. err
-		end
-	end
-
-	-- Validate bags delta if present
-	if changes.bags then
-		local valid, err = self:ValidateItemDelta(changes.bags)
-		if not valid then
-			return false, "invalid bags delta: " .. err
-		end
-	end
-
-	-- Validate mail delta if present
-	if changes.mail then
-		local valid, err = self:ValidateItemDelta(changes.mail)
-		if not valid then
-			return false, "invalid mail delta: " .. err
+			return false, "invalid items delta: " .. err
 		end
 	end
 
@@ -282,30 +266,12 @@ function DeltaComms:StripDeltaLinks(delta)
 		strippedDelta.changes.mailHash = delta.changes.mailHash
 	end
 
-	-- Strip links from bank changes
-	if delta.changes.bank then
-		strippedDelta.changes.bank = {
-			added = stripItemArray(delta.changes.bank.added),
-			modified = stripItemArray(delta.changes.bank.modified),
-			removed = stripItemArray(delta.changes.bank.removed)
-		}
-	end
-
-	-- Strip links from bags changes
-	if delta.changes.bags then
-		strippedDelta.changes.bags = {
-			added = stripItemArray(delta.changes.bags.added),
-			modified = stripItemArray(delta.changes.bags.modified),
-			removed = stripItemArray(delta.changes.bags.removed)
-		}
-	end
-
-	-- Strip links from mail changes
-	if delta.changes.mail then
-		strippedDelta.changes.mail = {
-			added = stripItemArray(delta.changes.mail.added),
-			modified = stripItemArray(delta.changes.mail.modified),
-			removed = stripItemArray(delta.changes.mail.removed)
+	-- Strip links from items changes
+	if delta.changes.items then
+		strippedDelta.changes.items = {
+			added = stripItemArray(delta.changes.items.added),
+			modified = stripItemArray(delta.changes.items.modified),
+			removed = stripItemArray(delta.changes.items.removed)
 		}
 	end
 
@@ -511,17 +477,6 @@ function DeltaComms:ComputeDelta(guildName, altName, currentAlt, requesterInvent
 	local currentMailHash = currentAlt.mailHash or 0
 	requesterMailHash = requesterMailHash or 0
 
-	-- Convert minimal item structure to full structure (without links)
-	local function expandMinimalItems(minimalItems)
-		if not minimalItems then return {} end
-		local expanded = {}
-		for _, item in ipairs(minimalItems) do
-			table.insert(expanded, { ID = item.ID, Count = item.Count or 1 })
-		end
-
-		return expanded
-	end
-
 	if requesterInventoryHash and requesterInventoryHash ~= 0 then
 		-- Requester has data - check if it matches current (both inventory AND mail)
 		if requesterInventoryHash == currentHash and requesterMailHash == currentMailHash then
@@ -532,14 +487,11 @@ function DeltaComms:ComputeDelta(guildName, altName, currentAlt, requesterInvent
 			-- Inventory matches but mail changed - use requester's actual baseline if available
 			if requesterBaseline then
 				previous = {
-					items = {},
+					items = requesterBaseline.items,
 					money = requesterBaseline.money or 0,
 					mailHash = requesterMailHash,
-					bank = { items = expandMinimalItems(requesterBaseline.bank) },
-					bags = { items = expandMinimalItems(requesterBaseline.bags) },
-					mail = { items = expandMinimalItems(requesterBaseline.mail) },
 				}
-				GBankClassic_Output:Debug("DELTA", "Mail changed: using requester's actual baseline (bank=%d, bags=%d, mail=%d)", #previous.bank.items, #previous.bags.items, #previous.mail.items)
+				GBankClassic_Output:Debug("DELTA", "Mail changed: using requester's actual baseline (items=%d)", #previous.items)
 			else
 				-- No requester baseline - cannot compute accurate delta
 				-- Force full sync by using empty baseline instead
@@ -550,24 +502,21 @@ function DeltaComms:ComputeDelta(guildName, altName, currentAlt, requesterInvent
 			-- Hash mismatch - use requester's actual baseline if available
 			if requesterBaseline then
 				previous = {
-					items = {},
+					items = requesterBaseline.items,
 					money = requesterBaseline.money or 0,
 					mailHash = requesterMailHash,
-					bank = { items = expandMinimalItems(requesterBaseline.bank) },
-					bags = { items = expandMinimalItems(requesterBaseline.bags) },
-					mail = { items = expandMinimalItems(requesterBaseline.mail) },
 				}
-				GBankClassic_Output:Debug("DELTA", "Using requester's actual baseline: inv=%d->%d (bank=%d, bags=%d, mail=%d items)", requesterInventoryHash, currentHash, #previous.bank.items, #previous.bags.items, #previous.mail.items)
+				GBankClassic_Output:Debug("DELTA", "Using requester's actual baseline: inv=%d->%d (items=%d)", requesterInventoryHash, currentHash, #previous.items)
 			else
 				-- No requester baseline - cannot compute accurate delta
 				-- Force full sync by using empty baseline instead
-				previous = { items = {}, money = 0, mailHash = 0, bank = { items = {} }, bags = { items = {} }, mail = { items = {} } }
+				previous = { items = {}, money = 0, mailHash = 0 }
 				GBankClassic_Output:Warn("DELTA", "Missing requester baseline - forcing full sync for %s (hash=%d->%d)", altName, requesterInventoryHash or 0, currentHash)
 			end
 		end
 	else
 		-- Requester has no data (hash 0 or nil) - send everything as delta additions
-		previous = { items = {}, money = 0, mailHash = 0, bank = { items = {} }, bags = { items = {} }, mail = { items = {} } }
+		previous = { items = {}, money = 0, mailHash = 0 }
 		GBankClassic_Output:Debug("DELTA", "Requester has no data (hash=%s), sending all as additions", tostring(requesterInventoryHash))
 	end
 
@@ -597,22 +546,13 @@ function DeltaComms:ComputeDelta(guildName, altName, currentAlt, requesterInvent
 		GBankClassic_Output:Debug("DELTA", "Mail hash changed for %s: %s -> %s", altName, tostring(previous.mailHash), tostring(currentAlt.mailHash))
 	end
 
-	-- Compute separate deltas for bank, bags, and mail inventories
-	-- These are sent individually (not aggregated) so receiver can populate them correctly
-	local previousBank = (previous.bank and previous.bank.items) or {}
-	local currentBank = (currentAlt.bank and currentAlt.bank.items) or {}
-	delta.changes.bank = self:ComputeItemDelta(previousBank, currentBank)
-
-	local previousBags = (previous.bags and previous.bags.items) or {}
-	local currentBags = (currentAlt.bags and currentAlt.bags.items) or {}
-	delta.changes.bags = self:ComputeItemDelta(previousBags, currentBags)
-
-	local previousMail = (previous.mail and previous.mail.items) or {}
-	local currentMail = (currentAlt.mail and currentAlt.mail.items) or {}
-	delta.changes.mail = self:ComputeItemDelta(previousMail, currentMail)
+	-- Compute delta for items
+	local previousItems = previous.items or {}
+	local currentItems = currentAlt.items or {}
+	delta.changes.items = self:ComputeItemDelta(previousItems, currentItems)
 
 	-- Log what's being sent
-	GBankClassic_Output:Debug("DELTA", "Delta for %s: bank=%d->%d, bags=%d->%d, mail=%d->%d", altName, #previousBank, #currentBank, #previousBags, #currentBags, #previousMail, #currentMail)
+	GBankClassic_Output:Debug("DELTA", "Delta for %s: items=%d->%d", altName, #previousItems, #currentItems)
 
 	return delta
 end
@@ -940,97 +880,6 @@ function DeltaComms:ApplyDelta(guildInfo, altName, deltaData, sender)
 
 		if changes.money then
 			current.money = changes.money
-		end
-
-		-- Apply bank changes
-		if changes.bank then
-			if not current.bank then
-				current.bank = { items = {} }
-			end
-			if not current.bank.items then
-				current.bank.items = {}
-			end
-			self:ApplyItemDelta(current.bank.items, changes.bank)
-			-- Deduplicate bank items after delta application
-			if #current.bank.items > 0 then
-				local deduped = GBankClassic_Item:Aggregate(current.bank.items, nil)
-				current.bank.items = {}
-				local keys = {}
-				for k in pairs(deduped) do table.insert(keys, k) end
-				table.sort(keys)
-				for _, k in ipairs(keys) do
-					table.insert(current.bank.items, deduped[k])
-				end
-			end
-			GBankClassic_Output:Debug("DELTA", "Applied bank delta for %s: now %d items", norm, #current.bank.items)
-		end
-
-		-- Apply bags changes
-		if changes.bags then
-			if not current.bags then
-				current.bags = { items = {} }
-			end
-			if not current.bags.items then
-				current.bags.items = {}
-			end
-			self:ApplyItemDelta(current.bags.items, changes.bags)
-			-- Deduplicate bags items after delta application
-			if #current.bags.items > 0 then
-				local deduped = GBankClassic_Item:Aggregate(current.bags.items, nil)
-				current.bags.items = {}
-				local keys = {}
-				for k in pairs(deduped) do table.insert(keys, k) end
-				table.sort(keys)
-				for _, k in ipairs(keys) do
-					table.insert(current.bags.items, deduped[k])
-				end
-			end
-			GBankClassic_Output:Debug("DELTA", "Applied bags delta for %s: now %d items", norm, #current.bags.items)
-		end
-
-		-- Apply mail changes
-		if changes.mail then
-			if not current.mail then
-				current.mail = { items = {} }
-			end
-			if not current.mail.items then
-				current.mail.items = {}
-			end
-			self:ApplyItemDelta(current.mail.items, changes.mail)
-			-- Deduplicate mail items after delta application
-			if #current.mail.items > 0 then
-				local deduped = GBankClassic_Item:Aggregate(current.mail.items, nil)
-				current.mail.items = {}
-				local keys = {}
-				for k in pairs(deduped) do table.insert(keys, k) end
-				table.sort(keys)
-				for _, k in ipairs(keys) do
-					table.insert(current.mail.items, deduped[k])
-				end
-			end
-			GBankClassic_Output:Debug("DELTA", "Applied mail delta for %s: now %d items", norm, #current.mail.items)
-		end
-
-		-- Recalculate aggregated items for UI display
-		if changes.bank or changes.bags or changes.mail then
-			local bankItems = (current.bank and current.bank.items) or {}
-			local bagItems = (current.bags and current.bags.items) or {}
-			local mailItems = (current.mail and current.mail.items) or {}
-			
-			-- Aggregate all three sources
-			local aggregated = GBankClassic_Item:Aggregate(bankItems, bagItems)
-			aggregated = GBankClassic_Item:Aggregate(aggregated, mailItems)
-			current.items = {}
-			-- Sort keys before inserting to ensure consistent array ordering
-			local keys = {}
-			for k in pairs(aggregated) do
-				table.insert(keys, k)
-			end
-			table.sort(keys)
-			for _, k in ipairs(keys) do
-				table.insert(current.items, aggregated[k])
-			end
-			GBankClassic_Output:Debug("DELTA", "Recalculated aggregated items for %s: %d items (bank=%d, bags=%d, mail=%d)", norm, #current.items, #bankItems, #bagItems, #mailItems)
 		end
 
 		-- Apply item changes (aggregated bank + bags + mail)
