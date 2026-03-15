@@ -237,10 +237,11 @@ function UI_Inventory:DrawContent()
         g:SetLayout("Flow")
         self.TabGroup:AddChild(g)
 
-        local alt = info.alts and info.alts[tab] or nil
+        local normTab = GBankClassic_Guild:NormalizeName(tab) or tab
+        local alt = info.alts and info.alts[normTab] or nil
         if not alt then
             -- Placeholder view for missing guild bank alt data
-            local isLocal = (GBankClassic_Guild and GBankClassic_Guild:GetNormalizedPlayer() == tab)
+            local isLocal = (GBankClassic_Guild:GetNormalizedPlayer() == tab)
             local label = GBankClassic_UI:Create("Label")
             if isLocal then
                 local msg = "|cffaad372This is you!|r\n\nNo data has been scanned yet.\n\n|cffFFd100To populate your bank data:|r\n1. |cff33ff99Enable reporting and scanning|r of your data via the addon options.\n2. Visit the |cff33ff99Bank|r to scan your bank and bag slots.\n3. Close your bank.\n4. If other guild members are online, |cff33ff99wait|r for the share to complete.\n"                 
@@ -260,8 +261,6 @@ function UI_Inventory:DrawContent()
             -- Track scroll container to prevent race conditions
             scroll.callbackProcessed = false
 
-            local normTab = GBankClassic_Guild:NormalizeName(tab) or tab
-            local alt = info.alts[normTab]
             local items = {}
             if alt.items and next(alt.items) ~= nil then
                 for _, item in pairs(alt.items) do

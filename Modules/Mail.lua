@@ -482,7 +482,7 @@ function Mail:OnSendMail(recipient)
 	end
 
 	local info = GBankClassic_Guild.Info
-	if not info or not info.requests or #info.requests == 0 then
+	if not info or not info.requests or next(info.requests) == nil then
 		return
 	end
 

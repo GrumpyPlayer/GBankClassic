@@ -88,45 +88,6 @@ local function sanitizeRequest(req)
 		return nil
 	end
 
-	-- Reject requests where ID contains different item name (corrupted edited requests)
-	if req.id and type(req.id) == "string" then
-		-- ID format: "bank-requester-itemName-timestamp" or variations
-		-- Extract item name from ID by finding the pattern between requester and timestamp
-		-- Pattern: everything after the second "-realm-" and before the last timestamp portion
-		local idParts = {}
-		for part in string.gmatch(req.id, "[^-]+") do
-			table.insert(idParts, part)
-		end
-		
-		-- ID typically has 6+ parts: bank, realm, requester, realm, itemname(s), timestamp(s)
-		-- Try to extract item name from middle portion (skip first 4 parts for bank/requester)
-		if #idParts >= 5 then
-			-- Find where the item name ends (before timestamp-like numbers)
-			local itemNameParts = {}
-			for i = 5, #idParts do
-				local part = idParts[i]
-				-- Stop if we hit a pure numeric timestamp (8+ digits) or very short suffix
-				if string.match(part, "^%d%d%d%d%d%d%d%d+") or #part <= 3 then
-					break
-				end
-				table.insert(itemNameParts, part)
-			end
-			
-			if #itemNameParts > 0 then
-				local itemInId = table.concat(itemNameParts, "-")
-				-- Compare (case-insensitive, handle spaces vs dashes)
-				local normalizedItem = string.lower(string.gsub(item, "%s+", ""))
-				local normalizedIdItem = string.lower(string.gsub(itemInId, "%s+", ""))
-				
-				if normalizedItem ~= normalizedIdItem then
-					GBankClassic_Output:Debug("REQUESTS", "Rejected request: ID contains '%s' but item is '%s' (corrupted/edited request)", itemInId, item)
-
-					return nil
-				end
-			end
-		end
-	end
-
 	local fulfilled = math.max(tonumber(req.fulfilled or 0) or 0, 0)
 	if quantity > 0 then
 		fulfilled = math.min(fulfilled, quantity)
@@ -520,7 +481,6 @@ function Guild:ApplyRequestSnapshot(payload)
 	-- Update version and clean up
 	self.Info.requestsVersion = calculateRequestsVersion(self.Info.requests)
 	self:NormalizeRequestList()
-	self:PruneRequests()
 	self:PruneRequestTombstones()
 	self:RefreshRequestsUI()
 
@@ -572,7 +532,7 @@ function Guild:PruneRequests()
 end
 
 -- Apply a mutation entry received from another player.
-function Guild:ApplyRequestMutation(entry)
+function Guild:ApplyRequestMutation(entry, sender)
 	if not entry or type(entry) ~= "table" or not self.Info then
 		GBankClassic_Output:Debug("SYNC", "ApplyRequestMutation: Invalid entry or missing GBankClassic_Guild.Info")
 
@@ -589,12 +549,20 @@ function Guild:ApplyRequestMutation(entry)
 		return false
 	end
 
-	GBankClassic_Output:Debug("SYNC", "ApplyRequestMutation: type=%s, requestId=%s, ts=%d", entryType, requestId, entryTs)
+	GBankClassic_Output:Debug("SYNC", "ApplyRequestMutation: type=%s, requestId=%s, ts=%d, sender=%s", entryType, requestId, entryTs, tostring(sender))
 
+	local normSender = sender and self:NormalizeName(sender) or nil
 	local tombstones = self.Info.requestsTombstones or {}
 
 	-- Handle delete: remove request and record tombstone
 	if entryType == "delete" then
+		if normSender then
+			local fakeReq = {}
+			if not self:CanDeleteRequest(fakeReq, normSender) then
+				GBankClassic_Output:Debug("SYNC", "ApplyRequestMutation: Delete rejected - sender %s lacks permission", normSender)
+				return false
+			end
+		end
 		self.Info.requests[requestId] = nil
 		local tombstoneTs = tonumber(tombstones[requestId] or 0) or 0
 		if entryTs > tombstoneTs then
@@ -608,6 +576,12 @@ function Guild:ApplyRequestMutation(entry)
 
 	-- Handle fulfill: idempotent delta application
 	if entryType == "fulfill" then
+		if normSender then
+			if not (self:IsBank(normSender) or self:SenderIsGM(normSender)) then
+				GBankClassic_Output:Debug("SYNC", "ApplyRequestMutation: Fulfill rejected - sender %s lacks permission", normSender)
+				return false
+			end
+		end
 		local req = self.Info.requests[requestId]
 		if not req or req.status == "cancelled" or req.status == "complete" then
 			GBankClassic_Output:Debug("SYNC", "ApplyRequestMutation: Fulfill rejected (request not found or terminal state) id=%s", requestId)
@@ -644,6 +618,34 @@ function Guild:ApplyRequestMutation(entry)
 
 	-- Handle add/cancel/complete: merge request snapshot
 	if entry.request then
+		-- Auth checks per operation type before merging
+		if normSender then
+			if entryType == "add" then
+				-- Anyone can add, but the requester field must match the sender
+				local claimedRequester = entry.request.requester and self:NormalizeName(entry.request.requester)
+				if claimedRequester and claimedRequester ~= normSender then
+					TOGBankClassic_Output:Debug("SYNC", "ApplyRequestMutation: Add rejected - sender %s claimed requester %s", normSender, claimedRequester)
+
+					return false
+				end
+			elseif entryType == "cancel" then
+				-- Requester (own request), officer, or guild bank alt
+				-- Use existing req if we have it; fall back to the embedded snapshot
+				local reqForCheck = self.Info.requests[requestId] or entry.request
+				if not self:CanCancelRequest(reqForCheck, normSender) then
+					TOGBankClassic_Output:Debug("SYNC", "ApplyRequestMutation: Cancel rejected - sender %s lacks permission for id=%s", normSender, requestId)
+
+					return false
+				end
+			elseif entryType == "complete" then
+				local reqForCheck = self.Info.requests[requestId] or entry.request
+				if not self:CanCompleteRequest(reqForCheck, normSender) then
+					GBankClassic_Output:Debug("SYNC", "ApplyRequestMutation: Complete rejected - sender %s lacks permission for id=%s", normSender, requestId)
+
+					return false
+				end
+			end
+		end
 		GBankClassic_Output:Debug("SYNC", "ApplyRequestMutation: Merging request snapshot type=%s, id=%s, status=%s, statusUpdatedAt=%s, updatedAt=%s", entryType, requestId, tostring(entry.request.status), tostring(entry.request.statusUpdatedAt), tostring(entry.request.updatedAt))
 		
 		local result = mergeRequest(self.Info.requests, tombstones, requestId, entry.request)
@@ -891,6 +893,13 @@ function Guild:QueryRequestsIndex(target, priority)
 		end
 	else
 		GBankClassic_Core:SendCommMessage("gbank-r", data, "Guild", nil, priority or "BULK")
+		local syncStateAtBroadcast = self.requestsIndexSync
+		C_Timer.After(5, function()
+			if self.requestsIndexSync == syncStateAtBroadcast and self.requestsIndexSync.inFlight then
+				GBankClassic_Output:Debug("SYNC", "QueryRequestsIndex: No index in 5s (guild in sync) - clearing inFlight")
+				self:EndRequestsIndexSync()
+			end
+		end)
 	end
 
 	return true
@@ -997,7 +1006,12 @@ function Guild:ReceiveRequestsIndex(payload, sender)
 
 	if #missingIds > 0 then
 		self:MarkRequestsIndexAwaitingById()
-		self:QueryRequestsById(sender, missingIds)
+		if not self:QueryRequestsById(sender, missingIds) then
+			-- Send failed (e.g. sender went offline between index and by-id send)
+			-- Clear inFlight immediately instead of waiting 30s for timeout
+			self:EndRequestsIndexSync()
+			self:RefreshRequestsUI()
+		end
 	else
 		self:EndRequestsIndexSync()
 		self:RefreshRequestsUI()
@@ -1067,6 +1081,9 @@ function Guild:SendRequestsById(target, ids)
 end
 
 function Guild:ReceiveRequestsById(payload)
+	-- Only clear inFlight if we're actually in the index-sync awaiting-by-id state
+	local shouldEndSync = self.requestsIndexSync and self.requestsIndexSync.awaitingById
+
 	if not payload or type(payload) ~= "table" then
 		return ADOPTION_STATUS.INVALID
 	end
@@ -1078,19 +1095,22 @@ function Guild:ReceiveRequestsById(payload)
 
 	local requests = payload.requests
 	if not requests or type(requests) ~= "table" then
+		if shouldEndSync then
+			self:EndRequestsIndexSync()
+		end
+
 		return ADOPTION_STATUS.INVALID
 	end
 
-	if self:ApplyRequestSnapshot({
+	local adopted = self:ApplyRequestSnapshot({
 		requests = requests,
 		tombstones = payload.tombstones or {},
-	}) then
+	})
+	if shouldEndSync then
 		self:EndRequestsIndexSync()
-
-		return ADOPTION_STATUS.ADOPTED
 	end
 
-	return ADOPTION_STATUS.INVALID
+	return adopted and ADOPTION_STATUS.ADOPTED or ADOPTION_STATUS.INVALID
 end
 
 -- Receive and merge a requests snapshot from another player.
@@ -1108,7 +1128,14 @@ function Guild:ReceiveRequestsData(payload)
 	end
 	self:EnsureRequestsInitialized()
 
-	local incomingCount = (payload.requests and type(payload.requests) == "table") and #payload.requests or 0
+	local incomingCount = 0
+	if payload.requests and type(payload.requests) == "table" then
+		if payload.requests[1] ~= nil then
+			incomingCount = #payload.requests  -- array
+		else
+			for _ in pairs(payload.requests) do incomingCount = incomingCount + 1 end  -- map
+		end
+	end
 	local localCountBefore = self.Info.requests and GBankClassic_Globals:Count(self.Info.requests) or 0
 	GBankClassic_Output:Debug("SYNC", "ReceiveRequestsData: Start - local=%d, incoming=%d", localCountBefore, incomingCount)
 
@@ -1151,19 +1178,33 @@ function Guild:ReceiveRequestMutations(payload, sender)
 	GBankClassic_Output:Debug("SYNC", "ReceiveRequestMutations: Processing %d entries from %s", #entries, tostring(sender))
 
 	local applied = 0
+	local fetchIds = {}
 	for i, entry in ipairs(entries) do
 		if entry and type(entry) == "table" then
 			local entryType = entry.type or "unknown"
-			local requestId = entry.requestId or "?"
+			local requestId = entry.requestId or (entry.request and entry.request.id) or "?"
 			GBankClassic_Output:Debug("SYNC", "ReceiveRequestMutations: Entry %d/%d: type=%s, requestId=%s", i, #entries, entryType, tostring(requestId))
 			
-			if self:ApplyRequestMutation(entry) then
+			if self:ApplyRequestMutation(entry, sender) then
 				applied = applied + 1
 				GBankClassic_Output:Debug("SYNC", "ReceiveRequestMutations: Entry %d applied (type=%s, id=%s)", i, entryType, tostring(requestId))
 			else
 				GBankClassic_Output:Debug("SYNC", "ReceiveRequestMutations: Entry %d rejected (type=%s, id=%s)", i, entryType, tostring(requestId))
+				-- If a fulfill mutation is rejected because we don't have the request locally, queue an immediate by-id fetch from the sender
+				if entryType == "fulfill" and requestId and requestId ~= "?" then
+					if not self.Info.requests[requestId] then
+						GBankClassic_Output:Debug("SYNC", "ReceiveRequestMutations: Queuing on-demand fetch for unknown request id=%s from %s", tostring(requestId), tostring(sender))
+						table.insert(fetchIds, requestId)
+					end
+				end
 			end
 		end
+	end
+
+	-- Fire on-demand by-id fetch for any fulfill-referenced requests we don't have locally
+	if #fetchIds > 0 and sender and sender ~= "" then
+		GBankClassic_Output:Debug("SYNC", "ReceiveRequestMutations: Fetching %d unknown request(s) from %s", #fetchIds, tostring(sender))
+		self:QueryRequestsById(sender, fetchIds, "NORMAL")
 	end
 
 	if applied > 0 then
@@ -1217,7 +1258,8 @@ end
 
 -- Access control for requests.
 function Guild:CanManageRequests(actor, actorIsGM)
-	if CanViewOfficerNote() then
+	local normActor = self:NormalizeName(actor)
+	if normActor and self.SenderIsOfficer and self:SenderIsOfficer(normActor) then
 		return true
 	end
 
@@ -1426,6 +1468,7 @@ function Guild:FulfillRequest(bank, requester, itemName, count, targetRequestId)
 
 	local applied = 0
 	local mutations = {}
+	local mutationCount = 0
 
 	for _, req in pairs(self.Info.requests) do
 		if count <= 0 then
@@ -1445,16 +1488,20 @@ function Guild:FulfillRequest(bank, requester, itemName, count, targetRequestId)
 			count = count - delta
 			applied = applied + delta
 
+			-- Each mutation in this call gets a unique timestamp to prevent same-second collisions
+			local mutationTs = now + mutationCount
+			mutationCount = mutationCount + 1
+
 			-- Apply mutation directly
 			local targetFulfilled = fulfilled + delta
 			req.fulfilled = targetFulfilled
-			req.updatedAt = now
+			req.updatedAt = mutationTs
 			
 			GBankClassic_Output:Debug("FULFILL", "Request %s: fulfilled=%d->%d, qty=%d, status=%s", req.id or "unknown", fulfilled, targetFulfilled, qty, tostring(req.status))
 			
 			if qty > 0 and targetFulfilled >= qty and req.status ~= "cancelled" and req.status ~= "complete" then
 				req.status = "fulfilled"
-				req.statusUpdatedAt = now
+				req.statusUpdatedAt = mutationTs
 				GBankClassic_Output:Debug("FULFILL", "Set status to fulfilled (fulfilled %d >= qty %d)", targetFulfilled, qty)
 			else
 				GBankClassic_Output:Debug("FULFILL", "Status not changed: qty=%d, fulfilled=%d, status=%s", qty, targetFulfilled, tostring(req.status))
@@ -1471,7 +1518,7 @@ function Guild:FulfillRequest(bank, requester, itemName, count, targetRequestId)
 	end
 
 	if applied > 0 then
-		self:FinalizeMutation(now)
+		self:FinalizeMutation(now + math.max(mutationCount - 1, 0))
 	end
 
 	return applied
