@@ -1,7 +1,8 @@
 local Globals = GBankClassic_Globals
-local upvalues = Globals.GetUpvalues("LibStub", "IsInRaid")
+local upvalues = Globals.GetUpvalues("LibStub", "IsInRaid", "IsInInstance")
 local LibStub = upvalues.LibStub
 local IsInRaid = upvalues.IsInRaid
+local IsInInstance = upvalues.IsInInstance
 
 GBankClassic_Core = LibStub("AceAddon-3.0"):NewAddon("GBankClassic", "AceComm-3.0", "AceConsole-3.0", "AceEvent-3.0", "AceSerializer-3.0", "AceTimer-3.0")
 
@@ -12,8 +13,8 @@ local CHECKSUM_SEPARATOR = "\030" -- ASCII record separator, not used by AceSeri
 
 function Core:SendCommMessage(prefix, text, distribution, target, prio, callbackFn, callbackArg)
     local prefixDesc = COMM_PREFIX_DESCRIPTIONS[prefix] or "(Unknown)"
-    if IsInRaid() then
-        GBankClassic_Output:Debug("COMMS", "< (suppressing) %s %s (in raid)", prefix, prefixDesc)
+    if IsInInstance() or IsInRaid() then
+        GBankClassic_Output:Debug("COMMS", "< (suppressing) %s %s (in instance or raid)", prefix, prefixDesc)
 
         return
     end

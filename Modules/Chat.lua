@@ -966,7 +966,7 @@ local COMMAND_REGISTRY = {
 	},
 	{
 		name = "restoreui",
-		help = "restore all user interface window to their default positions",
+		help = "restore all user interface window positions to be within the screen boundaries",
 		expert = true,
 		handler = function()
 			GBankClassic_Chat:RestoreUI()
@@ -1311,7 +1311,7 @@ function Chat:RestoreUI()
 		GBankClassic_Output:Response("Cleared %d saved window position(s)", count)
 		if GBankClassic_UI_Inventory.isOpen then
 			GBankClassic_UI_Inventory:Close()
-			GBankClassic_UI_Inventory:Show()
+			GBankClassic_UI_Inventory:Toggle()
 		else
 			GBankClassic_UI_Inventory:Open()
 		end

@@ -137,6 +137,7 @@ function Guild:NormalizeName(name, noRealm)
     -- For database storage, always return with realm suffix
     return playerName .. "-" .. playerRealm
 end
+
 -- Returns the normalized name (including the realm name) of the current player
 function Guild:GetNormalizedPlayer()
     -- Return cached player if available
@@ -360,7 +361,7 @@ function Guild:IsAnyoneAuthority()
 		isAnyoneAuthority = isAnyoneAuthority and viewOfficerNote
 	end
 	self.isAnyoneAuthority = isAnyoneAuthority
-	
+
 	return isAnyoneAuthority
 end
 
@@ -1302,7 +1303,9 @@ local function processItemQueue()
 		if item and item.ID and not item.Link then
 			local itemLink = select(2, GetItemInfo(item.ID))
 			if itemLink then
-				item.Link = itemLink
+				if GBankClassic_Item:NeedsLink(itemLink) then
+					item.Link = itemLink
+				end
 				loadedAnyInBatch = true
 			else
 				-- Item not in cache - only start async if under limit
@@ -1321,7 +1324,9 @@ local function processItemQueue()
 								pendingAsyncLoads = pendingAsyncLoads - 1
 								local link = itemObj:GetItemLink()
 								if link then
-									item.Link = link
+									if GBankClassic_Item:NeedsLink(link) then
+										item.Link = link
+									end
 									throttledUIRefresh()
 								end
 							end)
@@ -1365,7 +1370,9 @@ function Guild:ReconstructItemLink(item)
 	-- Try synchronous reconstruction from cache only
 	local itemLink = select(2, GetItemInfo(item.ID))
 	if itemLink then
-		item.Link = itemLink
+		if GBankClassic_Item:NeedsLink(itemLink) then
+			item.Link = itemLink
+		end
 	end
 end
 

@@ -94,15 +94,15 @@ function Items:GetImprovedItemKey(link)
 			table.insert(parts, part)
 		end
 
-		-- Keep only item ID, enchant, and suffix
-		if #parts >= 7 then
-			return table.concat({parts[1], parts[2], parts[7]}, ":")
+		-- Return ID, ID:enchant, ID::suffix, or ID:enchant:suffix
+		if parts[7] then
+			return table.concat({parts[1], parts[2] or "", parts[7]}, ":")
+		elseif parts[2] then
+			return parts[1] .. ":" .. parts[2]
 		else
-			GBankClassic_Output:Error("Unexpected item link (link=%s, itemString=%s, parts=%d)", tostring(link), tostring(itemString), #parts)
+			return parts[1]
 		end
 	end
-
-	return link
 end
 
 function Items:GetItems(items, callback)

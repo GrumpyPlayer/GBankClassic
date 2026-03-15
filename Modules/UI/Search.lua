@@ -294,7 +294,6 @@ function UI_Search:Open()
 	-- Track roster version to detect when new data arrives (after /wipe, sync, etc.)
 	local currentVersion = GBankClassic_Guild.Info and GBankClassic_Guild.Info.roster and GBankClassic_Guild.Info.roster.version or 0
 	local needsRebuild = not self.searchDataBuilt or (self.lastRosterVersion ~= currentVersion)
-    -- TODO: Problem: roster.version only changes when guild bank alts change, not when inventory syncs. Search data may become stale.
 	if needsRebuild then
 		GBankClassic_Output:Debug("SEARCH", "Rebuilding search data (version changed: %s -> %s)", tostring(self.lastRosterVersion or "nil"), tostring(currentVersion))
 		self:BuildSearchData()

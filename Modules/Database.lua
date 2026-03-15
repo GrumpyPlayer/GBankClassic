@@ -143,6 +143,7 @@ function Database:Load(name)
 					GBankClassic_Output:Debug("DATABASE", "Recomputed improved inventory hash after recalculation for %s: %d.", name, alt.improvedInventoryHash)
 
 					GBankClassic_Guild:ReconstructItemLinks(alt.items)
+					GBankClassic_UI_Search:BuildSearchData()
 				end
 			end
 		end
