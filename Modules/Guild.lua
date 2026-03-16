@@ -1422,6 +1422,7 @@ function Guild:StripAltLinks(alt)
 	local stripped = {
 		version = alt.version,
 		inventoryHash = alt.inventoryHash,
+		improvedInventoryHash = alt.improvedInventoryHash,
 		money = alt.money,
 		items = strippedItems,
 		ledger = alt.ledger
