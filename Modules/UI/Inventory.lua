@@ -373,7 +373,7 @@ function UI_Inventory:DrawContent()
         local tab = group.localstatus.selected
         self.currentTab = tab
         self.tabLoaded = false
-        GBankClassic_Output:Debug("INVENTORY", "Loading tab %s", tab)
+        GBankClassic_Output:Debug("ITEM", "Loading tab %s", tab)
 
         self.TabGroup:ReleaseChildren()
 
@@ -399,10 +399,10 @@ function UI_Inventory:DrawContent()
             for _, item in pairs(alt.items) do
                 table.insert(items, item)
             end
-            GBankClassic_Output:Debug("INVENTORY", "Inventory tab %s: using alt.items (%d items)", tab, #items)
+            GBankClassic_Output:Debug("ITEM", "Inventory tab %s: using alt.items (%d items)", tab, #items)
         end
 
-        GBankClassic_Output:Debug("INVENTORY", "Inventory tab %s: aggregated to %d unique items", tab, #items)
+        GBankClassic_Output:Debug("ITEM", "Inventory tab %s: aggregated to %d unique items", tab, #items)
 
         -- Show loading indicator immediately
         local loadingLabel = GBankClassic_UI:Create("Label")
@@ -430,9 +430,9 @@ function UI_Inventory:DrawContent()
             end
             for itemID, entries in pairs(itemsByID) do
                 if #entries > 1 then
-                    GBankClassic_Output:Debug("INVENTORY", "Duplicate item ID %d found with %d different entries:", itemID, #entries)
+                    GBankClassic_Output:Debug("ITEM", "Duplicate item ID %d found with %d different entries:", itemID, #entries)
                     for i, entry in ipairs(entries) do
-                        GBankClassic_Output:Debug("INVENTORY", "  Entry %d: count=%d, link=%s", i, entry.Count, entry.Link or "nil")
+                        GBankClassic_Output:Debug("ITEM", "  Entry %d: count=%d, link=%s", i, entry.Count, entry.Link or "nil")
                     end
                 end
             end
@@ -443,7 +443,7 @@ function UI_Inventory:DrawContent()
                 if item and item.ID and item.ID > 0 then
                     table.insert(validItems, item)
                 else
-                    GBankClassic_Output:Debug("INVENTORY", "WARNING: Tab %s skipping invalid item at index %d (ID: %s, link: %s)", tab, i, tostring(item and item.ID or "nil item"), tostring(item and item.Link or "nil"))
+                    GBankClassic_Output:Debug("ITEM", "WARNING: Tab %s skipping invalid item at index %d (ID: %s, link: %s)", tab, i, tostring(item and item.ID or "nil item"), tostring(item and item.Link or "nil"))
                 end
             end
 
@@ -451,14 +451,14 @@ function UI_Inventory:DrawContent()
             GBankClassic_Item:GetItems(validItems, function(list)
                 -- Prevent callback from running twice on same scroll container
                 if scroll.callbackProcessed then
-                    GBankClassic_Output:Debug("INVENTORY", "Ignoring duplicate callback for tab %s", tab)
+                    GBankClassic_Output:Debug("ITEM", "Ignoring duplicate callback for tab %s", tab)
 
                     return
                 end
 
                 -- Verify we're still on the same tab (user may have switched)
                 if self.currentTab ~= selectedTab then
-                    GBankClassic_Output:Debug("INVENTORY", "Ignoring callback for old tab %s (now on %s)", selectedTab, self.currentTab)
+                    GBankClassic_Output:Debug("ITEM", "Ignoring callback for old tab %s (now on %s)", selectedTab, self.currentTab)
 
                     return
                 end
@@ -466,7 +466,7 @@ function UI_Inventory:DrawContent()
                 scroll.callbackProcessed = true
                 self.tabLoaded = true
 
-                GBankClassic_Output:Debug("INVENTORY", "Inventory tab %s: GetItems callback received %d items", tab, list and #list or 0)
+                GBankClassic_Output:Debug("ITEM", "Inventory tab %s: GetItems callback received %d items", tab, list and #list or 0)
                 scroll:ReleaseChildren()
                 GBankClassic_Item:Sort(list, GBankClassic_Options.db and GBankClassic_Options.db.char.sortMode)
 
@@ -491,7 +491,7 @@ function UI_Inventory:DrawContent()
                 scroll:ReleaseChildren()
                 for _, item in pairs(filteredList) do
                     if item and item.Info and item.Info.name then
-                        GBankClassic_Output:Debug("INVENTORY", "Inventory tab %s: displaying %s with count %d (ID: %d)", tab, item.Info.name, item.Count or 0, item.ID)
+                        GBankClassic_Output:Debug("ITEM", "Inventory tab %s: displaying %s with count %d (ID: %d)", tab, item.Info.name, item.Count or 0, item.ID)
                     end
                     local itemWidget = GBankClassic_UI:DrawItem(item, scroll)
                     if itemWidget then
