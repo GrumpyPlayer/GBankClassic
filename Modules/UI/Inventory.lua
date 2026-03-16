@@ -15,8 +15,6 @@ function UI_Inventory:Init()
     self.filterType = "any"
     self.filterSlot = "any"
     self.filterRarity = "any"
-    self.filterMinLevel = nil
-    self.filterMaxLevel = nil
     self:DrawWindow()
 end
 
@@ -394,6 +392,7 @@ function UI_Inventory:DrawContent()
         -- Track scroll container to prevent race conditions
         scroll.callbackProcessed = false
 
+        -- Item aggregation
         local items = {}
         if alt.items and next(alt.items) ~= nil then
             for _, item in pairs(alt.items) do
@@ -401,7 +400,6 @@ function UI_Inventory:DrawContent()
             end
             GBankClassic_Output:Debug("ITEM", "Inventory tab %s: using alt.items (%d items)", tab, #items)
         end
-
         GBankClassic_Output:Debug("ITEM", "Inventory tab %s: aggregated to %d unique items", tab, #items)
 
         -- Show loading indicator immediately
@@ -416,6 +414,13 @@ function UI_Inventory:DrawContent()
         end
         loadingLabel:SetFullWidth(true)
         scroll:AddChild(loadingLabel)
+
+        -- Filter reset button
+        if self:GetActiveFilterCount() > 0 then
+            UI_Inventory.ResetFiltersButton:SetDisabled(false)
+        else
+            UI_Inventory.ResetFiltersButton:SetDisabled(true)
+        end
 
         if items and #items > 0 then
             -- Check for duplicate item IDs with different links
@@ -484,9 +489,6 @@ function UI_Inventory:DrawContent()
                 self:UpdateStatusText(filteredCount, #list, alt.money or 0, alt.version)
 
                 -- Release loading label and display filtered items
-                if self:GetActiveFilterCount() > 0 then
-                    UI_Inventory.ResetFiltersButton:SetDisabled(false)
-                end
                 scroll:ReleaseChildren()
                 for _, item in pairs(filteredList) do
                     if item and item.Info and item.Info.name then
@@ -555,8 +557,6 @@ function UI_Inventory:ResetFilters()
     self.filterType = "any"
     self.filterSlot = "any"
     self.filterRarity = "any"
-    self.filterMinLevel = nil
-    self.filterMaxLevel = nil
 
     -- Reset dropdown values
     if self.FilterTypeDropdown then
@@ -717,14 +717,6 @@ function UI_Inventory:PassesFilters(item)
         end
     end
 
-    -- Level filter
-    if self.filterMinLevel and info.level and info.level < self.filterMinLevel then
-        return false
-    end
-    if self.filterMaxLevel and info.level and info.level > self.filterMaxLevel then
-        return false
-    end
-
     return true
 end
 
@@ -738,9 +730,6 @@ function UI_Inventory:GetActiveFilterCount()
         count = count + 1
     end
     if self.filterRarity and self.filterRarity ~= "any" then
-        count = count + 1
-    end
-    if self.filterMinLevel or self.filterMaxLevel then
         count = count + 1
     end
 
