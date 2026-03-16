@@ -97,7 +97,7 @@ function Database:Load(name)
 
 	-- Data migration
 	if db.alts then
-		for name, alt in pairs(db.alts) do
+		for altName, alt in pairs(db.alts) do
 			if type(alt) == "table" then
 				-- Clear and rebuild items from bank, bags, and mail if legacy data exists
 				if (alt.bank and alt.bank.items and #alt.bank.items > 0) or (alt.bags and alt.bags.items and #alt.bags.items > 0) or (alt.mail and alt.mail.items and #alt.mail.items > 0) then
@@ -108,20 +108,20 @@ function Database:Load(name)
 					alt.mail = nil
 				end
 
-				-- Ensure items is always fully aggregated and then recompute the hash
+				-- Ensure items is always fully aggregated and then recompute the hash and reconstruct item links
 				if alt.items then
 					local aggregated = GBankClassic_Item:Aggregate(alt.items, nil)
 					alt.items = {}
 					for _, item in pairs(aggregated) do
 						table.insert(alt.items, item)
 					end
-					GBankClassic_Output:Debug("DATABASE", "Forced deduplication for guild bank alt %s: %d items.", name, #alt.items)
+					GBankClassic_Output:Debug("DATABASE", "Forced deduplication for guild bank alt %s: %d items.", altName, #alt.items)
 
 					local money = alt.money or 0
 					alt.inventoryHash = GBankClassic_Bank:ComputeLegacyInventoryHash(alt.items, money)
 					alt.improvedInventoryHash = GBankClassic_Bank:ComputeImprovedInventoryHash(alt.items, money)
-					GBankClassic_Output:Debug("DATABASE", "Recomputed inventory hash after recalculation for %s: %d.", name, alt.inventoryHash)
-					GBankClassic_Output:Debug("DATABASE", "Recomputed improved inventory hash after recalculation for %s: %d.", name, alt.improvedInventoryHash)
+					GBankClassic_Output:Debug("DATABASE", "Recomputed inventory hash after recalculation for %s: %d.", altName, alt.inventoryHash)
+					GBankClassic_Output:Debug("DATABASE", "Recomputed improved inventory hash after recalculation for %s: %d.", altName, alt.improvedInventoryHash)
 
 					GBankClassic_Guild:ReconstructItemLinks(alt.items)
 				end

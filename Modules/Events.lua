@@ -6,7 +6,7 @@ local bagUpdateTimer = nil
 local Globals = GBankClassic_Globals
 local upvalues = Globals.GetUpvalues("wipe")
 local wipe = upvalues.wipe
-local upvalues = Globals.GetUpvalues("hooksecurefunc", "GuildRoster", "IsInInstance", "IsInRaid", "MailFrame", "NewTimer", "GetTime", "IsInGuild")
+local upvalues = Globals.GetUpvalues("hooksecurefunc", "GuildRoster", "IsInInstance", "IsInRaid", "MailFrame", "NewTimer", "GetTime", "IsInGuild", "After")
 local hooksecurefunc = upvalues.hooksecurefunc
 local GuildRoster = upvalues.GuildRoster
 local IsInInstance = upvalues.IsInInstance
@@ -14,6 +14,7 @@ local IsInRaid = upvalues.IsInRaid
 local MailFrame = upvalues.MailFrame
 local NewTimer = upvalues.NewTimer
 local IsInGuild = upvalues.IsInGuild
+local After = upvalues.After
 
 function Events:RegisterEvent(event, callback)
 	if not callback then
@@ -191,9 +192,7 @@ function Events:PLAYER_ENTERING_WORLD(_, isInitialLogin, isReloadingUi)
 		return
 	end
 
-	if isInitialLogin == true then
-		GBankClassic_Guild:CleanupMalformedAlts()
-	elseif isReloadingUi == true then
+	if isReloadingUi == true then
 		GBankClassic_Guild:GetNormalizedPlayer()
 		GBankClassic_Guild.rosterRefreshNeeded = true
 		GuildRoster()
@@ -266,11 +265,12 @@ function Events:GUILD_RANKS_UPDATE(_)
 	if GBankClassic_Guild:Init(guild) then
 		GBankClassic_Options:InitGuild()
 
-		local cleaned = GBankClassic_Guild:CleanupMalformedAlts()
-		if cleaned and cleaned > 0 then
-			GBankClassic_Output:Info("Cleaned %d malformed guild bank alt entries from saved database.", cleaned)
-			GBankClassic_Output:Debug("EVENTS", "GUILD_RANKS_UPDATE: cleaned %d malformed alt entries from saved database", cleaned)
-		end
+		After(15, function()
+			local cleaned = GBankClassic_Guild:CleanupDatabase()
+			if cleaned and cleaned > 0 then
+				GBankClassic_Output:Debug("EVENTS", "GUILD_RANKS_UPDATE: cleaned %d entries from database", cleaned)
+			end
+		end)
 
         if GBankClassic_UI_Inventory.isOpen then
             GBankClassic_UI_Inventory:DrawContent()

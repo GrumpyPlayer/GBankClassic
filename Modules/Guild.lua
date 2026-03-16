@@ -195,7 +195,106 @@ function Guild:Init(name)
 	return true
 end
 
-function Guild:CleanupMalformedAlts()
+function Guild:CleanupDatabase()
+	local optionsSavedVariables = GBankClassic_Options.db.sv.global.bank
+	if optionsSavedVariables.muteSyncProgress ~= nil then
+		optionsSavedVariables.muteSyncProgress = nil
+	end
+	if optionsSavedVariables.peer_relay ~= nil then
+		optionsSavedVariables.peer_relay = nil
+	end
+
+	local savedVariables = GBankClassic_Database.db.sv
+
+    local legacyFactionData = savedVariables.faction
+	if legacyFactionData then
+		wipe(legacyFactionData)
+	end
+
+    local currentFactionRealmData = savedVariables.factionrealm
+    local realmsToRemove = {}
+
+    for factionRealm, factionRealmData in pairs(currentFactionRealmData) do
+        local guildsToRemove = {}
+
+        for guildName, guildData in pairs(factionRealmData) do
+            local shouldRemove = false
+
+            if guildName == "TestGuild" and guildData.guildProtocolVersions and guildData.guildProtocolVersions["V2User-TestRealm"] then
+                shouldRemove = true
+            end
+            if guildName == "DeltaTest2" and guildData.deltaSnapshots and guildData.deltaSnapshots["DeltaAlt2"] then
+                local item = guildData.deltaSnapshots["DeltaAlt2"].data.bags.items[1]
+                if item and item.Link and item.Link:match("Test Item") then
+                    shouldRemove = true
+                end
+            end
+            if guildName == "ChainTest1" and guildData.deltaSnapshots then
+                for alt, snapshot in pairs(guildData.deltaSnapshots) do
+                    if snapshot.data and snapshot.data.items and snapshot.data.items[1] then
+                        local item = snapshot.data.items[1]
+                        if item.Link and item.Link:match("Test Item") then
+                            shouldRemove = true
+                            break
+                        end
+                    end
+                end
+            end
+
+            if shouldRemove then
+                table.insert(guildsToRemove, guildName)
+			else
+                if guildData.deltaErrors then
+                    guildData.deltaErrors = nil
+                end
+                if guildData.deltaMetrics then
+                    guildData.deltaMetrics = nil
+                end
+                if guildData.deltaHistory then
+                    guildData.deltaHistory = nil
+                end
+                if guildData.deltaSnapshots then
+                    guildData.deltaSnapshots = nil
+                end
+                if guildData.guildProtocolVersions then
+                    guildData.guildProtocolVersions = nil
+                end
+
+                if guildData.alts then
+                    for altName, altData in pairs(guildData.alts) do
+                        if altData.bags then
+                            altData.bags = nil
+                        end
+                        if altData.bank then
+                            altData.bank = nil
+                        end
+                        if altData.mail then
+                            altData.mail = nil
+                        end
+                        if altData.mailHash then
+                            altData.mailHash = nil
+                        end
+                        if altData.inventoryUpdatedAt then
+                            altData.inventoryUpdatedAt = nil
+                        end
+                    end
+                end
+            end
+        end
+
+        for _, guildName in ipairs(guildsToRemove) do
+            factionRealmData[guildName] = nil
+        end
+
+        if next(factionRealmData) == nil then
+            table.insert(realmsToRemove, factionRealm)
+        end
+    end
+
+    for _, factionRealm in ipairs(realmsToRemove) do
+        currentFactionRealmData[factionRealm] = nil
+    end
+
 	if not self.Info or not self.Info.alts then
 		return 0
 	end
