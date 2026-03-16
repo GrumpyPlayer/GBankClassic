@@ -161,7 +161,7 @@ function Bank:Scan()
 	self:RecalculateAggregatedItems(bankData, bagData, mailData, alt)
 
 	-- Compute hash of the current inventory state
-	local currentHash = ComputeLegacyInventoryHash(alt.items, money)
+	local currentHash = self:ComputeLegacyInventoryHash(alt.items, money)
 	local previousHash = alt.inventoryHash
 	local currentImprovedInventoryHash = self:ComputeImprovedInventoryHash(alt.items, money)
 	local previousImprovedInventoryHash = alt.improvedInventoryHash
@@ -178,7 +178,7 @@ function Bank:Scan()
 	-- Compute hash for current mailbox state
 	-- mailHash is computed whenever mail is scanned (even if empty) to track all mail state changes (mailHash is nil when mail was never scanned)
 	if mailData and mailData.items then
-		local currentMailHash = ComputeLegacyInventoryHash(mailData.items, nil)
+		local currentMailHash = self:ComputeLegacyInventoryHash(mailData.items, nil)
 		local previousMailHash = alt.mailHash
 		local currentImprovedMailHash = self:ComputeImprovedInventoryHash(mailData.items, nil)
 		local previousImprovedMailHash = alt.improvedMailHash
@@ -292,24 +292,24 @@ end
 -- Recalculate aggregate alt.items from bank, bags, mail, and money
 function Bank:RecalculateAggregatedItems(bankData, bagData, mailData, alt)
 	local bankItems = {}
-	if bankData and bankData.items then
-		local deduped = GBankClassic_Item:Aggregate(bankData.items, nil)
+	if bankData then
+		local deduped = GBankClassic_Item:Aggregate(bankData, nil)
 		for _, item in pairs(deduped) do
 			table.insert(bankItems, item)
 		end
 	end
 
 	local bagItems = {}
-	if bagData and bagData.items then
-		local deduped = GBankClassic_Item:Aggregate(bagData.items, nil)
+	if bagData then
+		local deduped = GBankClassic_Item:Aggregate(bagData, nil)
 		for _, item in pairs(deduped) do
 			table.insert(bagItems, item)
 		end
 	end
 
 	local mailItems = {}
-	if mailData and mailData.items then
-		local deduped = GBankClassic_Item:Aggregate(mailData.items, nil)
+	if mailData then
+		local deduped = GBankClassic_Item:Aggregate(mailData, nil)
 		for _, item in pairs(deduped) do
 			table.insert(mailItems, item)
 		end
@@ -373,7 +373,7 @@ function Bank:ComputeImprovedInventoryHash(items, money)
 end
 
 -- Compute the legacy hash of the inventory state to detect changes
-function ComputeLegacyInventoryHash(items, money)
+function Bank:ComputeLegacyInventoryHash(items, money)
 	local parts = {}
 	table.insert(parts, tostring(money))
 

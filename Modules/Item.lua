@@ -183,9 +183,11 @@ function Items:GetItems(items, callback)
 				if capturedItemLink then
 					GBankClassic_Output:Debug("ITEM", "Item %d has link, using directly", capturedItemID)
 					if not capturedItem.Info then
-						local _, _, _, _, iconID = GetItemInfoInstant(capturedItemLink)
-						if iconID then
-							capturedItem.Info = { icon = iconID, name = capturedItemLink:match("%[(.-)%]") or ("Item " .. tostring(capturedItemID))}
+						local name, _, rarity, level, _, _, _, _, _, icon, price, itemClassId, itemSubClassId = GetItemInfo(capturedItemID)
+						if name then
+							GBankClassic_Output:Debug("ITEM", "Item %d already cached", capturedItemID)
+							local equip = GetItemInventoryTypeByID(capturedItemID)
+							capturedItem.Info = { class = itemClassId, subClass = itemSubClassId, equipId = equip, rarity = rarity, name = name, level = level, price = price, icon = icon }
 						end
 					end
 					table.insert(list, capturedItem)
@@ -364,10 +366,10 @@ function Items:Aggregate(a, b)
     local items = {}
     local itemsByID = {}
     local itemsByKey = {}
-	
+
     local function processItem(v)
-        if not v or not v.ID then
-            -- Skip malformed entries (missing required ID field)
+        if not v or (v and not v.ID) then
+            -- Skip malformed entries
             return
         end
 

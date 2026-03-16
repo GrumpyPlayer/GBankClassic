@@ -113,7 +113,7 @@ function UI:DrawItem(item, parent, size, height, imageSize, imageHeight, labelXO
 		GBankClassic_Guild:ReconstructItemLink(item)
 	end
 
-    -- Icon already loaded by GetItems (via GetItemInfoInstant for linked items, GetItemInfo for non-linked)
+    -- Icon already loaded by GetItems
     local icon = item.Info and item.Info.icon
 	if icon then
 		slot:SetImage(icon)

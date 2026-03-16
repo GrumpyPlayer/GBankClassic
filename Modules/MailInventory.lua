@@ -93,14 +93,11 @@ function MailInventory:ScanMailInventory()
 		end
 	end
 
-	-- Build result structure (match bank/bags format for consistency)
-	local result = {
-		items = mailItems,
-		version = GetServerTime()
-	}
+	-- Build result structure
+	local result = mailItems
 
 	-- Verify result structure
-	GBankClassic_Output:Debug("MAIL", "Mail result structure: items type=%s, length=%d", type(result.items), #result.items)
+	GBankClassic_Output:Debug("MAIL", "Mail result structure: items type=%s, length=%d", type(result), #result)
 	GBankClassic_Output:Debug("MAIL", "Mail scan complete: %d unique items across %d mail messages", #mailItems, numItems)
 
 	return result
