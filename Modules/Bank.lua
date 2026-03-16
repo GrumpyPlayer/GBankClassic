@@ -183,6 +183,7 @@ function Bank:Scan()
 
 	if currentImprovedInventoryHash ~= previousImprovedInventoryHash then
 		alt.version = GetServerTime()
+		alt.updatedAt = alt.version
 		GBankClassic_Output:Debug("INVENTORY", "Inventory changed for %s, version updated to %d (improvedInventoryHash=%s)", player, alt.version, tostring(currentImprovedInventoryHash))
 	else
 		GBankClassic_Output:Debug("INVENTORY", "No inventory changes for %s, version unchanged (improvedInventoryHash=%s)", player, tostring(currentImprovedInventoryHash))

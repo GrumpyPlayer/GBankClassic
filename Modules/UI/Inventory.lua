@@ -281,6 +281,7 @@ function UI_Inventory:DrawWindow()
     resetButton:SetCallback("OnClick", function(_)
         self:ResetFilters()
     end)
+    resetButton:SetDisabled(true)
     self.ResetFiltersButton = resetButton
     filterContainer:AddChild(resetButton)
 
@@ -293,6 +294,35 @@ function UI_Inventory:DrawWindow()
 
     -- Initialize filter state
     self:ResetFilters()
+end
+
+function UI_Inventory:UpdateStatusText(filteredCount, totalCount, goldAmount, updatedAt)
+    filteredCount = filteredCount or 0
+    totalCount = totalCount or 0
+
+    local activeFilters = self:GetActiveFilterCount()
+    local pluralFilters = (activeFilters ~= 1 and "s" or "")
+    local filterText = activeFilters > 0 and string.format(" |cff87ceeb(%d filter%s active)|r", activeFilters, pluralFilters) or ""
+    local pluralItems = (totalCount ~= 1 and "s" or "")
+
+    if activeFilters > 0 then
+        local statusText = string.format("Showing %d of %d item%s%s", filteredCount, totalCount, pluralItems, filterText)
+        self.Window:SetStatusText(statusText)
+        self.filteredCount = filteredCount
+        self.totalCount = totalCount
+    else
+        local defaultStatus
+        if goldAmount > 0 then
+            local updated = ""
+            if updatedAt ~= "" then
+                updated = string.format(" as of %s", updatedAt)
+            end
+            defaultStatus = string.format("%s%s", GetCoinTextureString(goldAmount), updated)
+        else
+            defaultStatus = "No available data"
+        end
+        self.Window:SetStatusText(defaultStatus)
+    end
 end
 
 function UI_Inventory:DrawContent()
@@ -311,7 +341,6 @@ function UI_Inventory:DrawContent()
 
     local tabs = {}
     local first_tab = nil
-    local total_gold = 0
 
     for i = 1, #roster_alts do
         local guildBankAltName = roster_alts[i]
@@ -322,9 +351,6 @@ function UI_Inventory:DrawContent()
                 first_tab = guildBankAltName
             end
             tabs[i] = { value = guildBankAltName, text = guildBankAltName }
-            if alt.money then
-                total_gold = total_gold + alt.money
-            end
         end
     end
 
@@ -337,45 +363,7 @@ function UI_Inventory:DrawContent()
 	end
 
     self.TabGroup:SetTabs(tabs)
-    local defaultStatus = string.format("%s    ", GetCoinTextureString(total_gold))
-    self.Window:SetStatusText(defaultStatus)
-
-    self.Window:SetCallback("OnEnterStatusBar", function(_)
-        local tab = self.TabGroup.localstatus.selected
-		local normTab = GBankClassic_Guild:NormalizeName(tab) or tab
-		local alt = info.alts[normTab] or nil
-        if not alt or not alt.version then
-            return
-        end
-
-        local activeFilters = self:GetActiveFilterCount()
-        if activeFilters and activeFilters > 0 then
-            return
-        end
-
-        local datetime = date("%b %d, %Y %H:%M", alt.version)
-		local mailCount = alt.mail and alt.mail.items and GBankClassic_Globals:Count(alt.mail.items) or 0
-        local money = 0
-        if alt.money then
-            money = alt.money
-        end
-		local mailText = ""
-        local mailIcon = "|TInterface\\Icons\\INV_Letter_15:12:12:0:0|t"
-		if mailCount > 0 then
-			mailText = string.format("    |cff87ceeb%s %d item%s|r", mailIcon, mailCount, mailCount > 1 and "s" or "")
-		end
-        local status = string.format("As of %s    %s    %s", datetime, GetCoinTextureString(money), mailText)
-        self.Window:SetStatusText(status)
-    end)
-
-    self.Window:SetCallback("OnLeaveStatusBar", function(_)
-        local activeFilters = self:GetActiveFilterCount()
-        if activeFilters and activeFilters > 0 then
-            return
-        end
-
-        self.Window:SetStatusText(defaultStatus)
-    end)
+    self:UpdateStatusText(self.filteredCount or "", self.totalCount or "", 0, "")
 
     self.TabGroup:SetCallback("OnGroupSelected", function(group)
         local tab = group.localstatus.selected
@@ -392,146 +380,136 @@ function UI_Inventory:DrawContent()
         self.TabGroup:AddChild(g)
 
         local normTab = GBankClassic_Guild:NormalizeName(tab) or tab
-        local alt = info.alts and info.alts[normTab] or nil
-        if not alt then
-            -- Placeholder view for missing guild bank alt data
-            local isLocal = (GBankClassic_Guild:GetNormalizedPlayer() == tab)
-            local label = GBankClassic_UI:Create("Label")
-            if isLocal then
-                local msg = "|cffaad372This is you!|r\n\nNo data has been scanned yet.\n\n|cffFFd100To populate your bank data:|r\n1. |cff33ff99Enable reporting and scanning|r of your data via the addon options.\n2. Visit the |cff33ff99Bank|r to scan your bank and bag slots.\n3. Close your bank.\n4. If other guild members are online, |cff33ff99wait|r for the share to complete.\n"                 
-                label:SetText(msg)
-            else
-                label:SetText("No data available for this bank; sync pending.")
+        local alt = info.alts[normTab]
+        local scroll = GBankClassic_UI:Create("ScrollFrame")
+        scroll:SetLayout("Flow")
+        scroll:SetFullHeight(true)
+        scroll:SetFullWidth(true)
+        g:AddChild(scroll)
+
+        -- Track scroll container to prevent race conditions
+        scroll.callbackProcessed = false
+
+        local items = {}
+        if alt.items and next(alt.items) ~= nil then
+            for _, item in pairs(alt.items) do
+                table.insert(items, item)
             end
-            label:SetFullWidth(true)
-            g:AddChild(label)
+            GBankClassic_Output:Debug("INVENTORY", "Inventory tab %s: using alt.items (%d items)", tab, #items)
+        end
+
+        GBankClassic_Output:Debug("INVENTORY", "Inventory tab %s: aggregated to %d unique items", tab, #items)
+
+        -- Show loading indicator immediately
+        local loadingLabel = GBankClassic_UI:Create("Label")
+        local isLocal = (GBankClassic_Guild:GetNormalizedPlayer() == tab)
+        if isLocal then
+            local msg = "|cffaad372This is you!|r\n\nNo data has been scanned yet.\n\n|cffFFd100To populate your guild bank data:|r\n1. |cff33ff99Enable reporting and scanning|r of your data via the addon options.\n2. Visit the |cff33ff99Bank|r to scan your bank and bag.\n3. Close your bank.\n4. Open and close your mailbox.\n5. If other guild members are online, |cff33ff99wait|r for the share to complete.\n"
+            loadingLabel:SetText(msg)
         else
-            local scroll = GBankClassic_UI:Create("ScrollFrame")
-            scroll:SetLayout("Flow")
-            scroll:SetFullHeight(true)
-            scroll:SetFullWidth(true)
-            g:AddChild(scroll)
+            loadingLabel:SetText("|cff808080No available data for this guild bank alt.|r")
+            self:UpdateStatusText("", "", 0, "")
+        end
+        loadingLabel:SetFullWidth(true)
+        scroll:AddChild(loadingLabel)
 
-            -- Track scroll container to prevent race conditions
-            scroll.callbackProcessed = false
-
-            local items = {}
-            if alt.items and next(alt.items) ~= nil then
-                for _, item in pairs(alt.items) do
-                    table.insert(items, item)
+        if items and #items > 0 then
+            -- Check for duplicate item IDs with different links
+            local itemsByID = {}
+            for _, item in pairs(items) do
+                if item and item.ID then
+                    if not itemsByID[item.ID] then
+                        itemsByID[item.ID] = {}
+                    end
+                    table.insert(itemsByID[item.ID], { Count = item.Count, Link = item.Link })
                 end
-                GBankClassic_Output:Debug("INVENTORY", "Inventory tab %s: using alt.items (%d items)", tab, #items)
+            end
+            for itemID, entries in pairs(itemsByID) do
+                if #entries > 1 then
+                    GBankClassic_Output:Debug("INVENTORY", "Duplicate item ID %d found with %d different entries:", itemID, #entries)
+                    for i, entry in ipairs(entries) do
+                        GBankClassic_Output:Debug("INVENTORY", "  Entry %d: count=%d, link=%s", i, entry.Count, entry.Link or "nil")
+                    end
+                end
             end
 
-            GBankClassic_Output:Debug("INVENTORY", "Inventory tab %s: aggregated to %d unique items", tab, #items)
-
-            -- Show loading indicator immediately
-            local loadingLabel = GBankClassic_UI:Create("Label")
-            loadingLabel:SetText("|cff808080Please wait...|r")
-            loadingLabel:SetFullWidth(true)
-            scroll:AddChild(loadingLabel)
-
-            if items and #items > 0 then
-                -- Check for duplicate item IDs with different links
-                local itemsByID = {}
-                for _, item in pairs(items) do
-                    if item and item.ID then
-                        if not itemsByID[item.ID] then
-                            itemsByID[item.ID] = {}
-                        end
-                        table.insert(itemsByID[item.ID], { Count = item.Count, Link = item.Link })
-                    end
+            -- Validate and filter items before passing to GetItems
+            local validItems = {}
+            for i, item in ipairs(items) do
+                if item and item.ID and item.ID > 0 then
+                    table.insert(validItems, item)
+                else
+                    GBankClassic_Output:Debug("INVENTORY", "WARNING: Tab %s skipping invalid item at index %d (ID: %s, link: %s)", tab, i, tostring(item and item.ID or "nil item"), tostring(item and item.Link or "nil"))
                 end
-                for itemID, entries in pairs(itemsByID) do
-                    if #entries > 1 then
-                        GBankClassic_Output:Debug("INVENTORY", "Duplicate item ID %d found with %d different entries:", itemID, #entries)
-                        for i, entry in ipairs(entries) do
-                            GBankClassic_Output:Debug("INVENTORY", "  Entry %d: count=%d, link=%s", i, entry.Count, entry.Link or "nil")
-                        end
-                    end
-                end
-
-                -- Validate and filter items before passing to GetItems
-                local validItems = {}
-                for i, item in ipairs(items) do
-                    if item and item.ID and item.ID > 0 then
-                        table.insert(validItems, item)
-                    else
-                        GBankClassic_Output:Debug("INVENTORY", "WARNING: Tab %s skipping invalid item at index %d (ID: %s, link: %s)", tab, i, tostring(item and item.ID or "nil item"), tostring(item and item.Link or "nil"))
-                    end
-                end
-
-                local selectedTab = tab
-                GBankClassic_Item:GetItems(validItems, function(list)
-                    -- Prevent callback from running twice on same scroll container
-                    if scroll.callbackProcessed then
-                        GBankClassic_Output:Debug("INVENTORY", "Ignoring duplicate callback for tab %s", tab)
-
-                        return
-                    end
-
-                    -- Verify we're still on the same tab (user may have switched)
-                    if self.currentTab ~= selectedTab then
-                        GBankClassic_Output:Debug("INVENTORY", "Ignoring callback for old tab %s (now on %s)", selectedTab, self.currentTab)
-
-                        return
-                    end
-
-                    scroll.callbackProcessed = true
-                    self.tabLoaded = true
-
-                    GBankClassic_Output:Debug("INVENTORY", "Inventory tab %s: GetItems callback received %d items", tab, list and #list or 0)
-                    scroll:ReleaseChildren()
-                    GBankClassic_Item:Sort(list, GBankClassic_Options.db and GBankClassic_Options.db.char.sortMode)
-
-                    -- Apply filters
-                    local filteredList = {}
-                    local filteredCount = 0
-                    for _, item in ipairs(list) do
-                        if self:PassesFilters(item) then
-                            table.insert(filteredList, item)
-                            filteredCount = filteredCount + 1
-                        end
-                    end
-
-                    -- Update status text to show filter results
-                    local activeFilters = self:GetActiveFilterCount()
-                    local filterText = activeFilters > 0 and string.format(" |cff87ceeb(%d filters active)|r", activeFilters) or ""
-                    local statusText = string.format("Showing %d of %d items%s", filteredCount, #list, filterText)
-                    if activeFilters > 0 then
-                        self.Window:SetStatusText(statusText)
-                    else
-                        self.Window:SetStatusText(defaultStatus)
-                    end
-
-                    -- Release loading label and display filtered items
-                    scroll:ReleaseChildren()
-                    for _, item in pairs(filteredList) do
-                        if item and item.Info and item.Info.name then
-                            GBankClassic_Output:Debug("INVENTORY", "Inventory tab %s: displaying %s with count %d (ID: %d)", tab, item.Info.name, item.Count or 0, item.ID)
-                        end
-                        local itemWidget = GBankClassic_UI:DrawItem(item, scroll)
-                        if itemWidget then
-                            itemWidget:SetCallback("OnClick", function(widget, event)
-                                if IsShiftKeyDown() or IsControlKeyDown() then
-                                    GBankClassic_UI:EventHandler(widget, event)
-
-                                    return
-                                end
-                                -- GBankClassic_UI_Search:ShowRequestDialog(item, tab)
-                            end)
-                        end
-                    end
-
-                    -- Show "no results" message if all items filtered out
-                    if filteredCount == 0 and #list > 0 then
-                        local noResultsLabel = GBankClassic_UI:Create("Label")
-                        noResultsLabel:SetText("|cff808080No items match current filters|r")
-                        noResultsLabel:SetFullWidth(true)
-                        scroll:AddChild(noResultsLabel)
-                    end
-                end)
             end
+
+            local selectedTab = tab
+            GBankClassic_Item:GetItems(validItems, function(list)
+                -- Prevent callback from running twice on same scroll container
+                if scroll.callbackProcessed then
+                    GBankClassic_Output:Debug("INVENTORY", "Ignoring duplicate callback for tab %s", tab)
+
+                    return
+                end
+
+                -- Verify we're still on the same tab (user may have switched)
+                if self.currentTab ~= selectedTab then
+                    GBankClassic_Output:Debug("INVENTORY", "Ignoring callback for old tab %s (now on %s)", selectedTab, self.currentTab)
+
+                    return
+                end
+
+                scroll.callbackProcessed = true
+                self.tabLoaded = true
+
+                GBankClassic_Output:Debug("INVENTORY", "Inventory tab %s: GetItems callback received %d items", tab, list and #list or 0)
+                scroll:ReleaseChildren()
+                GBankClassic_Item:Sort(list, GBankClassic_Options.db and GBankClassic_Options.db.char.sortMode)
+
+
+                -- Apply filters
+                local filteredList = {}
+                local filteredCount = 0
+                for _, item in ipairs(list) do
+                    if self:PassesFilters(item) then
+                        table.insert(filteredList, item)
+                        filteredCount = filteredCount + 1
+                    end
+                end
+
+                -- Update status text to show filter results
+                self:UpdateStatusText(filteredCount, #list, alt.money or 0, alt.updatedAt and date("%b %d, %Y %H:%M", alt.updatedAt) or "")
+
+                -- Release loading label and display filtered items
+                if self:GetActiveFilterCount() > 0 then
+                    UI_Inventory.ResetFiltersButton:SetDisabled(false)
+                end
+                scroll:ReleaseChildren()
+                for _, item in pairs(filteredList) do
+                    if item and item.Info and item.Info.name then
+                        GBankClassic_Output:Debug("INVENTORY", "Inventory tab %s: displaying %s with count %d (ID: %d)", tab, item.Info.name, item.Count or 0, item.ID)
+                    end
+                    local itemWidget = GBankClassic_UI:DrawItem(item, scroll)
+                    if itemWidget then
+                        itemWidget:SetCallback("OnClick", function(widget, event)
+                            if IsShiftKeyDown() or IsControlKeyDown() then
+                                GBankClassic_UI:EventHandler(widget, event)
+
+                                return
+                            end
+                            -- GBankClassic_UI_Search:ShowRequestDialog(item, tab)
+                        end)
+                    end
+                end
+
+                -- Show "no results" message if all items filtered out
+                if filteredCount == 0 and #list > 0 then
+                    local noResultsLabel = GBankClassic_UI:Create("Label")
+                    noResultsLabel:SetText("|cff808080No items match current filters.|r")
+                    noResultsLabel:SetFullWidth(true)
+                    scroll:AddChild(noResultsLabel)
+                end
+            end)
         end
     end)
 
@@ -567,6 +545,9 @@ function UI_Inventory:RefreshCurrentTab()
 end
 
 function UI_Inventory:ResetFilters()
+    -- Disable the filter reset button
+    UI_Inventory.ResetFiltersButton:SetDisabled(true)
+
     -- Reset filter state
     self.filterType = "any"
     self.filterSlot = "any"

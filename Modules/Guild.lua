@@ -1399,8 +1399,8 @@ function Guild:SendAltData(name, target)
 	local dataNoLinks
 
 	-- New format (only keep links for items with an enchant, suffix, or weapon/armor class)
-	local strippedAlt = self:StripAltLinks(currentAlt)
-	dataNoLinks = GBankClassic_Core:SerializeWithChecksum({ type = "alt", name = norm, alt = strippedAlt })
+	local payload = self:CraftDataPayload(currentAlt)
+	dataNoLinks = GBankClassic_Core:SerializeWithChecksum({ type = "alt", name = norm, alt = payload })
 	GBankClassic_Output:DebugComm("Sending response: gbank-d for %s (%d bytes)", norm, #dataNoLinks)
 	if channel == "WHISPER" and dest then
 		GBankClassic_Core:SendWhisper("gbank-d", dataNoLinks, dest, "NORMAL", onChunkSent)
@@ -1413,7 +1413,7 @@ function Guild:SendAltData(name, target)
 end
 
 -- Only keep links for items with an enchant, suffix, or weapon/armor class before transmission
-function Guild:StripAltLinks(alt)
+function Guild:CraftDataPayload(alt)
 	if not alt then
 		return nil
 	end
@@ -1421,6 +1421,7 @@ function Guild:StripAltLinks(alt)
 	local strippedItems = self:StripItemLinks(alt.items)
 	local stripped = {
 		version = alt.version,
+		updatedAt = alt.updatedAt,
 		inventoryHash = alt.inventoryHash,
 		improvedInventoryHash = alt.improvedInventoryHash,
 		money = alt.money,
