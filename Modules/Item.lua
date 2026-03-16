@@ -321,7 +321,7 @@ local function basicSort(a, b)
     end
 end
 
-function Items:Sort(items)
+function Items:Sort(items, mode)
 	-- Ensure all items have the required fields for sorting
 	for _, item in ipairs(items) do
 		if not item.Info then
@@ -339,27 +339,55 @@ function Items:Sort(items)
 		end
 	end
 
-    table.sort(items, function(a, b)
-        if a.Info.rarity ~= b.Info.rarity and a.Info.rarity and b.Info.rarity then
-            return a.Info.rarity < b.Info.rarity
-        end
-        if a.Info.class ~= b.Info.class then
-            return (a.Info.class or 99) < (b.Info.class or 99)
-        end
-        if (a.Info.equipId or 0) > 0 then
-            if a.Info.equipId == b.Info.equipId then
-                return basicSort(a, b)
-            end
-            if a.Info.equip and b.Info.equip then
-                return a.Info.equip < b.Info.equip
-            end
-        end
-        if a.Info.class == b.Info.class and a.Info.subClass == b.Info.subClass then
-            return basicSort(a, b)
-        end
+	-- mode = "default" (grouped by rarity, item class, equipId, equip slot, subclass)
+	-- mode = "alpha" (alphabetically by name)
+	-- mode = "type" (grouped by item class, equip slot, subclass, rarity, then name)
 
-        return (a.Info.subClass or 99) < (b.Info.subClass or 99)
-    end)
+	if not mode or mode == "default" then
+		table.sort(items, function(a, b)
+			if a.Info.rarity ~= b.Info.rarity and a.Info.rarity and b.Info.rarity then
+				return a.Info.rarity < b.Info.rarity
+			end
+			if a.Info.class ~= b.Info.class then
+				return (a.Info.class or 99) < (b.Info.class or 99)
+			end
+			if (a.Info.equipId or 0) > 0 then
+				if a.Info.equipId == b.Info.equipId then
+					return basicSort(a, b)
+				end
+				if a.Info.equip and b.Info.equip then
+					return a.Info.equip < b.Info.equip
+				end
+			end
+			if a.Info.class == b.Info.class and a.Info.subClass == b.Info.subClass then
+				return basicSort(a, b)
+			end
+
+			return (a.Info.subClass or 99) < (b.Info.subClass or 99)
+		end)
+	elseif mode == "alpha" then
+		table.sort(items, function(a, b)
+			return (a.Info.name or "") < (b.Info.name or "")
+		end)
+	elseif mode == "type" then
+		table.sort(items, function(a, b)
+			if a.Info.class ~= b.Info.class then
+				return (a.Info.class or 99) < (b.Info.class or 99)
+			end
+			local aEquip = a.Info.equip or ""
+			local bEquip = b.Info.equip or ""
+			if aEquip ~= bEquip then
+				return aEquip < bEquip
+			end
+			if a.Info.subClass ~= b.Info.subClass then
+				return (a.Info.subClass or 99) < (b.Info.subClass or 99)
+			end
+			if a.Info.rarity ~= b.Info.rarity then
+				return (a.Info.rarity or 0) < (b.Info.rarity or 0)
+			end
+			return (a.Info.name or "") < (b.Info.name or "")
+		end)
+	end
 end
 
 function Items:Aggregate(a, b)

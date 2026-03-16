@@ -12,6 +12,11 @@ local IsShiftKeyDown = upvalues.IsShiftKeyDown
 local IsControlKeyDown = upvalues.IsControlKeyDown
 
 function UI_Inventory:Init()
+    self.filterType = "any"
+    self.filterSlot = "any"
+    self.filterRarity = "any"
+    self.filterMinLevel = nil
+    self.filterMaxLevel = nil
     self:DrawWindow()
 end
 
@@ -84,7 +89,7 @@ function UI_Inventory:DrawWindow()
     window:SetWidth(550)
 
 	-- Persist window position/size across reloads
-	if GBankClassic_Options and GBankClassic_Options.db then
+	if GBankClassic_Options.db then
 		window:SetStatusTable(GBankClassic_Options.db.char.framePositions)
 	end
 
@@ -96,52 +101,188 @@ function UI_Inventory:DrawWindow()
     end)
     self.Window = window
 
+    -- Button container (3 columns)
     local buttonContainer = GBankClassic_UI:Create("SimpleGroup")
     buttonContainer:SetLayout("Table")
     buttonContainer:SetUserData("table", {
         columns = {
-            {
-                width = 0.5,
-                align = "start",
-            },
-            {
-                width = 0.5,
-                align = "end",
-            },
+            { width = 0.25, align = "bottomleft" },
+            { width = 0.25, align = "start" },
+            { width = 0.25, align = "bottomleft" },
+            { width = 0.25, align = "end" },
         },
     })
     buttonContainer:SetFullWidth(true)
-    buttonContainer.frame:ClearAllPoints()
-    buttonContainer.content:SetPoint("TOPLEFT", 0, 5)
-    buttonContainer.content:SetPoint("BOTTOMRIGHT", 0, -5)
     window:AddChild(buttonContainer)
 
+    -- Search button (opens a separate search pane on the left)
     local searchButton = GBankClassic_UI:Create("Button")
     searchButton:SetText("Search")
     searchButton:SetCallback("OnClick", function(_)
         GBankClassic_UI_Search:Toggle()
     end)
-    searchButton:SetWidth(175)
+    searchButton:SetWidth(160)
     searchButton:SetHeight(24)
     buttonContainer:AddChild(searchButton)
 
-    local scoreboardButton = GBankClassic_UI:Create("Button")
-    scoreboardButton:SetText("Donations")
-    scoreboardButton:SetCallback("OnClick", function(_)
-        GBankClassic_UI_Donations:Toggle()
+    -- Sort dropdown
+    local sortList = {
+        ["default"] = "Default (rarity/type)",
+        ["alpha"]   = "Alphabetical",
+        ["type"]    = "By type (class/slot)"
+    }
+    local sortOrder = { "default", "alpha", "type" }
+    local sortDropdown = GBankClassic_UI:Create("Dropdown")
+    sortDropdown:SetLabel("Sort")
+    sortDropdown:SetList(sortList, sortOrder)
+    sortDropdown:SetWidth(160)
+    sortDropdown:SetFullWidth(false)
+    local initMode = (GBankClassic_Options.db and GBankClassic_Options.db.char.sortMode) or "default"
+    sortDropdown:SetValue(initMode)
+    sortDropdown:SetCallback("OnValueChanged", function(widget, _, value)
+        local db = GBankClassic_Options.db and GBankClassic_Options.db.char
+        if not db then
+            return
+        end
+        db.sortMode = value
+        self:RefreshCurrentTab()
     end)
-    scoreboardButton:SetWidth(175)
-    scoreboardButton:SetHeight(24)
-    buttonContainer:AddChild(scoreboardButton)
+    self.SortDropdown = sortDropdown
+    buttonContainer:AddChild(sortDropdown)
 
-	-- local requestsButton = GBankClassic_UI:Create("Button")
-	-- requestsButton:SetText("Requests")
+    -- Requests button
+	local requestsButton = GBankClassic_UI:Create("Button")
+	requestsButton:SetText("Requests")
+    requestsButton:SetDisabled(true)
 	-- requestsButton:SetCallback("OnClick", function(_)
 	-- 	GBankClassic_UI_Requests:Toggle()
 	-- end)
-	-- requestsButton:SetWidth(175)
-	-- requestsButton:SetHeight(24)
-	-- buttonContainer:AddChild(requestsButton)
+	requestsButton:SetWidth(160)
+	requestsButton:SetHeight(24)
+	buttonContainer:AddChild(requestsButton)
+
+    -- Donations button (opens a donations pane on the right)
+    local donationsButton = GBankClassic_UI:Create("Button")
+    donationsButton:SetText("Donations")
+    donationsButton:SetCallback("OnClick", function(_)
+        GBankClassic_UI_Donations:Toggle()
+    end)
+    donationsButton:SetWidth(160)
+    donationsButton:SetHeight(24)
+    buttonContainer:AddChild(donationsButton)
+
+    -- Filter row (below buttons)
+    local filterContainer = GBankClassic_UI:Create("SimpleGroup")
+    filterContainer:SetLayout("Table")
+    filterContainer:SetUserData("table", {
+        columns = {
+            { width = 0.25, align = "start" },
+            { width = 0.25, align = "start" },
+            { width = 0.25, align = "start" },
+            { width = 0.25, align = "end" },
+        },
+    })
+    filterContainer:SetFullWidth(true)
+    window:AddChild(filterContainer)
+
+    -- Filter: item type
+    local filterTypeList = {
+        ["any"]       = "All types",
+        ["armor"]     = "Armor",
+        ["weapon"]    = "Weapons",
+        ["consumable"]= "Consumables",
+        ["trade"]     = "Trade goods",
+        ["container"] = "Container",
+        ["recipe"]    = "Recipe",
+        ["quest"]     = "Quest items",
+        ["misc"]      = "Everything else"
+    }
+    local filterTypeOrder = { "any", "armor", "weapon", "consumable", "trade", "container", "recipe", "quest", "misc" }
+    local filterTypeDropdown = GBankClassic_UI:Create("Dropdown")
+    filterTypeDropdown:SetLabel("Type")
+    filterTypeDropdown:SetList(filterTypeList, filterTypeOrder)
+    filterTypeDropdown:SetWidth(160)
+    filterTypeDropdown:SetValue("any")
+    filterTypeDropdown:SetCallback("OnValueChanged", function(_, _, value)
+        self.filterType = value
+        self:RefreshCurrentTab()
+    end)
+    self.FilterTypeDropdown = filterTypeDropdown
+    filterContainer:AddChild(filterTypeDropdown)
+
+    -- Filter: equip slot
+    local filterSlotList = {
+        ["any"]       = "All slots",
+        ["head"]      = "Head",
+        ["neck"]      = "Neck",
+        ["shoulder"]  = "Shoulder",
+        ["back"]      = "Back",
+        ["chest"]     = "Chest",
+        ["shirt"]     = "Shirt",
+        ["tabard"]    = "Tabard",
+        ["wrist"]     = "Wrist",
+        ["hands"]     = "Hands",
+        ["waist"]     = "Waist",
+        ["legs"]      = "Legs",
+        ["feet"]      = "Feet",
+        ["finger"]    = "Finger",
+        ["trinket"]   = "Trinket",
+        ["onehand"]   = "One-hand",
+        ["shield"]    = "Shield",
+        ["twohand"]   = "Two-hand",
+        ["ranged"]    = "Ranged",
+        ["mainhand"]  = "Main hand",
+        ["offhand"]   = "Off hand",
+        ["holdable"]  = "Held in off-hand",
+        ["bag"]       = "Bag",
+        ["robe"]      = "Robe"
+    }
+    local filterSlotOrder = { "any", "head", "neck", "shoulder", "shirt", "chest", "wrist", "hands", "waist", "legs", "feet", "finger", "trinket", "back", "onehand", "mainhand", "offhand", "twohand", "ranged", "shield", "holdable", "tabard", "bag" }
+    local filterSlotDropdown = GBankClassic_UI:Create("Dropdown")
+    filterSlotDropdown:SetLabel("Slot")
+    filterSlotDropdown:SetList(filterSlotList, filterSlotOrder)
+    filterSlotDropdown:SetWidth(160)
+    filterSlotDropdown:SetValue("any")
+    filterSlotDropdown:SetCallback("OnValueChanged", function(_, _, value)
+        self.filterSlot = value
+        self:RefreshCurrentTab()
+    end)
+    self.FilterSlotDropdown = filterSlotDropdown
+    filterContainer:AddChild(filterSlotDropdown)
+
+    -- Filter: rarity
+    local filterRarityList = {
+        ["any"]       = "All qualities",
+        ["poor"]      = "Poor (grey)",
+        ["common"]    = "Common (white)",
+        ["uncommon"]  = "Uncommon (green)",
+        ["rare"]      = "Rare (blue)",
+        ["epic"]      = "Epic (purple)",
+        ["legendary"] = "Legendary (orange)"
+    }
+    local filterRarityOrder = { "any", "poor", "common", "uncommon", "rare", "epic", "legendary" }
+    local filterRarityDropdown = GBankClassic_UI:Create("Dropdown")
+    filterRarityDropdown:SetLabel("Quality")
+    filterRarityDropdown:SetList(filterRarityList, filterRarityOrder)
+    filterRarityDropdown:SetWidth(160)
+    filterRarityDropdown:SetValue("any")
+    filterRarityDropdown:SetCallback("OnValueChanged", function(_, _, value)
+        self.filterRarity = value
+        self:RefreshCurrentTab()
+    end)
+    self.FilterRarityDropdown = filterRarityDropdown
+    filterContainer:AddChild(filterRarityDropdown)
+
+    -- Reset filters button
+    local resetButton = GBankClassic_UI:Create("Button")
+    resetButton:SetText("Reset filters")
+    resetButton:SetWidth(160)
+    resetButton:SetHeight(24)
+    resetButton:SetCallback("OnClick", function(_)
+        self:ResetFilters()
+    end)
+    self.ResetFiltersButton = resetButton
+    filterContainer:AddChild(resetButton)
 
     local tabGroup = GBankClassic_UI:Create("TabGroup")
     tabGroup:SetLayout("Flow")
@@ -149,6 +290,9 @@ function UI_Inventory:DrawWindow()
     tabGroup:SetFullHeight(true)
     window:AddChild(tabGroup)
     self.TabGroup = tabGroup
+
+    -- Initialize filter state
+    self:ResetFilters()
 end
 
 function UI_Inventory:DrawContent()
@@ -328,9 +472,27 @@ function UI_Inventory:DrawContent()
 
                     GBankClassic_Output:Debug("INVENTORY", "Inventory tab %s: GetItems callback received %d items", tab, list and #list or 0)
                     scroll:ReleaseChildren()
-                    GBankClassic_Item:Sort(list)
+                    GBankClassic_Item:Sort(list, GBankClassic_Options.db and GBankClassic_Options.db.char.sortMode)
 
-                    for _, item in pairs(list) do
+                    -- Apply filters
+                    local filteredList = {}
+                    local filteredCount = 0
+                    for _, item in ipairs(list) do
+                        if self:PassesFilters(item) then
+                            table.insert(filteredList, item)
+                            filteredCount = filteredCount + 1
+                        end
+                    end
+
+                    -- Update status text to show filter results
+                    local activeFilters = self:GetActiveFilterCount()
+                    local filterText = activeFilters > 0 and string.format(" |cff87ceeb(%d filters active)|r", activeFilters) or ""
+                    local statusText = string.format("Showing %d of %d items%s", filteredCount, #list, filterText)
+                    self.Window:SetStatusText(statusText)
+
+                    -- Release loading label and display filtered items
+                    scroll:ReleaseChildren()
+                    for _, item in pairs(filteredList) do
                         if item and item.Info and item.Info.name then
                             GBankClassic_Output:Debug("INVENTORY", "Inventory tab %s: displaying %s with count %d (ID: %d)", tab, item.Info.name, item.Count or 0, item.ID)
                         end
@@ -345,6 +507,14 @@ function UI_Inventory:DrawContent()
                                 -- GBankClassic_UI_Search:ShowRequestDialog(item, tab)
                             end)
                         end
+                    end
+
+                    -- Show "no results" message if all items filtered out
+                    if filteredCount == 0 and #list > 0 then
+                        local noResultsLabel = GBankClassic_UI:Create("Label")
+                        noResultsLabel:SetText("|cff808080No items match current filters|r")
+                        noResultsLabel:SetFullWidth(true)
+                        scroll:AddChild(noResultsLabel)
                     end
                 end)
             end
@@ -380,4 +550,203 @@ function UI_Inventory:RefreshCurrentTab()
 
     group:ReleaseChildren()
     group:Fire("OnGroupSelected", current)
+end
+
+function UI_Inventory:ResetFilters()
+    -- Reset filter state
+    self.filterType = "any"
+    self.filterSlot = "any"
+    self.filterRarity = "any"
+    self.filterMinLevel = nil
+    self.filterMaxLevel = nil
+
+    -- Reset dropdown values
+    if self.FilterTypeDropdown then
+        self.FilterTypeDropdown:SetValue("any")
+    end
+    if self.FilterSlotDropdown then
+        self.FilterSlotDropdown:SetValue("any")
+    end
+    if self.FilterRarityDropdown then
+        self.FilterRarityDropdown:SetValue("any")
+    end
+
+    -- Refresh current tab
+    self:RefreshCurrentTab()
+
+    GBankClassic_Output:Response("Filters reset")
+end
+
+function UI_Inventory:PassesFilters(item)
+    if not item or not item.Info then
+        return true
+    end
+
+    local info = item.Info
+
+    -- Type filter
+    if self.filterType and self.filterType ~= "any" then
+        local class = info.class or 0
+        local subClass = info.subClass or 0
+
+        --[[
+        local t = Enum.ItemClass
+        for k, v in pairs(t) do
+            print(k.."=".. v)
+        end
+
+        Enum.ItemClass
+
+        ++Armor=4
+        ++Weapon=2
+        ++Consumable=0
+        ++Tradegoods=7
+        ++Container=1
+        ++Recipe=9
+        ++Questitem=12
+
+        Miscellaneous=15
+        Reagent=5
+        CurrencyTokenObsolete=10
+        Key=13
+        PermanentObsolete=14
+        Gem=3
+        ItemEnhancement=8
+        Quiver=11
+        Projectile=6
+
+        Profession=19
+        WoWToken=18
+        Battlepet=17
+        Glyph=16
+        ]]--
+
+        if self.filterType == "armor" and class ~= 4 then
+            return false
+        elseif self.filterType == "weapon" and class ~= 2 then
+            return false
+        elseif self.filterType == "consumable" and class ~= 0 then
+            return false
+        elseif self.filterType == "trade" and class ~= 7 then
+            return false
+        elseif self.filterType == "container" and class ~= 1 then
+            return false
+        elseif self.filterType == "recipe" and class ~= 9 then
+            return false
+        elseif self.filterType == "quest" and class ~= 12 then
+            return false
+        elseif self.filterType == "misc" and class ~= 15 and class ~= 5 and class ~= 10 and class ~= 13 and class ~= 14 and class ~= 3 and class ~= 8 and class ~= 11 and class ~= 6 then
+            return false
+        end
+    end
+
+    -- Slot filter
+    if self.filterSlot and self.filterSlot ~= "any" then
+        local equipId = info.equipId or 0
+
+        --[[
+        local t = Enum.InventoryType
+        for k, v in pairs(t) do
+            print(k.."=".. v)
+        end
+
+        Enum.InventoryType
+        
+        IndexNonEquipType=0
+
+        IndexHeadType=1
+        IndexNeckType=2
+        IndexShoulderType=3
+        IndexBodyType=4
+        IndexChestType=5
+        IndexWaistType=6
+        IndexLegsType=7
+        IndexFeetType=8
+        IndexWristType=9
+        IndexHandType=10
+        IndexFingerType=11
+        IndexTrinketType=12
+        IndexWeaponType=13
+        IndexShieldType=14
+
+        IndexRangedType=15
+
+        IndexCloakType=16
+        Index2HweaponType=17
+        IndexBagType=18
+        IndexTabardType=19
+        IndexRobeType=20
+        IndexWeaponmainhandType=21
+        IndexWeaponoffhandType=22
+        IndexHoldableType=23
+
+        IndexAmmoType=24
+        IndexThrownType=25
+
+        IndexRangedrightType=26
+
+        IndexQuiverType=27
+        IndexRelicType=28
+        IndexProfessionToolType=29
+        IndexProfessionGearType=30
+        IndexEquipablespellOffensiveType=31
+        IndexEquipablespellUtilityType=32
+        IndexEquipablespellDefensiveType=33
+        IndexEquipablespellWeaponType=34
+        
+        ]]--
+
+        local slotMap = {
+            head = 1, neck = 2, shoulder = 3, shirt = 4, chest = 5, waist = 6, legs = 7, feet = 8, wrist = 9, hands = 10, finger = 11, trinket = 12, onehand = 13, shield = 14, ranged = 26, back = 16, twohand = 17, bag = 18, tabard = 19, robe = 20, mainhand = 21, offhand = 22, holdable = 23
+        }
+        local targetSlot = slotMap[self.filterSlot]
+        if targetSlot and targetSlot ~= equipId then
+            if self.filterSlot == "bag" and equipId ~= 0 then
+                return false
+            elseif self.filterSlot ~= "bag" and equipId ~= targetSlot then
+                return false
+            end
+        end
+    end
+
+    -- Rarity filter
+    if self.filterRarity and self.filterRarity ~= "any" then
+        local rarity = info.rarity or 1
+        local rarityMap = {
+            poor = 0, common = 1, uncommon = 2, rare = 3, epic = 4, legendary = 5
+        }
+        local targetRarity = rarityMap[self.filterRarity]
+        if targetRarity and rarity ~= targetRarity then
+            return false
+        end
+    end
+
+    -- Level filter
+    if self.filterMinLevel and info.level and info.level < self.filterMinLevel then
+        return false
+    end
+    if self.filterMaxLevel and info.level and info.level > self.filterMaxLevel then
+        return false
+    end
+
+    return true
+end
+
+function UI_Inventory:GetActiveFilterCount()
+    local count = 0
+
+    if self.filterType and self.filterType ~= "any" then
+        count = count + 1
+    end
+    if self.filterSlot and self.filterSlot ~= "any" then
+        count = count + 1
+    end
+    if self.filterRarity and self.filterRarity ~= "any" then
+        count = count + 1
+    end
+    if self.filterMinLevel or self.filterMaxLevel then
+        count = count + 1
+    end
+
+    return count
 end
