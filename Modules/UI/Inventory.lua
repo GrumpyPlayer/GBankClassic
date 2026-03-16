@@ -296,7 +296,7 @@ function UI_Inventory:DrawWindow()
     self:ResetFilters()
 end
 
-function UI_Inventory:UpdateStatusText(filteredCount, totalCount, goldAmount, version)
+function UI_Inventory:UpdateStatusText(filteredCount, totalCount, goldAmount, versionTimestamp)
     filteredCount = filteredCount or 0
     totalCount = totalCount or 0
 
@@ -312,10 +312,11 @@ function UI_Inventory:UpdateStatusText(filteredCount, totalCount, goldAmount, ve
         self.totalCount = totalCount
     else
         local defaultStatus
-        if goldAmount > 0 then
+        if goldAmount > 0 or versionTimestamp ~= "" then
             local updatedAt = ""
-            if version ~= "" then
-                updatedAt = string.format(" as of %s", version)
+            if versionTimestamp ~= "" then
+                local versionDate = date("%b %d, %Y %H:%M", versionTimestamp)
+                updatedAt = string.format(" as of %s", versionDate)
             end
             defaultStatus = string.format("%s%s", GetCoinTextureString(goldAmount), updatedAt)
         else
@@ -340,15 +341,18 @@ function UI_Inventory:DrawContent()
 	GBankClassic_UI_Search.searchDataBuilt = false
 
     local tabs = {}
-    local first_tab = nil
-
+    local firstTab = nil
+    local firstTabMoney = nil
+    local firstTabVersion = nil
     for i = 1, #roster_alts do
         local guildBankAltName = roster_alts[i]
 		local norm = GBankClassic_Guild:NormalizeName(guildBankAltName) or guildBankAltName
 		local alt = info.alts[norm]
         if alt and type(alt) == "table" then
-            if not first_tab then
-                first_tab = guildBankAltName
+            if not firstTab then
+                firstTab = guildBankAltName
+                firstTabMoney = alt.money or 0
+                firstTabVersion = alt.version or ""
             end
             tabs[i] = { value = guildBankAltName, text = guildBankAltName }
         end
@@ -363,7 +367,7 @@ function UI_Inventory:DrawContent()
 	end
 
     self.TabGroup:SetTabs(tabs)
-    self:UpdateStatusText(self.filteredCount or "", self.totalCount or "", 0, "")
+    self:UpdateStatusText(self.filteredCount or "", self.totalCount or "", firstTabMoney, firstTabVersion)
 
     self.TabGroup:SetCallback("OnGroupSelected", function(group)
         local tab = group.localstatus.selected
@@ -478,7 +482,7 @@ function UI_Inventory:DrawContent()
                 end
 
                 -- Update status text to show filter results
-                self:UpdateStatusText(filteredCount, #list, alt.money or 0, alt.version and date("%b %d, %Y %H:%M", alt.version) or "")
+                self:UpdateStatusText(filteredCount, #list, alt.money or 0, alt.version)
 
                 -- Release loading label and display filtered items
                 if self:GetActiveFilterCount() > 0 then
@@ -514,7 +518,7 @@ function UI_Inventory:DrawContent()
     end)
 
 	-- Preserve currently selected tab instead
-	-- Only select first_tab if no tab is currently selected
+	-- Only select firstTab if no tab is currently selected
 	local currentTab = self.TabGroup.localstatus and self.TabGroup.localstatus.selected
 	if currentTab and info.alts[currentTab] then
 		-- Preserve current selection if it's still valid
@@ -525,7 +529,7 @@ function UI_Inventory:DrawContent()
         end
 	else
 		-- No current selection or invalid tab, select first tab
-		self.TabGroup:SelectTab(first_tab)
+		self.TabGroup:SelectTab(firstTab)
 	end
 end
 

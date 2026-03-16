@@ -574,7 +574,7 @@ function Guild:RequestMissingGuildBankAltData()
 		return
 	end
 
-	GBankClassic_Output:Info("Requesting %d missing guild bank alts (have %d/%d).", #missing, #rosterAlts - #missing, #rosterAlts)
+	GBankClassic_Output:Info("Requesting %d missing data (have data for %d/%d).", #missing, #rosterAlts - #missing, #rosterAlts)
 
 	-- Query each missing alt using pull-based protocol
 	for _, norm in ipairs(missing) do
@@ -1255,7 +1255,7 @@ local function getSendResultName(result)
 end
 
 -- Create a per-send callback with its own stats tracking
-local function createOnChunkSentCallback(altName)
+local function createOnChunkSentCallback(altName, destination)
 	-- Per-send stats (closure captures these)
 	local sendStats = {
 		startTime = nil,
@@ -1315,13 +1315,14 @@ local function createOnChunkSentCallback(altName)
 
 		-- Show progress at start
 		if sendStats.chunksSent == 1 then
-			GBankClassic_Output:Debug("CHUNK", "Sharing guild bank data: %d bytes in ~%d chunks...", totalBytes, totalChunks)
+			GBankClassic_Output:Debug("CHUNK", "Sharing data: %d bytes in ~%d chunks...", totalBytes, totalChunks)
 		end
 
 		-- Completion summary
 		if bytesSent >= totalBytes then
 			local elapsed = GetTime() - (sendStats.startTime or GetTime())
 			local summary = string.format("Send complete: %d chunks, %d bytes in %.1fs", sendStats.chunksSent, totalBytes, elapsed)
+			GBankClassic_Output:Info("Finished sending data for %s%s.", GBankClassic_Chat:ColorPlayerName(altName), destination and string.format(" to %s", GBankClassic_Chat:ColorPlayerName(destination)))
 			if sendStats.failures > 0 or sendStats.throttled > 0 then
 				summary = summary .. string.format(" | failures: %d, throttled: %d", sendStats.failures, sendStats.throttled)
 			end
@@ -1395,7 +1396,7 @@ function Guild:SendAltData(name, target)
 	GBankClassic_Output:Debug("SYNC", "Sending %s: alt.items=%d", norm, itemsCount)
 
 	-- Send full dataync
-	local onChunkSent = createOnChunkSentCallback(norm)
+	local onChunkSent = createOnChunkSentCallback(norm, dest)
 	local dataNoLinks
 
 	-- New format (only keep links for items with an enchant, suffix, or weapon/armor class)
@@ -1510,21 +1511,21 @@ function Guild:ReceiveAltData(name, alt, sender)
 
 			if not existing then
 				shouldAccept = true
-				GBankClassic_Output:Info("Accepting guild bank alt data from non-guild bank alt: no existing data for %s", norm)
+				GBankClassic_Output:Info("Accepting data about %s from peer.", norm)
 			elseif incomingVersion and existingVersion and incomingVersion > existingVersion then
 				shouldAccept = true
-				GBankClassic_Output:Info("Accepting newer guild bank alt data: %s about %s (timestamp %d > %d)", senderNorm or "unknown", norm, incomingVersion, existingVersion)
+				GBankClassic_Output:Info("Accepting newer data about %s from %s.", norm, senderNorm or "unknown")
 			end
 
 			if not shouldAccept then
-				GBankClassic_Output:Debug("SYNC", "Rejected data about guild bank alt %s from %s (not newer: incoming=%s, existing=%s)", norm, senderNorm or "unknown", tostring(incomingVersion), tostring(existingVersion))
+				GBankClassic_Output:Debug("SYNC", "Rejected data about %s from %s (not newer: incoming=%s, existing=%s)", norm, senderNorm or "unknown", tostring(incomingVersion), tostring(existingVersion))
 
 				return ADOPTION_STATUS.UNAUTHORIZED
 			end
 
 		else
-			-- If we get here: senderNorm == norm (guild bank alt updating themselves) - ACCEPT
-			GBankClassic_Output:Debug("SYNC", "Accepting data about guild bank alt %s from themselves", norm)
+			-- If we get here: senderNorm == norm (guild bank alt updating themselves) - accept
+			GBankClassic_Output:Debug("SYNC", "Accepting data about %s from themselves", norm)
 		end
 	end
 
@@ -1618,7 +1619,7 @@ function Guild:HasAltData(alt)
 		return true
 	end
 
-	if alt.inventoryHash and alt.inventoryHash > 0 then
+	if alt.inventoryHash and alt.inventoryHash > 0 and alt.inventoryHash ~= 48095047 then
 		return true
 	end
 
@@ -1798,7 +1799,7 @@ end
 -- Create and send latest version of the roster after enabling a new guild bank alt or /bank roster
 function Guild:AuthorRosterData()
 	if GBankClassic_Guild.isAnyoneAuthority then
-	 	GBankClassic_Output:Info("All guild members can view officer notes. There's no point in broadcasting your roster. Aborting...")
+	 	GBankClassic_Output:Info("All guild members can view officer notes. There's no point in broadcasting your roster. Aborted.")
 
 		return
 	end
