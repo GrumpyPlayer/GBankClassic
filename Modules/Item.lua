@@ -394,7 +394,7 @@ function Items:Aggregate(a, b)
     local itemsByKey = {}
 
     local function processItem(v)
-        if not v or (v and not v.ID) then
+        if type(v) ~= "table" or not v.ID then
             -- Skip malformed entries
             return
         end
