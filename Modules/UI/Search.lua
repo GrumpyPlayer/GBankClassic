@@ -473,10 +473,21 @@ function UI_Search:BuildSearchData()
         for _, v in pairs(list) do
             -- Skip malformed list entries
 			if v and v.ID and v.Info and v.Info.name then
-				-- Map item ID to name (for lookup table building later)
-				if not itemNames[v.ID] then
-					itemNames[v.ID] = v.Info.name
+				local itemIdentity = tostring(v.ID)
+
+				-- For weapons/armor, include link key to catch suffix differences
+				if v.Link and GBankClassic_Item:NeedsLink(v.Link) then
+					local linkKey = GBankClassic_Item:GetImprovedItemKey(v.Link)
+					if linkKey and linkKey ~= "" then
+						itemIdentity = linkKey
+					end
 				end
+
+				-- Map item identity to name (for lookup table building later)
+				if not itemNames[itemIdentity] then
+					itemNames[itemIdentity] = v.Info.name
+				end
+
 				-- Only add each unique name to corpus once
 				if not corpusNamesSeen[v.Info.name] then
 					corpusNamesSeen[v.Info.name] = true
@@ -504,7 +515,17 @@ function UI_Search:BuildSearchData()
             end
 
             for _, itemEntry in pairs(altItems) do
-                local name = itemNames[itemEntry.ID]
+				local itemIdentity = tostring(itemEntry.ID)
+
+				-- For weapons/armor, include link key to catch suffix differences
+				if itemEntry.Link and GBankClassic_Item:NeedsLink(itemEntry.Link) then
+					local linkKey = GBankClassic_Item:GetImprovedItemKey(itemEntry.Link)
+					if linkKey and linkKey ~= "" then
+						itemIdentity = linkKey
+					end
+				end
+
+                local name = itemNames[itemIdentity]
                 if name then
 					GBankClassic_Output:Debug("SEARCH", "Search results: adding %s with count %d for player %s to lookup", name, itemEntry.Count or 0, player)
                     if not self.SearchData.Lookup[name] then
@@ -512,7 +533,11 @@ function UI_Search:BuildSearchData()
                     end
                     local found = false
                     for _, existingEntry in pairs(self.SearchData.Lookup[name]) do
-						if existingEntry.alt == player and existingEntry.item.ID == itemEntry.ID then
+						if existingEntry.alt == player and existingEntry.item.Link and itemEntry.Link and existingEntry.item.Link == itemEntry.Link then
+                            found = true
+							GBankClassic_Output:Debug("SEARCH", "Search results: duplicate found - skipping %s (ID: %d) for %s", name, itemEntry.ID, player)
+                            break
+						elseif existingEntry.alt == player and not existingEntry.item.Link and not itemEntry.Link and existingEntry.item.ID == itemEntry.ID then
                             found = true
 							GBankClassic_Output:Debug("SEARCH", "Search results: duplicate found - skipping %s (ID: %d) for %s", name, itemEntry.ID, player)
                             break
