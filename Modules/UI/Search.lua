@@ -544,8 +544,8 @@ function UI_Search:BuildSearchData()
                         end
                     end
                     if not found then
-                        local info = GBankClassic_Item:GetInfo(itemEntry.ID, itemEntry.Link)
-                        table.insert(self.SearchData.Lookup[name], { alt = player, item = { ID = itemEntry.ID, Count = itemEntry.Count, Link = itemEntry.Link, Info = info } })
+                        local itemInfo = GBankClassic_Item:GetInfo(itemEntry.ID, itemEntry.Link)
+                        table.insert(self.SearchData.Lookup[name], { alt = player, item = { ID = itemEntry.ID, Count = itemEntry.Count, Link = itemEntry.Link, Info = itemInfo } })
                     end
                 end
             end

@@ -42,7 +42,6 @@ function MailInventory:ScanMailInventory()
 					local link = GetInboxItemLink(i, j)
 					if not link and itemID then
 						link = select(2, GetItemInfo(itemID))
-						-- TODO: it's possible that the item isn't cached yet so the link will be nil
 					end
 
 					-- Conditionally include link based on item class

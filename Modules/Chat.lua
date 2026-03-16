@@ -498,21 +498,10 @@ function Chat:OnCommReceived(prefix, message, distribution, sender)
 	if prefix == "gbank-rm" then
 		GBankClassic_Output:DebugComm("%s received from %s: type=%s", prefix, sender, tostring(data.type))
 		
-		-- -- Critical debug for request mutations
-		-- if data.type == "requests-log" then
-		-- 	GBankClassic_Output:Debug("SYNC", "%s requests-log received from %s, about to call ReceiveRequestMutations", prefix, sender)
-		-- end
-
-		if data.type == "roster" then
-			-- Only accept roster updates from a sender that is marked as a bank in guild notes, or from the guild master
-			-- TODO: also accept from players that can view guild notes
-			local allowed = (GBankClassic_Guild and GBankClassic_Guild.SenderHasGbankNote and GBankClassic_Guild:SenderHasGbankNote(sender)) or GBankClassic_Guild:SenderIsGM(sender)
-			if GBankClassic_Guild:ConsumePendingSync("roster", sender) then
-				allowed = true
-			end
-			GBankClassic_Output:Debug("SYNC", ">", self:ColorPlayerName(sender), SHARES_COLOR, "roster data. We", allowed and "accept it." or "do not accept it.")
+		-- Critical debug for request mutations
+		if data.type == "requests-log" then
+			GBankClassic_Output:Debug("SYNC", "%s requests-log received from %s, about to call ReceiveRequestMutations", prefix, sender)
 		end
-
 		if data.type == "requests" then
 			local status = GBankClassic_Guild:ReceiveRequestsData(data)
 			GBankClassic_Output:Debug("REQUESTS", ">", self:ColorPlayerName(sender), SHARES_COLOR, "requests snapshot. We accept it by default.", formatSyncStatus(status))
@@ -528,27 +517,6 @@ function Chat:OnCommReceived(prefix, message, distribution, sender)
 		if data.type == "requests-log" then
 			GBankClassic_Output:Debug("REQUESTS", ">", self:ColorPlayerName(sender), SHARES_COLOR, "request mutations. We accept by default.")
 			GBankClassic_Guild:ReceiveRequestMutations(data, sender)
-		end
-		if data.type == "alt" then
-			-- Only accept alt data if the sender matches the claimed alt name
-			local claimed = data.name
-			local claimedNorm = GBankClassic_Guild:NormalizeName(claimed) or claimed
-			local allowed = self:IsAltDataAllowed(sender, claimedNorm)
-			if GBankClassic_Guild:ConsumePendingSync("alt", sender, claimedNorm) then
-				allowed = true
-			end
-			local status = allowed and GBankClassic_Guild:ReceiveAltData(claimedNorm, data.alt, sender) or ADOPTION_STATUS.UNAUTHORIZED
-			GBankClassic_Output:Debug("SYNC", ">", self:ColorPlayerName(sender), SHARES_COLOR, "bank data (link-less) about", self:ColorPlayerName(claimedNorm) .. ". We", allowed and "accept it." or "do not accept it.", formatSyncStatus(status))
-			if allowed then
-				-- ReceiveAltData already applied/rejected; refresh UI if open
-				if status == ADOPTION_STATUS.ADOPTED and GBankClassic_UI_Inventory and GBankClassic_UI_Inventory.isOpen then
-					GBankClassic_UI_Inventory:DrawContent()
-					GBankClassic_UI_Inventory:RefreshCurrentTab()
-				end
-			else
-				-- Ignore spoofed alt data
-				return
-			end
 		end
 	end
 	]]--

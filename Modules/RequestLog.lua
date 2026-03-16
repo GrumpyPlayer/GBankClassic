@@ -1576,7 +1576,6 @@ function Guild:CheckMailFulfillment(request)
 			for _, item in ipairs(alt.mail.items) do
 				-- Use item name from item link if available, otherwise can't match by name
 				local itemName = item.Link and (GetItemInfo(item.Link))
-             --TODO: it's possible the item isn't cached so itemName will be empty
 				if itemName == request.item or item.ID == tonumber(request.item) then
 					itemID = item.ID
 					break

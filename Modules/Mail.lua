@@ -135,7 +135,6 @@ function Mail:RecordDonationInLedger(sender, itemLink, quantity, money, isMoney)
         GBankClassic_Output:Debug("DONATION", "Proceeding to record item donation in ledger of %sx %s by %s to the donation ledger", quantity, itemLink, senderNorm)
         if itemLink and quantity then
             local name, _, _, level, _, _, _, _, _, _, price = GetItemInfo(itemLink)
-            -- TODO: is it possible that we get here and item may still not be in cache? we get here when the CHAT_MSG_LOOT event is fired
             if name and level and not GBankClassic_Item:IsUnique(itemLink) then
                 local effectivePrice = (price and price > 0) and price or 1
                 local score = (effectivePrice * quantity) / 10000

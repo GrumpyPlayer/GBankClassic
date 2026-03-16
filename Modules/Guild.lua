@@ -582,9 +582,6 @@ function Guild:RebuildGuildBankAltsRoster()
 		end
 	end
 
-	-- TODO: only allow manual roster sync for if version is not nil (gbank-roster to guild with roster alts: table, and version)
-	-- done elsewhere
-
 	-- Ensure local alt data exists for all roster guild bank alts
 	if not self.Info.alts then
 		self.Info.alts = {}
@@ -1162,7 +1159,6 @@ function Guild:RespondToStateSummary(name, summary, requester)
 end
 
 -- Strip link fields from items for transmission (bandwidth optimization)
--- Saves 60-80 bytes per item, receiver reconstructs with GetItemInfo()
 function Guild:StripItemLinks(items)
 	if not items then
 		return nil
