@@ -1593,7 +1593,6 @@ function Guild:ReceiveAltData(name, alt, sender)
 		self.Info.alts = {}
 	end
 	self.Info.alts[norm] = alt
-	GBankClassic_Output:Debug("MAIL", "Overwrote self.Info.alts[%s], mail field now: %s", norm, alt.mail and "EXISTS" or "GONE")
 	GBankClassic_Output:Debug("SYNC", "Stored alt data for %s", norm)
 
 	-- Reset search data flag so inventory UI rebuilds search index
