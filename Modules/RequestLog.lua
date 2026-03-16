@@ -894,9 +894,9 @@ function Guild:QueryRequestsIndex(target, priority)
 	else
 		GBankClassic_Core:SendCommMessage("gbank-r", data, "Guild", nil, priority or "BULK")
 		local syncStateAtBroadcast = self.requestsIndexSync
-		C_Timer.After(5, function()
+		C_Timer.After(10, function()
 			if self.requestsIndexSync == syncStateAtBroadcast and self.requestsIndexSync.inFlight then
-				GBankClassic_Output:Debug("SYNC", "QueryRequestsIndex: No index in 5s (guild in sync) - clearing inFlight")
+				GBankClassic_Output:Debug("SYNC", "QueryRequestsIndex: No index in 10s (guild in sync) - clearing inFlight")
 				self:EndRequestsIndexSync()
 			end
 		end)
@@ -941,6 +941,7 @@ function Guild:SendRequestsIndex(target)
 		tombstones = tombstonesIndex,
 	}
 	local data = GBankClassic_Core:SerializeWithChecksum(payload)
+	GBankClassic_Output:Debug("REQUESTS", "INDEX", "Sending requests-index to %s (%d requests, %d tombstones, hash=%d)", tostring(target or "guild"), #requestsIndex, #tombstonesIndex, payload.hash or 0)
 	if target and target ~= "" then
 		GBankClassic_Core:SendWhisper("gbank-rd", data, target, "NORMAL")
 	else

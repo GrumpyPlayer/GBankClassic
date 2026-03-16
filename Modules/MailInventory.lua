@@ -141,7 +141,7 @@ end
 
 -- Returns age of mail scan data in seconds
 function MailInventory:GetMailDataAge(alt)
-	if not alt or not alt.mail or not alt.mail.version then
+	if not alt or not alt.mail or not alt.mail.version or alt.mail.lastScan == 0 then
 		return nil
 	end
 
