@@ -587,8 +587,6 @@ function UI_Inventory:ResetFilters()
 
     -- Refresh current tab
     self:RefreshCurrentTab()
-
-    GBankClassic_Output:Response("Filters reset")
 end
 
 function UI_Inventory:PassesFilters(item)
