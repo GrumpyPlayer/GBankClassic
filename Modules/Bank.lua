@@ -161,7 +161,7 @@ function Bank:Scan()
 	self:RecalculateAggregatedItems(bankData, bagData, mailData, alt)
 
 	-- Compute hash of the current inventory state
-	local currentHash = GBankClassic_DeltaComms:ComputeInventoryHash(alt.items, nil, nil, money)
+	local currentHash = ComputeLegacyInventoryHash(alt.items, money)
 	local previousHash = alt.inventoryHash
 	local currentImprovedInventoryHash = self:ComputeImprovedInventoryHash(alt.items, money)
 	local previousImprovedInventoryHash = alt.improvedInventoryHash
@@ -178,7 +178,7 @@ function Bank:Scan()
 	-- Compute hash for current mailbox state
 	-- mailHash is computed whenever mail is scanned (even if empty) to track all mail state changes (mailHash is nil when mail was never scanned)
 	if mailData and mailData.items then
-		local currentMailHash = GBankClassic_DeltaComms:ComputeInventoryHash(mailData.items, nil, nil, nil)
+		local currentMailHash = ComputeLegacyInventoryHash(mailData.items, nil)
 		local previousMailHash = alt.mailHash
 		local currentImprovedMailHash = self:ComputeImprovedInventoryHash(mailData.items, nil)
 		local previousImprovedMailHash = alt.improvedMailHash
@@ -202,12 +202,6 @@ function Bank:Scan()
 		info.alts = {}
 	end
 	info.alts[player] = alt
-
-	-- Save snapshot after scan so next broadcast can compute proper delta
-	if info.name then
-		GBankClassic_Database:SaveSnapshot(info.name, player, alt)
-		GBankClassic_Output:Debug("DELTA", "Saved snapshot for %s after scan (hash=%s)", player, tostring(alt.inventoryHash))
-	end
 
     -- Always share inventory with guild after a scan
     GBankClassic_Guild:Share()
@@ -273,7 +267,7 @@ function Bank:OnUpdateStop()
 		GBankClassic_Output:Debug("INVENTORY", "Calling scan")
         self:Scan()
 		GBankClassic_Output:Debug("INVENTORY", "Scan completed")
-		
+
 		-- Trigger UI refresh if inventory window is open
 		if GBankClassic_UI_Inventory.isOpen then
 			if not GBankClassic_UI_Inventory.currentTab or GBankClassic_UI_Inventory.currentTab == GBankClassic_Guild.player then
@@ -339,10 +333,7 @@ function Bank:RecalculateAggregatedItems(bankData, bagData, mailData, alt)
 	GBankClassic_Output:Debug("INVENTORY", "After aggregation of items: bank=%d, bags=%d, mail=%d, total=%d", #bankItems, #bagItems, #mailItems, #alt.items)
 end
 
--- Compute an immproved hash of inventory state to detect changes
--- Considers enchant/suffix for weapons/gear
--- Only updates version timestamps when this hash changes
--- Hash calculations from users with version 2.5.4 or older only consider ID and Count
+-- Compute an immproved hash of inventory state to detect changes considering enchant/suffix for weapons/gear
 function Bank:ComputeImprovedInventoryHash(items, money)
 	local parts = {}
 	table.insert(parts, tostring(money))
@@ -378,5 +369,33 @@ function Bank:ComputeImprovedInventoryHash(items, money)
 	table.insert(parts, "I:" .. hashItems(items))
 	local combined = table.concat(parts, "|")
 
-	return GBankClassic_Core and GBankClassic_Core:Checksum(combined) or 0
+	return GBankClassic_Core:Checksum(combined) or 0
+end
+
+-- Compute the legacy hash of the inventory state to detect changes
+function ComputeLegacyInventoryHash(items, money)
+	local parts = {}
+	table.insert(parts, tostring(money))
+
+	-- Hash aggregated items directly
+	local function hashItems(itemsArray)
+		if not itemsArray or type(itemsArray) ~= "table" then
+			return ""
+		end
+
+		local sorted = {}
+		for _, item in ipairs(itemsArray) do
+			if item and item.ID then
+				table.insert(sorted, string.format("%d:%d", item.ID, item.Count or 0))
+			end
+		end
+		table.sort(sorted)
+
+		return table.concat(sorted, ",")
+	end
+
+	table.insert(parts, "I:" .. hashItems(items))
+	local combined = table.concat(parts, "|")
+
+	return GBankClassic_Core:Checksum(combined) or 0
 end

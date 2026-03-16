@@ -342,18 +342,6 @@ function Options:Init()
 							return GBankClassic_Output:IsCategoryEnabled("WHISPER")
 						end,
 					},
-					["delta"] = {
-						order = 28,
-						type = "toggle",
-						width = "full",
-						name = "DELTA - Delta sync operations and computations",
-						set = function(_, v)
-							GBankClassic_Output:SetCategoryEnabled("DELTA", v)
-						end,
-						get = function()
-							return GBankClassic_Output:IsCategoryEnabled("DELTA")
-						end,
-					},
 					["spacer"] = {
 						order = 30,
 						type = "description",

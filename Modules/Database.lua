@@ -13,7 +13,6 @@ function Database:Init()
 			debugCategories = {
 				ROSTER = false,
 				COMMS = false,
-				DELTA = false,
 				SYNC = false,
 				CHUNK = false,
 				DONATION = false,
@@ -50,21 +49,7 @@ function Database:Reset(name)
 		-- settings = {
 		-- 	maxRequestPercent = 100, -- Default to no limit
 		-- },
-		deltaSnapshots = {},
-		deltaHistory = {},
 		guildProtocolVersions = {},
-		deltaMetrics = {
-			bytesSentDelta = 0,
-			bytesSentFull = 0,
-			deltasApplied = 0,
-			deltasFailed = 0,
-			fullSyncFallbacks = 0,
-		},
-		deltaErrors = {
-			lastErrors = {}, -- Recent errors for debugging (max 10)
-			failureCounts = {}, -- Track failures per alt
-			notifiedAlts = {}, -- Track which alts we've notified about
-		},
     }
 
 	GBankClassic_Output:Response("Reset database")
@@ -137,13 +122,12 @@ function Database:Load(name)
 					GBankClassic_Output:Debug("DATABASE", "Forced deduplication for guild bank alt %s: %d items.", name, #alt.items)
 
 					local money = alt.money or 0
-					alt.inventoryHash = GBankClassic_DeltaComms:ComputeInventoryHash(alt.items, nil, nil, money)
+					alt.inventoryHash = GBankClassic_Bank:ComputeLegacyInventoryHash(alt.items, money)
 					alt.improvedInventoryHash = GBankClassic_Bank:ComputeImprovedInventoryHash(alt.items, money)
 					GBankClassic_Output:Debug("DATABASE", "Recomputed inventory hash after recalculation for %s: %d.", name, alt.inventoryHash)
 					GBankClassic_Output:Debug("DATABASE", "Recomputed improved inventory hash after recalculation for %s: %d.", name, alt.improvedInventoryHash)
 
 					GBankClassic_Guild:ReconstructItemLinks(alt.items)
-					GBankClassic_UI_Search:BuildSearchData()
 				end
 			end
 		end
@@ -159,53 +143,17 @@ function Database:Load(name)
 	-- 	db.requestsTombstones = {}
 	-- end
 
-	if not db.deltaSnapshots then
-		db.deltaSnapshots = {}
-	end
-	if not db.deltaHistory then
-		db.deltaHistory = {}
-	end
 	if not db.guildProtocolVersions then
 		db.guildProtocolVersions = {}
 	end
-	if not db.deltaMetrics then
-		db.deltaMetrics = {
-			bytesSentDelta = 0,
-			bytesSentFull = 0,
-			deltasApplied = 0,
-			deltasFailed = 0,
-			fullSyncFallbacks = 0,
-		}
-	end
-	if not db.deltaErrors then
-		db.deltaErrors = {
-			lastErrors = {},
-			failureCounts = {},
-			notifiedAlts = {},
-		}
-	end
+
+	-- Empty legacy delta tables
+	db.deltaSnapshots = nil
+	db.deltaHistory = nil
+	db.deltaMetrics = nil
+	db.deltaErrors = nil
 
     return db
-end
-
--- Save a snapshot of alt data for future delta computation
-function Database:SaveSnapshot(name, altName, altData)
-	if not name or not altName or not altData then
-		return false
-	end
-
-	local db = self.db.factionrealm[name]
-	if not db or not db.deltaSnapshots then
-		return false
-	end
-
-	-- Create a deep copy with timestamp
-	db.deltaSnapshots[altName] = {
-		data = self:DeepCopy(altData),
-		timestamp = GetServerTime(),
-	}
-
-	return true
 end
 
 -- Deep copy function for snapshot creation
@@ -223,7 +171,7 @@ function Database:DeepCopy(obj)
 end
 
 -- Update protocol version for a guild member
-function Database:UpdatePeerProtocol(name, sender, protocolVersion, supportsDelta)
+function Database:UpdatePeerProtocol(name, sender, protocolVersion)
 	if not name or not sender then
 		return false
 	end
@@ -235,71 +183,8 @@ function Database:UpdatePeerProtocol(name, sender, protocolVersion, supportsDelt
 
 	db.guildProtocolVersions[sender] = {
 		version = protocolVersion or 1,
-		supportsDelta = supportsDelta or false,
 		lastSeen = GetServerTime(),
 	}
 
 	return true
-end
-
--- Record bytes sent via delta protocol
-function Database:RecordDeltaSent(name, bytes)
-	if not name or not bytes then
-		return
-	end
-
-	local db = self.db.factionrealm[name]
-	if db and db.deltaMetrics then
-		db.deltaMetrics.bytesSentDelta = (db.deltaMetrics.bytesSentDelta or 0) + bytes
-	end
-end
-
--- Record successful delta application
-function Database:RecordDeltaApplied(name)
-	if not name then
-		return
-	end
-
-	local db = self.db.factionrealm[name]
-	if db and db.deltaMetrics then
-		db.deltaMetrics.deltasApplied = (db.deltaMetrics.deltasApplied or 0) + 1
-	end
-end
-
--- Record failed delta application
-function Database:RecordDeltaFailed(name)
-	if not name then
-		return
-	end
-
-	local db = self.db.factionrealm[name]
-	if db and db.deltaMetrics then
-		db.deltaMetrics.deltasFailed = (db.deltaMetrics.deltasFailed or 0) + 1
-	end
-end
-
--- Record delta computation time
-function Database:RecordDeltaComputeTime(name, milliseconds)
-	if not name or not milliseconds then
-		return
-	end
-
-	local db = self.db.factionrealm[name]
-	if db and db.deltaMetrics then
-		db.deltaMetrics.totalComputeTime = (db.deltaMetrics.totalComputeTime or 0) + milliseconds
-		db.deltaMetrics.computeCount = (db.deltaMetrics.computeCount or 0) + 1
-	end
-end
-
--- Record delta application time
-function Database:RecordDeltaApplyTime(name, milliseconds)
-	if not name or not milliseconds then
-		return
-	end
-
-	local db = self.db.factionrealm[name]
-	if db and db.deltaMetrics then
-		db.deltaMetrics.totalApplyTime = (db.deltaMetrics.totalApplyTime or 0) + milliseconds
-		db.deltaMetrics.applyCount = (db.deltaMetrics.applyCount or 0) + 1
-	end
 end

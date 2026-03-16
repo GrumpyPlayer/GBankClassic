@@ -30,25 +30,13 @@ function Chat:Init()
 	self.isSyncing = false
 	self.pendingMessages = {}
 
-    -- Data (no links)
+    -- Data
 	GBankClassic_Core:RegisterComm("gbank-d", function(prefix, message, distribution, sender)
 		self:OnCommReceived(prefix, message, distribution, sender)
 	end)
-    -- Delta data (no links)
-	GBankClassic_Core:RegisterComm("gbank-dd", function(prefix, message, distribution, sender)
-		self:OnCommReceived(prefix, message, distribution, sender)
-	end)
 
-    -- Delta version (legacy)
-	GBankClassic_Output:Debug("PROTOCOL", "Registering gbank-dv handler")
-	GBankClassic_Core:RegisterComm("gbank-dv", function(prefix, message, distribution, sender)
-		GBankClassic_Output:Debug("PROTOCOL", "gbank-dv called: %s from %s (%d bytes)", prefix, sender, #message)
-		self:OnCommReceived(prefix, message, distribution, sender)
-	end)
-	-- Delta version (new protocol for aggregated items structure)
-	GBankClassic_Output:Debug("PROTOCOL", "Registering gbank-dv2 handler")
+	-- Fingerprint
 	GBankClassic_Core:RegisterComm("gbank-dv2", function(prefix, message, distribution, sender)
-		GBankClassic_Output:Debug("PROTOCOL", "gbank-dv2 called: %s from %s (%d bytes)", prefix, sender, #message)
 		self:OnCommReceived(prefix, message, distribution, sender)
 	end)
 
@@ -175,45 +163,11 @@ function Chat:IsAltDataAllowed(sender, claimedNorm)
 	return true
 end
 
--- Cancel pending legacy dv messages for specific alts (called when dv2 arrives)
-function Chat:CancelPendingDvMessages(sender, altNames)
-	if not self.pendingMessages[sender] then
-		return
-	end
-
-	for _, altName in ipairs(altNames) do
-		local pending = self.pendingMessages[sender][altName]
-		if pending and pending.timer then
-			GBankClassic_Output:Debug("PROTOCOL", "Canceling pending dv message for %s (dv2 arrived)", altName)
-			pending.timer:Cancel()
-			self.pendingMessages[sender][altName] = nil
-		end
-	end
-end
-
--- Process delayed legacy dv message after timer expires
-function Chat:ProcessDelayedDvMessage(sender, data, prefix, message, distribution)
-	GBankClassic_Output:Debug("PROTOCOL", "Processing delayed dv message from %s (no dv2 received)", sender)
-
-	-- Remove from pending queue
-	if self.pendingMessages[sender] then
-		self.pendingMessages[sender] = nil
-	end
-
-	-- Process the message normally
-	self:ProcessVersionBroadcast(prefix, data, sender, message, distribution)
-end
-
--- Process version broadcast message (gbank-dv, gbank-dv2)
+-- Process fingerprint broadcast (gbank-dv2)
 function Chat:ProcessVersionBroadcast(prefix, data, sender, message, distribution)
-	local isDeltaVersion = (prefix == "gbank-dv" or prefix == "gbank-dv2")
-	local isDV2 = (prefix == "gbank-dv2")
-
 	-- Show what data we received
-	if isDeltaVersion then
-		local altCount = data.alts and GBankClassic_Globals:Count(data.alts)
-		GBankClassic_Output:Debug("PROTOCOL", "%s from %s: has data.alts=%s, alts count=%d, isDV2=%s", prefix, sender, tostring(data.alts ~= nil), altCount, tostring(isDV2))
-	end
+	local altCount = data.alts and GBankClassic_Globals:Count(data.alts)
+	GBankClassic_Output:Debug("PROTOCOL", "%s from %s: has data.alts=%s, alts count=%d", prefix, sender, tostring(data.alts ~= nil), altCount)
 
 	local current_data = GBankClassic_Guild:GetVersion()
 	if current_data then
@@ -246,8 +200,7 @@ function Chat:ProcessVersionBroadcast(prefix, data, sender, message, distributio
 
 			-- Track protocol capabilities
 			local protocolVersion = data.protocol_version or 1
-			local supportsDelta = data.supports_delta or false
-			GBankClassic_Database:UpdatePeerProtocol(current_data.name, sender, protocolVersion, supportsDelta)
+			GBankClassic_Database:UpdatePeerProtocol(current_data.name, sender, protocolVersion)
 
 			if current_data.addon and data.addon > current_data.addon then
 				if not self.isAddonOutdated then
@@ -264,8 +217,7 @@ function Chat:ProcessVersionBroadcast(prefix, data, sender, message, distributio
 			end
 		end
 		if data.alts then
-			local altCount = GBankClassic_Globals:Count(data.alts)
-			GBankClassic_Output:Debug("PROTOCOL", "Processing %d alts from %s (isDeltaVersion=%s)", altCount, sender, tostring(isDeltaVersion))
+			GBankClassic_Output:Debug("PROTOCOL", "Processing %d alts from %s", altCount, sender)
 			for k, v in pairs(data.alts) do
 				local kNorm = GBankClassic_Guild:NormalizeName(k) or k
 				local ourAlt = (GBankClassic_Guild.Info and GBankClassic_Guild.Info.alts and GBankClassic_Guild.Info.alts[kNorm]) or current_data.alts[kNorm]
@@ -294,55 +246,36 @@ function Chat:ProcessVersionBroadcast(prefix, data, sender, message, distributio
 
 				if not weAreSender then
 					-- We're not the sender, so we can query about any alt including the sender
-					-- For delta version broadcasts, only query if we support delta
-					-- For legacy version broadcasts, query as normal
 					local shouldQuery = false
 					-- Log query decision path
-					GBankClassic_Output:Debug("PROTOCOL", "Query evaluation for %s: isDeltaVersion=%s", kNorm, tostring(isDeltaVersion))
+					GBankClassic_Output:Debug("PROTOCOL", "Query evaluation for %s", kNorm)
 
-					if isDeltaVersion then
-						-- Hash-based comparison (most accurate)
-						if theirHash then
-							if not ourHash then
-								-- They have data, we don't - query
-								shouldQuery = true
-								GBankClassic_Output:Debug("SYNC", ">", colorPlayerName(sender), "has bank data for", colorPlayerName(kNorm) .. " (we have none), querying.")
-								GBankClassic_Output:Debug("PROTOCOL", "Query decision for %s: we don't have data, query", kNorm)
-							elseif theirHash ~= ourHash or theirMailHash ~= ourMailHash then
-								-- Hashes differ (inventory or mail) - we need an update
-								shouldQuery = true
-								local reason = (theirHash ~= ourHash) and "inventory" or "mail"
-								GBankClassic_Output:Debug("SYNC", ">", colorPlayerName(sender), "has different " .. reason .. " for", colorPlayerName(kNorm) .. " (hash mismatch), querying.")
-								GBankClassic_Output:Debug("PROTOCOL", "Query decision for %s: %s hash differs, query (ourInv=%d, theirInv=%d, ourMail=%d, theirMail=%d)", kNorm, reason, ourHash, theirHash, ourMailHash, theirMailHash)
-							-- elseif not hasContent then
-							-- 	-- Hash matches but we don't have content (stub entry) - need to fill it
-							-- 	shouldQuery = true
-							-- 	GBankClassic_Output:Debug("SYNC", ">", colorPlayerName(sender), "has matching hash for", colorPlayerName(kNorm) .. " but we need content (stub entry), querying.")
-							-- 	GBankClassic_Output:Debug("PROTOCOL", "Query decision for %s: hash matches but we don't have the content, create the stub entry", kNorm)
-							else
-								GBankClassic_Output:Debug("PROTOCOL", "Query decision for %s: hash matches our content, don't query", kNorm)
-							end
-						elseif not ourVersion or theirVersion > ourVersion then
-							-- No hash available, fall back to version comparison
+					-- Hash-based comparison (most accurate)
+					if theirHash then
+						if not ourHash then
+							-- They have data, we don't - query
 							shouldQuery = true
-							GBankClassic_Output:Debug("SYNC", ">", colorPlayerName(sender), "has fresher bank data about", colorPlayerName(kNorm) .. ", querying (delta).")
-							GBankClassic_Output:Debug("PROTOCOL", "Query decision for %s: their version is newer, query", kNorm)
+							GBankClassic_Output:Debug("SYNC", ">", colorPlayerName(sender), "has bank data for", colorPlayerName(kNorm) .. " (we have none), querying.")
+							GBankClassic_Output:Debug("PROTOCOL", "Query decision for %s: we don't have data, query", kNorm)
+						elseif theirHash ~= ourHash or theirMailHash ~= ourMailHash then
+							-- Hashes differ (inventory or mail) - we need an update
+							shouldQuery = true
+							local reason = (theirHash ~= ourHash) and "inventory" or "mail"
+							GBankClassic_Output:Debug("SYNC", ">", colorPlayerName(sender), "has different " .. reason .. " for", colorPlayerName(kNorm) .. " (hash mismatch), querying.")
+							GBankClassic_Output:Debug("PROTOCOL", "Query decision for %s: %s hash differs, query (ourInv=%d, theirInv=%d, ourMail=%d, theirMail=%d)", kNorm, reason, ourHash, theirHash, ourMailHash, theirMailHash)
 						else
-							GBankClassic_Output:Debug("PROTOCOL", "Query decision for %s: their version is same or older, don't query", kNorm)
+							GBankClassic_Output:Debug("PROTOCOL", "Query decision for %s: hash matches our content, don't query", kNorm)
 						end
+					elseif not ourVersion or theirVersion > ourVersion then
+						-- No hash available, fall back to version comparison
+						shouldQuery = true
+						GBankClassic_Output:Debug("SYNC", ">", colorPlayerName(sender), "has fresher bank data about", colorPlayerName(kNorm) .. ", querying.")
+						GBankClassic_Output:Debug("PROTOCOL", "Query decision for %s: their version is newer, query", kNorm)
 					else
-						-- Legacy version: query as usual
-						if not ourVersion or theirVersion > ourVersion then
-							shouldQuery = true
-							GBankClassic_Output:Debug("SYNC", ">", colorPlayerName(sender), "has fresher bank data about", colorPlayerName(kNorm) .. ", querying.")
-							GBankClassic_Output:Debug("PROTOCOL", "Query decision for %s: their version is newer, query", kNorm)
-						else
-							GBankClassic_Output:Debug("PROTOCOL", "Query decision for %s: their version is same or older, don't query", kNorm)
-						end
+						GBankClassic_Output:Debug("PROTOCOL", "Query decision for %s: their version is same or older, don't query", kNorm)
 					end
 
 					if shouldQuery then
-						-- Use pull-based query for delta version broadcasts
 						GBankClassic_Output:Debug("PROTOCOL", "Querying %s from %s (reason: version broadcast mismatch)", kNorm, sender)
 						GBankClassic_Guild:QueryAltPullBased(kNorm)
 					end
@@ -380,54 +313,9 @@ function Chat:OnCommReceived(prefix, message, distribution, sender)
 
 	GBankClassic_Output:Debug("PROTOCOL", ">", colorPlayerName(sender), ">", prefix, prefixDesc, data.type and ", type=" .. tostring(data and data.type) or "")
 
-	if prefix == "gbank-dv" or prefix == "gbank-dv2" then
+	if prefix == "gbank-dv2" then
 		local altCount = data and data.alts and GBankClassic_Globals:Count(data.alts)
 		GBankClassic_Output:Debug("PROTOCOL", "%s from %s: success=%s, has data=%s, has data.alts=%s, altCount=%d", prefix, sender, tostring(success), tostring(data ~= nil), tostring(data and data.alts ~= nil), altCount)
-
-		-- New clients only listen to gbank-dv2, ignore gbank-dv
-		-- Legacy clients only listen to gbank-dv, ignore gbank-dv2
-		if prefix == "gbank-dv" then
-			-- Delay dv processing to allow dv2 to arrive first (prioritize newer protocol)
-			GBankClassic_Output:Debug("PROTOCOL", "Delaying dv message from %s for %d seconds (waiting for dv2)", sender, TIMER_INTERVALS.ALT_DATA_QUEUE_RETRY)
-
-			-- Store the message with a timer
-			if not self.pendingMessages[sender] then
-				self.pendingMessages[sender] = {}
-			end
-
-			-- Extract alt names from data to track what needs canceling
-			local altNames = {}
-			if data.alts then
-				for altName in pairs(data.alts) do
-					table.insert(altNames, altName)
-					-- Store pending message keyed by alt name for easy cancellation
-					self.pendingMessages[sender][altName] = {
-						data = data,
-						prefix = prefix,
-						message = message,
-						distribution = distribution,
-					}
-				end
-			end
-
-			-- Create timer to process after delay
-			After(TIMER_INTERVALS.ALT_DATA_QUEUE_RETRY, function()
-				self:ProcessDelayedDvMessage(sender, data, prefix, message, distribution)
-			end)
-
-			return
-		end
-
-		-- If we're processing dv2, cancel any pending dv messages for these alts
-		if prefix == "gbank-dv2" and data.alts then
-			local altNames = {}
-			for altName in pairs(data.alts) do
-				table.insert(altNames, altName)
-			end
-			self:CancelPendingDvMessages(sender, altNames)
-		end
-
-		-- Process the message immediately
 		self:ProcessVersionBroadcast(prefix, data, sender, message, distribution)
 
 		return
@@ -443,7 +331,6 @@ function Chat:OnCommReceived(prefix, message, distribution, sender)
 			GBankClassic_Output:Debug("SYNC", ">", colorPlayerName(sender), QUERIES_COLOR, "pull-based request for", colorPlayerName(altName))
 
 			-- Check if we have this alt
-			local player = GBankClassic_Guild:GetNormalizedPlayer()
 			local isGuildBankAlt = player and GBankClassic_Guild:IsGuildBankAlt(player) or false
 			local hasData = GBankClassic_Guild.Info and GBankClassic_Guild.Info.alts and GBankClassic_Guild.Info.alts[altName] ~= nil
 
@@ -573,7 +460,7 @@ function Chat:OnCommReceived(prefix, message, distribution, sender)
 			GBankClassic_Output:DebugComm("Received state summary from %s for alt %s (hash=%s, version=%s)", sender, altName, tostring(summary and summary.hash), tostring(summary and summary.version))
 			GBankClassic_Output:Debug("SYNC", ">", colorPlayerName(sender), QUERIES_COLOR, string.format("received state summary for %s", colorPlayerName(altName)))
 
-			-- Compute and send response (full/delta/no-change)
+			-- Compute and send response
 			GBankClassic_Output:DebugComm("Calling RespondToStateSummary for %s from %s", altName, sender)
 			GBankClassic_Guild:RespondToStateSummary(altName, summary, sender)
 		end
@@ -732,96 +619,7 @@ function Chat:OnCommReceived(prefix, message, distribution, sender)
 		end
 	end
 
-	-- Delta with links
-	if prefix == "gbank-dd" then
-		if data.type == "alt-delta" then
-			-- Only accept delta data if the sender matches the claimed alt name
-			local claimed = data.name
-			local claimedNorm = GBankClassic_Guild:NormalizeName(claimed)
-			local allowed = self:IsAltDataAllowed(sender, claimedNorm)
-			if GBankClassic_Guild:ConsumePendingSync("alt", sender, claimedNorm) then
-				allowed = true
-			end
-
-			if allowed then
-				-- Validate and sanitize delta structure
-				local valid, err = GBankClassic_DeltaComms:ValidateDeltaStructure(data)
-				if not valid then
-					local errorMsg = "Validation failed: " .. (err or "unknown error")
-					GBankClassic_Output:Debug("DELTA", ">", colorPlayerName(sender), SHARES_COLOR, "delta (link-less) for", colorPlayerName(claimedNorm), "- validation failed:", err)
-					-- Record error and request full sync
-					GBankClassic_DeltaComms:RecordDeltaError(GBankClassic_Guild.Info and GBankClassic_Guild.Info.name, claimedNorm, "VALIDATION_FAILED", errorMsg)
-					GBankClassic_Guild:QueryAlt(sender, claimedNorm, nil)
-					if GBankClassic_Guild.Info and GBankClassic_Guild.Info.name then
-						GBankClassic_Database:RecordDeltaFailed(GBankClassic_Guild.Info.name)
-					end
-
-					return
-				end
-
-				-- Reconstruct item links in background using batched queue system
-				-- Processes 5 items every 0.1s to prevent stuttering
-				if data.changes and data.changes.items then
-					GBankClassic_Guild:ReconstructItemLinks(data.changes.items.added)
-					GBankClassic_Guild:ReconstructItemLinks(data.changes.items.modified)
-					GBankClassic_Guild:ReconstructItemLinks(data.changes.items.removed)
-				end
-
-				local status = GBankClassic_DeltaComms:ApplyDelta(GBankClassic_Guild.Info, claimedNorm, data, sender)
-				GBankClassic_Output:Debug("DELTA", ">", colorPlayerName(sender), SHARES_COLOR, "delta (link-less) for", colorPlayerName(claimedNorm) .. ".", formatSyncStatus(status))
-			else
-				GBankClassic_Output:Debug("DELTA", ">", colorPlayerName(sender), SHARES_COLOR, "delta (link-less) for", colorPlayerName(claimedNorm) .. ". We do not accept it.", formatSyncStatus(ADOPTION_STATUS.UNAUTHORIZED))
-			end
-		end
-	end
-
 	--[[
-	-- Delta range request handler
-	if prefix == "gbank-dr" then
-		if data.altName and data.fromVersion and data.toVersion then
-			local altName = data.altName
-			local fromVersion = data.fromVersion
-			local toVersion = data.toVersion
-
-			GBankClassic_Output:Debug("REQUESTS", ">", colorPlayerName(sender), QUERIES_COLOR, "requests delta chain for", colorPlayerName(altName), string.format("(v%d→v%d)", fromVersion, toVersion))
-
-			-- Get delta history
-			if GBankClassic_Guild.Info and GBankClassic_Guild.Info.name then
-				local deltaChain = GBankClassic_Database:GetDeltaHistory(GBankClassic_Guild.Info.name, altName, fromVersion, toVersion)
-
-				if deltaChain then
-					-- Send delta chain back via whisper
-					local chainData = {
-						altName = altName,
-						deltas = deltaChain
-					}
-					local serialized = GBankClassic_Core:SerializeWithChecksum(chainData)
-					if not GBankClassic_Core:SendWhisper("gbank-dc", serialized, sender, "ALERT") then
-						return
-					end
-					GBankClassic_Output:Debug("REQUESTS", "<", "gbank-dc (delta chain) to", colorPlayerName(sender), string.format("(%d hops, %d bytes)", #deltaChain, string.len(serialized or "")))
-				else
-					-- Can't build chain, let them request full sync
-					GBankClassic_Output:Debug("REQUESTS", "< Cannot build delta chain for", colorPlayerName(altName), string.format("(v%d→v%d), no history", fromVersion, toVersion))
-				end
-			end
-		end
-	end
-
-	-- Delta chain response handler
-	if prefix == "gbank-dc" then
-		if data.altName and data.deltas then
-			local altName = data.altName
-			local deltaChain = data.deltas
-
-			GBankClassic_Output:Debug("REQUESTS", ">", colorPlayerName(sender), SHARES_COLOR, "delta chain for", colorPlayerName(altName), string.format("(%d hops)", #deltaChain))
-
-			-- Apply delta chain
-			local status = GBankClassic_Guild:ApplyDeltaChain(altName, deltaChain)
-			GBankClassic_Output:Debug("REQUESTS", "Delta chain application", formatSyncStatus(status))
-		end
-	end
-
 	-- Request-specific query handler (gbank-rq)
 	-- This is the dedicated prefix for request queries, replacing gbank-r with type="requests*"
 	if prefix == "gbank-rq" then
@@ -1232,7 +1030,7 @@ function Chat:ProcessQueue()
 	local name = table.remove(self.syncQueue)
 	if not self.lastGuildBankAltSync[name] or time - self.lastGuildBankAltSync[name] > 180 then
 		self.lastGuildBankAltSync[name] = time
-		GBankClassic_Guild:SendAltData(name, 0, 0)
+		GBankClassic_Guild:SendAltData(name)
 	end
 	local duration = debugprofilestop() - startTime
 	GBankClassic_Output:Debug("EVENTS", "ProcessQueue took %.2fms (name=%s, queue=%d)", duration, tostring(name), #self.syncQueue)

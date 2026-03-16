@@ -25,7 +25,6 @@ LOG_LEVEL = {
 DEBUG_CATEGORY = {
 	ROSTER = "ROSTER",           -- Guild roster updates, online/offline tracking
 	COMMS = "COMMS",             -- All addon communication traffic
-	DELTA = "DELTA",             -- Delta sync operations and computations
 	SYNC = "SYNC",               -- Data synchronization operations
 	CHUNK = "CHUNK",             -- Data synchronization operations specific to chunk sending
 	DONATION = "DONATION",		 -- Donation ledger operations
@@ -59,33 +58,26 @@ DEBUG_CATEGORY = {
 
 -- Communication prefix descriptions for debug logging (maximum of 16 characters)
 COMM_PREFIX_DESCRIPTIONS = {
-	["gbank-dv"] = "(Delta version)",
-	["gbank-dv2"] = "(Delta version - Aggregate items)",
-	["gbank-d"] = "(Data - No links)", -- togbank-d3 (we're not using togbank-d)
-	["gbank-dd"] = "(Delta data - No links)", -- togbank-d4 (we're not using togbank-d2)
-	-- ["gbank-dr"] = "(Delta range request)",
-	-- ["gbank-dc"] = "(Delta chain)",
-	["gbank-r"] = "(Query)",
-	["gbank-rr"] = "(Query reply)",
-	-- ["gbank-rq"] = "(Request query)",
-	-- ["gbank-rd"] = "(Request data)",
-	-- ["gbank-rm"] = "(Request mutations)",
-	["gbank-state"] = "(State summary)",
-	["gbank-nochange"] = "(No change)",
+	["gbank-dv2"] = "(Fingerprint)", -- Broadcast addon and roster version, alts: version + hash
+	["gbank-r"] = "(Query)", -- Request specific missing data (type = alt-request, roster)
+	["gbank-rr"] = "(Query reply)", -- Acknowledge to requester that we have the data they want
+	["gbank-state"] = "(State summary)", -- Send to acknowledger our version/hash for one specific guild bank alt (type = state-summary, name = alt, summary = { version, hash })
+	["gbank-d"] = "(Data)", -- Share data (type = alt, roster)
+	["gbank-nochange"] = "(No change)", -- Confirm we have nothing to share
+
 	["gbank-h"] = "(Hello)",
 	["gbank-hr"] = "(Hello reply)",
 	["gbank-s"] = "(Share)",
 	["gbank-sr"] = "(Share reply)",
 	["gbank-w"] = "(Wipe)",
 	["gbank-wr"] = "(Wipe reply)",
+
+	-- ["gbank-rq"] = "(Request query)",
+	-- ["gbank-rd"] = "(Request data)",
+	-- ["gbank-rm"] = "(Request mutations)",
 }
 
 -- Protocol version and capabilities
 PROTOCOL = {
 	VERSION = 2,                    -- Current protocol version (bump for breaking changes)
-	SUPPORTS_DELTA = true,          -- This client supports delta updates
-	DELTA_SNAPSHOT_MAX_AGE = 3600,  -- 1 hour: snapshots older than this are invalid
-	DELTA_HISTORY_MAX_COUNT = 10,   -- Keep last N deltas per alt (memory limit)
-	DELTA_CHAIN_MAX_HOPS = 30,      -- Max deltas in one chain request (increased for testing)
-	DELTA_CHAIN_MAX_SIZE = 5000,    -- If chain >5KB, fall back to full sync
 }

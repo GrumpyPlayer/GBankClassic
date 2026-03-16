@@ -242,8 +242,6 @@ function Events:GUILD_ROSTER_UPDATE(_, importantChange)
 	-- Always update online status
 	GBankClassic_Guild:RefreshOnlineMembersCache()
 
-	GBankClassic_DeltaComms:ClearOfflineErrorCounters(GBankClassic_Guild.Info and GBankClassic_Guild.Info.name)
-
 	-- GBankClassic_Guild:RefreshRequestsUI()
 end
 
