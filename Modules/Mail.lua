@@ -954,7 +954,6 @@ function GBankClassic_Mail:CalculateFulfillmentPlan(items, qtyNeeded, totalInBag
 	}
 end
 
-
 -- Prepare mail to fulfill a request: sets recipient and attaches items
 -- Returns: success (boolean), message (string), attachedCount (number)
 function Mail:PrepareFulfillMail(request)

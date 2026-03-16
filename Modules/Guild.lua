@@ -1432,7 +1432,6 @@ function Guild:CraftDataPayload(alt)
 	return stripped
 end
 
-
 function Guild:ReceiveAltData(name, alt, sender)
 	if not self.Info then
 		return ADOPTION_STATUS.IGNORED

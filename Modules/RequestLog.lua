@@ -196,7 +196,6 @@ local function calculateRequestsVersion(requests)
 	return maxVersion
 end
 
-
 -- Merge a single request using last-writer-wins.
 -- Returns: "added", "updated", "kept", "tombstoned", or nil on error
 local function mergeRequest(requests, tombstones, id, incoming)

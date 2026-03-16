@@ -470,7 +470,6 @@ function UI_Inventory:DrawContent()
                 scroll:ReleaseChildren()
                 GBankClassic_Item:Sort(list, GBankClassic_Options.db and GBankClassic_Options.db.char.sortMode)
 
-
                 -- Apply filters
                 local filteredList = {}
                 local filteredCount = 0
