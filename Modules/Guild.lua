@@ -541,11 +541,6 @@ end
 
 -- Request online members to share their guild bank alt data if we're missing it
 function Guild:RequestMissingGuildBankAltData()
-	-- local guildInfo = GBankClassic_Guild.Info
-	-- if not guildInfo then
-	-- 	return
-	-- end
-
 	-- Retrieve the cached roster
 	local rosterAlts = self:GetRosterGuildBankAlts()
 	if not rosterAlts or #rosterAlts == 0 then
@@ -553,9 +548,7 @@ function Guild:RequestMissingGuildBankAltData()
 	end
 
 	local missing = {}
-	-- local missingDebug = {}
-	-- local missingInfo = {}
-	-- GBankClassic_Output:Debug("PROTOCOL", "RequestMissingGuildBankAltData: Starting check of %d roster alts", #rosterAlts)
+	GBankClassic_Output:Debug("PROTOCOL", "RequestMissingGuildBankAltData: Starting check of %d roster alts", #rosterAlts)
 
 	for i = 1, #rosterAlts do
         local guildBankAltName = rosterAlts[i]
@@ -563,39 +556,14 @@ function Guild:RequestMissingGuildBankAltData()
 		local localAlt = self.Info.alts and norm and self.Info.alts[norm]
 		local hasEntry = localAlt ~= nil
 		local hasContent = hasEntry and self:HasAltContent(localAlt, norm)
+		local isSelf = norm == self.player
 
-	-- 	-- Check for hash mismatch (stale data)
-	-- 	local guildBankAltCache = GBankClassic_Guild.latestGuildBankAltHashes and GBankClassic_Guild.latestGuildBankAltHashes[norm]
-	-- 	local hashMismatch = false
-	-- 	local mismatchReason = nil
-	-- 	if guildBankAltCache and hasEntry and localAlt then
-	-- 		local localHash = (localAlt.inventoryHash) or 0
-	-- 		local guildBankAltHash = guildBankAltCache.hash or 0
-	-- 		local localMailHash = (localAlt.mailHash) or 0
-	-- 		local guildBankAltMailHash = guildBankAltCache.mailHash or 0
-	-- 		if localHash ~= guildBankAltHash then
-	-- 			hashMismatch = true
-	-- 			mismatchReason = string.format("inventory hash mismatch (local=%s, guild bank alt=%s)", tostring(localHash), tostring(guildBankAltHash))
-	-- 		elseif localMailHash ~= guildBankAltMailHash then
-	-- 			hashMismatch = true
-	-- 			mismatchReason = string.format("mail hash mismatch (local=%s, guild bank alt=%s)", tostring(localMailHash), tostring(guildBankAltMailHash))
-	-- 		end
-	-- 	end
+		-- Log every alt to see what's happening
+		GBankClassic_Output:Debug("PROTOCOL", "RequestMissingGuildBankAltData check: %s hasEntry=%s hasContent=%s, self=%s", tostring(norm), tostring(hasEntry), tostring(hasContent), tostring(isSelf))
 
-	-- 	-- Log every alt to see what's happening
-	-- 	GBankClassic_Output:Debug("PROTOCOL", "RequestMissingGuildBankAltData check: %s hasEntry=%s hasContent=%s", tostring(norm), tostring(hasEntry), tostring(hasContent))
-
-	-- 	-- Check if we need to request this alt: no entry, no content, OR hash mismatch
-		if not hasEntry or not hasContent then
+		-- Check if we need to request this alt that's not ourself: no entry, no content, OR hash mismatch
+		if (not hasEntry or not hasContent) and not isSelf then
 			table.insert(missing, norm)
-	-- 		local hasRaw = guildInfo.alts and guildInfo.alts[guildBankAltName] ~= nil
-	-- 		local reason = mismatchReason or (hasEntry and "no content" or "no entry")
-	-- 		missingInfo[norm] = {
-	-- 			reason = reason,
-	-- 			hash = (guildBankAltCache and guildBankAltCache.hash) or (localAlt and localAlt.inventoryHash) or nil,
-	-- 			updatedAt = (guildBankAltCache and guildBankAltCache.updatedAt) or (localAlt and (localAlt.inventoryUpdatedAt or localAlt.version)) or nil,
-	-- 		}
-	-- 		table.insert(missingDebug, string.format("%s (norm=%s, rawKey=%s, reason=%s)", tostring(guildBankAltName), tostring(norm), tostring(hasRaw), reason))
 		end
 	end
 
@@ -605,47 +573,11 @@ function Guild:RequestMissingGuildBankAltData()
 		return
 	end
 
-	-- local haveCount, totalCount = GBankClassic_Guild:ReportGuildBankAltDataProgress()
-	-- GBankClassic_Output:Info("Requesting %d missing guild bank alts (have %d/%d).", #missing, haveCount, totalCount)
 	GBankClassic_Output:Info("Requesting %d missing guild bank alts (have %d/%d).", #missing, #rosterAlts - #missing, #rosterAlts)
-	-- GBankClassic_Guild:ReportGuildBankAltDataProgress("sync", true)
-	-- if #missingDebug > 0 then
-	-- 	GBankClassic_Output:Debug("SYNC", "Requesting missing alts: %s", table.concat(missingDebug, ", "))
-	-- end
-
-	-- local hasOnlineGuildBanktAlt = false
-	-- for member, _ in pairs(GBankClassic_Guild.onlineMembers or {}) do
-	-- 	if GBankClassic_Guild:IsGuildBankAlt(member) and GBankClassic_Guild:IsPlayerOnlineMember(member) then
-	-- 		hasOnlineGuildBanktAlt = true
-	-- 		break
-	-- 	end
-	-- end
-	-- if not hasOnlineGuildBanktAlt then
-	-- 	GuildRoster()
-	-- 	for i = 1, GetNumGuildMembers() do
-	-- 		local rosterName, _, _, _, _, _, _, _, online = GetGuildRosterInfo(i)
-	-- 		if rosterName and online then
-	-- 			local normRoster = GBankClassic_Guild:NormalizeName(rosterName) or rosterName
-	-- 			if GBankClassic_Guild:IsGuildBankAlt(normRoster) then
-	-- 				hasOnlineGuildBanktAlt = true
-	-- 				break
-	-- 			end
-	-- 		end
-	-- 	end
-	-- end
 
 	-- Query each missing alt using pull-based protocol
 	for _, norm in ipairs(missing) do
-	-- 	local info = missingInfo[norm]
-	-- 	-- Use peer request broadcast whenever we have a hash, regardless of guild bank alt online status
-	-- 	if info and info.hash and info.hash ~= 0 then
-	-- 		-- We have hash but no content - broadcast peer request (guild -> timeout -> guild bank alt fallback)
-	-- 		GBankClassic_Output:Debug("PROTOCOL", "Peer request broadcast: requesting %s (expectedHash=%s, updatedAt=%s)", tostring(norm), tostring(info.hash), tostring(info.updatedAt))
-	-- 		GBankClassic_Guild:BroadcastPeerRequest(norm, info.hash, info.updatedAt, nil)
-	-- 	else
-	-- 		-- No hash available - go straight to guild bank alt whisper as last resort
-			self:QueryAltPullBased(norm)
-	-- 	end
+		self:QueryAltPullBased(norm)
 	end
 end
 
@@ -1465,7 +1397,7 @@ function Guild:SendAltData(name, target)
 	local onChunkSent = createOnChunkSentCallback(norm)
 	local dataNoLinks
 
-	-- New format (without links)
+	-- New format (only keep links for items with an enchant, suffix, or weapon/armor class)
 	local strippedAlt = self:StripAltLinks(currentAlt)
 	dataNoLinks = GBankClassic_Core:SerializeWithChecksum({ type = "alt", name = norm, alt = strippedAlt })
 	GBankClassic_Output:DebugComm("Sending response: gbank-d for %s (%d bytes)", norm, #dataNoLinks)
@@ -1477,8 +1409,26 @@ function Guild:SendAltData(name, target)
 
 	-- Log what was sent
 	GBankClassic_Output:Debug("SYNC", "Sent full sync for %s: gbank-d (%d bytes without links)", norm, string.len(dataNoLinks or ""))
-
 end
+
+-- Only keep links for items with an enchant, suffix, or weapon/armor class before transmission
+function Guild:StripAltLinks(alt)
+	if not alt then
+		return nil
+	end
+
+	local strippedItems = self:StripItemLinks(alt.items)
+	local stripped = {
+		version = alt.version,
+		inventoryHash = alt.inventoryHash,
+		money = alt.money,
+		items = strippedItems,
+		ledger = alt.ledger
+	}
+
+	return stripped
+end
+
 
 function Guild:ReceiveAltData(name, alt, sender)
 	if not self.Info then
