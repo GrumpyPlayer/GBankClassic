@@ -391,14 +391,14 @@ function UI_Search:DrawWindow()
     resultGroup:SetUserData("table", {
         columns = {
             {
-                width = 35,
+                width = 30,
                 align = "middle",
             },
             {
                 align = "start",
             },
         },
-        spaceH = 30,
+        spaceH = 5,
     })
 
     resultGroup.scrollframe:ClearAllPoints()
@@ -592,8 +592,6 @@ function UI_Search:DrawContent()
     end
 
     local searchText = search:lower()
-
-
 	if string.len(searchText) < 3 then
 		return
 	end
@@ -625,8 +623,7 @@ function UI_Search:DrawContent()
                     for _, vv in pairs(lookupList) do
 						local resultItem = vv.item
 						local bankAlt = vv.alt
-						GBankClassic_Output:Debug("SEARCH", "Search display: showing %s with %d items for %s",
-							resultItem.Info and resultItem.Info.name or "Unknown", resultItem.Count or 0, bankAlt)
+						GBankClassic_Output:Debug("SEARCH", "Search display: showing %s with %d items for %s", resultItem.Info and resultItem.Info.name or "Unknown", resultItem.Count or 0, bankAlt)
 						local itemWidget = GBankClassic_UI:DrawItem(resultItem, self.Results, 30, 35, 30, 30, 0, 5)
 						if itemWidget then
 							itemWidget:SetCallback("OnClick", function(widget, event)
@@ -642,6 +639,9 @@ function UI_Search:DrawContent()
 
                         local label = GBankClassic_UI:Create("Label")
                         label:SetText(bankAlt)
+                        label.label:SetSize(170, 30)
+                        label.label:SetJustifyV("MIDDLE")
+                        self.Results:AddChild(label)
 
                         count = count + 1
                     end
