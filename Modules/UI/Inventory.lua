@@ -296,7 +296,7 @@ function UI_Inventory:DrawWindow()
     self:ResetFilters()
 end
 
-function UI_Inventory:UpdateStatusText(filteredCount, totalCount, goldAmount, updatedAt)
+function UI_Inventory:UpdateStatusText(filteredCount, totalCount, goldAmount, version)
     filteredCount = filteredCount or 0
     totalCount = totalCount or 0
 
@@ -313,11 +313,11 @@ function UI_Inventory:UpdateStatusText(filteredCount, totalCount, goldAmount, up
     else
         local defaultStatus
         if goldAmount > 0 then
-            local updated = ""
-            if updatedAt ~= "" then
-                updated = string.format(" as of %s", updatedAt)
+            local updatedAt = ""
+            if version ~= "" then
+                updatedAt = string.format(" as of %s", version)
             end
-            defaultStatus = string.format("%s%s", GetCoinTextureString(goldAmount), updated)
+            defaultStatus = string.format("%s%s", GetCoinTextureString(goldAmount), updatedAt)
         else
             defaultStatus = "No available data"
         end
@@ -478,7 +478,7 @@ function UI_Inventory:DrawContent()
                 end
 
                 -- Update status text to show filter results
-                self:UpdateStatusText(filteredCount, #list, alt.money or 0, alt.updatedAt and date("%b %d, %Y %H:%M", alt.updatedAt) or "")
+                self:UpdateStatusText(filteredCount, #list, alt.money or 0, alt.version and date("%b %d, %Y %H:%M", alt.version) or "")
 
                 -- Release loading label and display filtered items
                 if self:GetActiveFilterCount() > 0 then

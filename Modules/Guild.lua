@@ -1421,7 +1421,6 @@ function Guild:CraftDataPayload(alt)
 	local strippedItems = self:StripItemLinks(alt.items)
 	local stripped = {
 		version = alt.version,
-		updatedAt = alt.updatedAt,
 		inventoryHash = alt.inventoryHash,
 		improvedInventoryHash = alt.improvedInventoryHash,
 		money = alt.money,
@@ -1505,20 +1504,20 @@ function Guild:ReceiveAltData(name, alt, sender)
 		-- We are a guild bank alt, and data is about a guild bank alt - only accept if sender is that guild bank alt
 		if senderNorm ~= norm then
 			-- Check timestamps before rejecting - allow if no existing data OR incoming is newer
-			local incomingUpdatedAt = alt.version
-			local existingUpdatedAt = existing and existing.version or nil
+			local incomingVersion = alt.version
+			local existingVersion = existing and existing.version or nil
 			local shouldAccept = false
 
 			if not existing then
 				shouldAccept = true
 				GBankClassic_Output:Info("Accepting guild bank alt data from non-guild bank alt: no existing data for %s", norm)
-			elseif incomingUpdatedAt and existingUpdatedAt and incomingUpdatedAt > existingUpdatedAt then
+			elseif incomingVersion and existingVersion and incomingVersion > existingVersion then
 				shouldAccept = true
-				GBankClassic_Output:Info("Accepting newer guild bank alt data: %s about %s (timestamp %d > %d)", senderNorm or "unknown", norm, incomingUpdatedAt, existingUpdatedAt)
+				GBankClassic_Output:Info("Accepting newer guild bank alt data: %s about %s (timestamp %d > %d)", senderNorm or "unknown", norm, incomingVersion, existingVersion)
 			end
 
 			if not shouldAccept then
-				GBankClassic_Output:Debug("SYNC", "Rejected data about guild bank alt %s from %s (not newer: incoming=%s, existing=%s)", norm, senderNorm or "unknown", tostring(incomingUpdatedAt), tostring(existingUpdatedAt))
+				GBankClassic_Output:Debug("SYNC", "Rejected data about guild bank alt %s from %s (not newer: incoming=%s, existing=%s)", norm, senderNorm or "unknown", tostring(incomingVersion), tostring(existingVersion))
 
 				return ADOPTION_STATUS.UNAUTHORIZED
 			end
@@ -1531,8 +1530,8 @@ function Guild:ReceiveAltData(name, alt, sender)
 
 	-- Rule 3: Non-guild bank alts accept all data, non-guild bank alt data accepted from anyone
 	-- Non-guild bank alt conflict resolution: newest wins (timestamped hash)
-	local incomingUpdatedAt = alt.version
-	local existingUpdatedAt = existing and existing.version or nil
+	local incomingVersion = alt.version
+	local existingVersion = existing and existing.version or nil
 	local existingHasContent = existing and self:HasAltContent(existing, norm) or false
 	local incomingHasContent = self:HasAltContent(alt, norm)
 
@@ -1547,15 +1546,6 @@ function Guild:ReceiveAltData(name, alt, sender)
 		return ADOPTION_STATUS.STALE
 	end
 
-	-- If we already have data with mail, don't accept incomplete data from old clients
-	local incomingHasMail = alt.mail ~= nil
-	local existingHasMail = existing and existing.mail ~= nil
-	if existing and existingHasMail and not incomingHasMail then
-		GBankClassic_Output:Debug("SYNC", "Rejecting old client sync for %s (we have mail, incoming doesn't)", norm)
-
-		return ADOPTION_STATUS.STALE
-	end
-
 	-- Only reject if we actually have content - if existing has no content, always accept incoming data
 	if existing and existingHasContent and alt.inventoryHash and existing.inventoryHash and alt.inventoryHash == existing.inventoryHash then
 		GBankClassic_Output:Debug("SYNC", "Hash match for %s (hash=%d) - data unchanged, rejecting as stale", norm, alt.inventoryHash)
@@ -1563,13 +1553,13 @@ function Guild:ReceiveAltData(name, alt, sender)
 		return ADOPTION_STATUS.STALE
 	end
 
-	if not targetIsGuildBankAlt and existing and incomingUpdatedAt and existingUpdatedAt and not allowStaleBecauseMissingContent then
-		GBankClassic_Output:Debug("SYNC", "Timestamp staleness check for %s: incoming=%d, existing=%d, hasContent=%s", norm, incomingUpdatedAt, existingUpdatedAt, tostring(existingHasContent))
-		if incomingUpdatedAt < existingUpdatedAt then
-			GBankClassic_Output:Debug("SYNC", "Rejecting %s: incoming timestamp %d < existing %d", norm, incomingUpdatedAt, existingUpdatedAt)
+	if not targetIsGuildBankAlt and existing and incomingVersion and existingVersion and not allowStaleBecauseMissingContent then
+		GBankClassic_Output:Debug("SYNC", "Timestamp staleness check for %s: incoming=%d, existing=%d, hasContent=%s", norm, incomingVersion, existingVersion, tostring(existingHasContent))
+		if incomingVersion < existingVersion then
+			GBankClassic_Output:Debug("SYNC", "Rejecting %s: incoming timestamp %d < existing %d", norm, incomingVersion, existingVersion)
 
 			return ADOPTION_STATUS.STALE
-		elseif incomingUpdatedAt == existingUpdatedAt then
+		elseif incomingVersion == existingVersion then
 			-- Tie-breaker: choose the one with more items
 			local incomingCount = GBankClassic_Globals:Count(alt)
 			local existingCount = GBankClassic_Globals:Count(existing)

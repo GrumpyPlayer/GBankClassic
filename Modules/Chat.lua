@@ -331,22 +331,22 @@ function Chat:OnCommReceived(prefix, message, distribution, sender)
 			local isGuildBankAlt = player and GBankClassic_Guild:IsGuildBankAlt(player) or false
 			local hasData = GBankClassic_Guild.Info and GBankClassic_Guild.Info.alts and GBankClassic_Guild.Info.alts[altName] ~= nil
 
-			-- Only guild bank alts respond to pull-based requests
-			if isGuildBankAlt and hasData then
-				-- Send acknowledgment with guild bank alt flag
-				local ack = {
-					type = "alt-request-reply",
-					name = altName,
-					isGuildBankAlt = isGuildBankAlt,
-					hasData = hasData,
-				}
-				local ackData = GBankClassic_Core:SerializeWithChecksum(ack)
-
-				GBankClassic_Output:DebugComm("Sending acknowledgement: gbank-rr via whisper to %s (isGuildBankAlt=%s, hasData=%s)", sender, tostring(isGuildBankAlt), tostring(hasData))
-				if not GBankClassic_Core:SendWhisper("gbank-rr", ackData, sender, "NORMAL") then
-					return
+			-- Respond to pull-based requests
+			if hasData then
+				if (isGuildBankAlt and player == altName) or not GBankClassic_Guild:IsPlayerOnlineGuildBankAlt(altName) then
+					local ack = {
+						type = "alt-request-reply",
+						name = altName,
+						isGuildBankAlt = isGuildBankAlt,
+						hasData = hasData,
+					}
+					local ackData = GBankClassic_Core:SerializeWithChecksum(ack)
+					GBankClassic_Output:DebugComm("Sending acknowledgement: gbank-rr via whisper to %s (isGuildBankAlt=%s, hasData=%s)", sender, tostring(isGuildBankAlt), tostring(hasData))
+					if not GBankClassic_Core:SendWhisper("gbank-rr", ackData, sender, "NORMAL") then
+						return
+					end
+					GBankClassic_Output:Debug("SYNC", "<", "Sent gbank-rr to", colorPlayerName(sender), string.format("(isGuildBankAlt=%s, hasData=%s)", tostring(isGuildBankAlt), tostring(hasData)))
 				end
-				GBankClassic_Output:Debug("SYNC", "<", "Sent gbank-rr to", colorPlayerName(sender), string.format("(isGuildBankAlt=%s, hasData=%s)", tostring(isGuildBankAlt), tostring(hasData)))
 			else
 				-- Don't respond if we don't have the data
 				GBankClassic_Output:Debug("SYNC", "Ignoring pull-based request (no data for %s)", altName)

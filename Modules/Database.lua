@@ -106,9 +106,6 @@ function Database:Load(name)
 					alt.bank = nil
 					alt.bags = nil
 					alt.mail = nil
-				else
-					alt.inventoryHash = nil
-					alt.version = nil
 				end
 
 				-- Ensure items is always fully aggregated and then recompute the hash
