@@ -20,7 +20,6 @@ local GameTooltip = upvalues.GameTooltip
 
 GBankClassic_UI = LibStub("AceGUI-3.0")
 
--- Tooltip throttling to prevent performance issues
 GBankClassic_UI.tooltipThrottle = 0
 GBankClassic_UI.TOOLTIP_THROTTLE_MS = 50 -- 50ms between tooltip updates
 GBankClassic_UI.currentTooltipLink = nil
@@ -30,9 +29,9 @@ local UI = GBankClassic_UI
 function UI:Init()
     GBankClassic_UI_Minimap:Init()
     GBankClassic_UI_Inventory:Init()
+    GBankClassic_UI_Search:Init()
     GBankClassic_UI_Donations:Init()
 	-- GBankClassic_UI_Requests:Init()
-    GBankClassic_UI_Search:Init()
 	-- GBankClassic_UI_Mail:Init()
 end
 
@@ -69,23 +68,18 @@ function UI:DrawItem(item, parent, size, height, imageSize, imageHeight, labelXO
     if not size then
         size = 40
     end
-
     if not height then
         height = 40
     end
-
     if not imageSize then
         imageSize = 40
     end
-
     if not imageHeight then
         imageHeight = 40
     end
-
     if not labelXOffset then
         labelYOffset = 0
     end
-
     if not labelYOffset then
         labelYOffset = 0
     end
@@ -107,7 +101,7 @@ function UI:DrawItem(item, parent, size, height, imageSize, imageHeight, labelXO
     else
         slot:SetLabel(" ")
     end
-	
+
 	-- Generate link on-demand if needed (synchronous from cache if available)
 	if item.ID and not item.Link then
 		GBankClassic_Guild:ReconstructItemLink(item)
@@ -161,7 +155,6 @@ function UI:ShowItemTooltip(link)
         return
     end
 
-    -- Throttle tooltip updates to prevent performance issues
     local now = debugprofilestop()
     if self.currentTooltipLink == link and (now - self.tooltipThrottle) < self.TOOLTIP_THROTTLE_MS then
         return

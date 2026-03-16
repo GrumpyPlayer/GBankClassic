@@ -6,8 +6,6 @@ GBankClassic_Mail = GBankClassic_Mail or {
 local Mail = GBankClassic_Mail
 
 local Globals = GBankClassic_Globals
-local upvalues = Globals.GetUpvalues("MailFrame")
-local MailFrame = upvalues.MailFrame
 local upvalues = Globals.GetUpvalues("CheckInbox", "GetInboxHeaderInfo", "GetInboxItemLink", "GetInboxItem", "GetItemInfo", "GetMoney", "GetCoinTextureString")
 local CheckInbox = upvalues.CheckInbox
 local GetInboxHeaderInfo = upvalues.GetInboxHeaderInfo

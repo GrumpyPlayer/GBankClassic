@@ -78,8 +78,7 @@ function Database:Load(name)
 
     local db = self.db.factionrealm[name]
 
-	-- Only reset if there's truly no data (nil). Otherwise initialize missing fields.
-	-- This prevents data loss when some fields are missing but others (like requests) exist.
+	-- Only reset if there's truly no data (nil), otherwise initialize missing fields
 	if db == nil then
         self:Reset(name)
         db = self.db.factionrealm[name]
@@ -147,7 +146,7 @@ function Database:Load(name)
 		db.guildProtocolVersions = {}
 	end
 
-	-- Empty legacy delta tables
+	-- Empty unused legacy delta tables
 	db.deltaSnapshots = nil
 	db.deltaHistory = nil
 	db.deltaMetrics = nil

@@ -390,7 +390,7 @@ function Guild:RebuildGuildBankAltsRoster()
 			if isGuildBankAlt then
 				table.insert(guildBankAlts, normName)
 				self.banksCache[normName] = true
-				
+
 				-- Register additional events if we're a guild bank alt
 				if player == normName then
 					GBankClassic_Events:RegisterGuildBankAltEvents()
@@ -442,7 +442,7 @@ function Guild:RebuildGuildBankAltsRoster()
 		-- A possible incoming roster broadcast will make it clear if they are relevant
 		-- We whisper the sender to request their roster when we see the gbank-roster-heartbeat
 		-- If we never see gbank-roster-heartbeat then the officer notes are irrelevant
-		
+
 		-- Verify if there's a change in the roster of guild bank alts
 		-- Preserve the existing roster and only add newly detected guild bank alts (preserve existing entries)
 		local function updateRosterWithNewBankAlts(currentRosterList, scannedBankAltsList)
@@ -451,7 +451,7 @@ function Guild:RebuildGuildBankAltsRoster()
 			for _, name in ipairs(currentRosterList) do
 				currentLookup[name] = true
 			end
-			
+
 			-- Add only entries missing from current roster
 			local addedCount = 0
 			for _, normName in ipairs(scannedBankAltsList) do
@@ -460,7 +460,7 @@ function Guild:RebuildGuildBankAltsRoster()
 					addedCount = addedCount + 1
 				end
 			end
-			
+
 			-- Return true if roster changed
 			return addedCount > 0
 		end
@@ -472,7 +472,7 @@ function Guild:RebuildGuildBankAltsRoster()
 			-- We do not know if officer notes are used to define guild bank alts
 			-- We may have an incomplete roster
 			self.Info.roster.version = nil
-			
+
 			-- -- Ask the guild bank alt sync leader for their roster
 			-- local _, leader = GBankClassic_Guild:CheckIfWeAreGuildBankAltSyncLeader()
 			-- -- TODO:
@@ -556,7 +556,7 @@ function Guild:RequestMissingGuildBankAltData()
 	-- local missingDebug = {}
 	-- local missingInfo = {}
 	-- GBankClassic_Output:Debug("PROTOCOL", "RequestMissingGuildBankAltData: Starting check of %d roster alts", #rosterAlts)
-	
+
 	for i = 1, #rosterAlts do
         local guildBankAltName = rosterAlts[i]
 		local norm = self:NormalizeName(guildBankAltName) or guildBankAltName
@@ -584,7 +584,7 @@ function Guild:RequestMissingGuildBankAltData()
 
 	-- 	-- Log every alt to see what's happening
 	-- 	GBankClassic_Output:Debug("PROTOCOL", "RequestMissingGuildBankAltData check: %s hasEntry=%s hasContent=%s", tostring(norm), tostring(hasEntry), tostring(hasContent))
-		
+
 	-- 	-- Check if we need to request this alt: no entry, no content, OR hash mismatch
 		if not hasEntry or not hasContent then
 			table.insert(missing, norm)
@@ -601,7 +601,7 @@ function Guild:RequestMissingGuildBankAltData()
 
 	if #missing == 0 then
 		GBankClassic_Output:Debug("ROSTER", "All %d roster alts present locally.", #rosterAlts)
-		
+
 		return
 	end
 
@@ -894,7 +894,7 @@ function Guild:QueryAltPullBased(name)
 
 		return
 	end
-	
+
 	-- Guild bank alt exists but offline - broadcast to guild to ask if someone else has data
 	if not self:IsPlayerOnlineMember(guildBankAlt) then
 		GBankClassic_Output:Debug("PROTOCOL", "QueryAltPullBased for %s: guild bank alt %s offline, broadcasting to guild", norm, guildBankAlt)
@@ -903,7 +903,7 @@ function Guild:QueryAltPullBased(name)
 
 		return
 	end
-	
+
 	-- Whisper guild bank alt last (guild bank alt confirmed online)
 	GBankClassic_Output:Debug("PROTOCOL", "Whisper query for %s to guild bank alt %s", norm, guildBankAlt)
 	if not GBankClassic_Core:SendWhisper("gbank-r", data, guildBankAlt, "NORMAL") then
@@ -911,7 +911,7 @@ function Guild:QueryAltPullBased(name)
 
 		return
 	end
-	
+
 	self:MarkPendingSync("alt", guildBankAlt, norm)
 end
 
@@ -976,7 +976,6 @@ function Guild:IsPlayerOnlineMember(playerName)
 	return self.onlineMembers[self:NormalizeName(playerName) or playerName] == true
 end
 
---[[
 -- Get list of all online members (for broadcasts)
 local onlineMembersCache = {}
 function Guild:GetOnlineMemberList()
@@ -1007,7 +1006,6 @@ function Guild:GetOnlineGuildBankAlts()
 
     return onlineGuildBankAltsCache
 end
-]]--
 
 -- Compute minimal state summary for pull-based protocol
 function Guild:ComputeStateSummary(name)
@@ -1333,7 +1331,7 @@ local function createOnChunkSentCallback(altName)
 		failures = 0,
 		throttled = 0,
 	}
-	
+
 	return function(arg, bytesSent, totalBytes, sendResult)
 		-- Detect start of a new send and auto-reset state
 		if bytesSent > 0 and sendStats.lastBytes == 0 then
@@ -1544,7 +1542,7 @@ function Guild:ReceiveAltData(name, alt, sender)
 	-- Rule 1: Reject data about ourselves (we already have our own current data)
 	if isOwnData then
 		GBankClassic_Output:Debug("SYNC", "Rejected alt data about ourselves (we are the source of truth)")
-		
+
 		return ADOPTION_STATUS.UNAUTHORIZED
 	end
 
@@ -1565,7 +1563,7 @@ function Guild:ReceiveAltData(name, alt, sender)
 				shouldAccept = true
 				GBankClassic_Output:Info("Accepting newer guild bank alt data: %s about %s (timestamp %d > %d)", senderNorm or "unknown", norm, incomingUpdatedAt, existingUpdatedAt)
 			end
-			
+
 			if not shouldAccept then
 				GBankClassic_Output:Debug("SYNC", "Rejected data about guild bank alt %s from %s (not newer: incoming=%s, existing=%s)", norm, senderNorm or "unknown", tostring(incomingUpdatedAt), tostring(existingUpdatedAt))
 
@@ -1635,7 +1633,7 @@ function Guild:ReceiveAltData(name, alt, sender)
 	if existing and alt.version ~= nil and existing.version ~= nil and alt.version < existing.version and not allowStaleBecauseMissingContent then
 		return ADOPTION_STATUS.STALE
 	end
-	
+
 	if self.hasRequested then
 		if self.requestCount == nil then
 			self.requestCount = 0
@@ -1651,45 +1649,11 @@ function Guild:ReceiveAltData(name, alt, sender)
 	if not self.Info.alts then
 		self.Info.alts = {}
 	end
-
-	-- Preserve mail field from existing data when incoming sync lacks it
-	-- Mail is now synced, but old clients don't include it in their syncs
-	-- Preserve locally-scanned mail data to maintain visibility for new clients
-	local existingMail = existing and existing.mail or nil
-	local incomingHasMail = alt.mail ~= nil
-
-	GBankClassic_Output:Debug("MAIL", "AdoptAltData for %s: existingMail=%s, incomingHasMail=%s", norm, existingMail and "YES" or "NO", tostring(incomingHasMail))
-	if existingMail then
-		GBankClassic_Output:Debug("MAIL", "  existingMail has %d items", existingMail.items and #existingMail.items or 0)
-	end
 	self.Info.alts[norm] = alt
 	GBankClassic_Output:Debug("MAIL", "Overwrote self.Info.alts[%s], mail field now: %s", norm, alt.mail and "EXISTS" or "GONE")
 	GBankClassic_Output:Debug("SYNC", "Stored alt data for %s", norm)
 
-	-- Restore preserved mail if we had it locally and incoming sync doesn't have it
-	-- This handles backward compatibility: new clients preserve mail when receiving from old clients
-	if existingMail and not incomingHasMail then
-		self.Info.alts[norm].mail = existingMail
-		local mailItemCount = existingMail.items and #existingMail.items or 0
-		GBankClassic_Output:Debug("MAIL", "Restored mail for %s (%d items) - incoming sync lacked mail", norm, mailItemCount)
-		GBankClassic_Output:Debug("MAIL", "Preserved mail data for %s (%d items, version=%s) - backward compat", norm, mailItemCount, tostring(existingMail.version))
-
-		-- Re-aggregate alt.items to include the restored mail
-		-- The incoming alt.items doesn't have mail, so we need to merge it back in
-		if existingMail.items and #existingMail.items > 0 then
-			GBankClassic_Output:Debug("MAIL", "Merging %d restored mail items into alt.items for %s", #existingMail.items, norm)
-			local aggregated = GBankClassic_Item:Aggregate(self.Info.alts[norm].items, existingMail.items)
-			self.Info.alts[norm].items = {}
-			for _, item in pairs(aggregated) do
-				table.insert(self.Info.alts[norm].items, item)
-			end
-			GBankClassic_Output:Debug("MAIL", "Re-aggregated alt.items for %s: %d items (including restored mail)", norm, #self.Info.alts[norm].items)
-		end
-	elseif incomingHasMail then
-		GBankClassic_Output:Debug("MAIL", "Using incoming mail data for %s (new client sync)", norm)
-	end
-
-	-- Reset search data flag so inventory UI rebuilds search index (UI-008 fix)
+	-- Reset search data flag so inventory UI rebuilds search index
 	if GBankClassic_UI_Inventory then
 		GBankClassic_UI_Inventory.searchDataBuilt = false
 	end
@@ -1849,7 +1813,7 @@ function Guild:WipeMine()
 	if not guild then
 		return
 	end
-    
+
     self:Reset(guild)
 end
 
@@ -1877,7 +1841,7 @@ function Guild:Share(type)
 		--  guild name,
 		--  whether the sender is a guild bank alt or not,
 		--	roster version timestamp,
-		-- 	version timestamp + inventory hash (bags, bank, money) + mail hash for each guild bank alt
+		-- 	version timestamp + inventory hash (bags, bank, money + mail)
 		self:ShareAllGuildBankAltData()
 
 		local data = GBankClassic_Core:SerializeWithChecksum(share)

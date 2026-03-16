@@ -7,11 +7,10 @@ local Globals = GBankClassic_Globals
 local upvalues = Globals.GetUpvalues("time", "debugprofilestop")
 local time = upvalues.time
 local debugprofilestop = upvalues.debugprofilestop
-local upvalues = Globals.GetUpvalues("GetClassColor", "IsInRaid", "IsInInstance", "After", "GetServerTime", "GetAddOnMetadata")
+local upvalues = Globals.GetUpvalues("GetClassColor", "IsInRaid", "IsInInstance", "GetServerTime", "GetAddOnMetadata")
 local GetClassColor = upvalues.GetClassColor
 local IsInRaid = upvalues.IsInRaid
 local IsInInstance = upvalues.IsInInstance
-local After = upvalues.After
 local GetServerTime = upvalues.GetServerTime
 local GetAddOnMetadata = upvalues.GetAddOnMetadata
 
@@ -255,12 +254,12 @@ function Chat:ProcessVersionBroadcast(prefix, data, sender, message, distributio
 							shouldQuery = true
 							GBankClassic_Output:Debug("SYNC", ">", colorPlayerName(sender), "has bank data for", colorPlayerName(kNorm) .. " (we have none), querying.")
 							GBankClassic_Output:Debug("PROTOCOL", "Query decision for %s: we don't have data, query", kNorm)
-						elseif theirHash ~= ourHash or theirMailHash ~= ourMailHash then
-							-- Hashes differ (inventory or mail) - we need an update
+						elseif theirHash ~= ourHash then
+							-- Hash differs - we need an update
 							shouldQuery = true
 							local reason = (theirHash ~= ourHash) and "inventory" or "mail"
 							GBankClassic_Output:Debug("SYNC", ">", colorPlayerName(sender), "has different " .. reason .. " for", colorPlayerName(kNorm) .. " (hash mismatch), querying.")
-							GBankClassic_Output:Debug("PROTOCOL", "Query decision for %s: %s hash differs, query (ourInv=%d, theirInv=%d, ourMail=%d, theirMail=%d)", kNorm, reason, ourHash, theirHash, ourMailHash, theirMailHash)
+							GBankClassic_Output:Debug("PROTOCOL", "Query decision for %s: %s hash differs, query (ourHash=%d, theirHash=%d)", kNorm, reason, ourHash, theirHash)
 						else
 							GBankClassic_Output:Debug("PROTOCOL", "Query decision for %s: hash matches our content, don't query", kNorm)
 						end
@@ -893,31 +892,7 @@ local COMMAND_REGISTRY = {
 				GBankClassic_Output:Response("Debug: on (log level: Debug)")
 			end
 		end,
-	},
-	{
-		name = "debugdump",
-		handler = function()
-			local GBankClassic_Guild = GBankClassic_Guild
-			if not GBankClassic_Guild or not GBankClassic_Guild.Info or not GBankClassic_Guild.Info.alts then
-				GBankClassic_Output:Response("No alts table available")
-
-				return
-			end
-			GBankClassic_Output:Response("Listing keys in alts table:")
-			local i = 0
-			for k, v in pairs(GBankClassic_Guild.Info.alts) do
-				i = i + 1
-				GBankClassic_Output:Response("[%d] %s = %s", i, tostring(k), type(v))
-				if i >= 200 then
-					GBankClassic_Output:Response("Truncated at 200 entries")
-					break
-				end
-			end
-			if i == 0 then
-				GBankClassic_Output:Response("No entries")
-			end
-		end,
-	},
+	}
 }
 
 -- Build lookup table for fast command dispatch

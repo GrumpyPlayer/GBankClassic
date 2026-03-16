@@ -9,11 +9,10 @@ local ITEM_CLASSES_NEEDING_LINK = {
 }
 
 local Globals = GBankClassic_Globals
-local upvalues = Globals.GetUpvalues("GetItemInfo", "GetItemInventoryTypeByID", "CreateFrame", "GetItemInfoInstant")
+local upvalues = Globals.GetUpvalues("GetItemInfo", "GetItemInventoryTypeByID", "CreateFrame")
 local GetItemInfo = upvalues.GetItemInfo
 local GetItemInventoryTypeByID = upvalues.GetItemInventoryTypeByID
 local CreateFrame = upvalues.CreateFrame
-local GetItemInfoInstant = upvalues.GetItemInfoInstant
 local upvalues = Globals.GetUpvalues("Item")
 local Item = upvalues.Item
 local upvalues = Globals.GetUpvalues("UIParent")
@@ -340,9 +339,6 @@ function Items:Sort(items, mode)
 	end
 
 	-- mode = "default" (grouped by rarity, item class, equipId, equip slot, subclass)
-	-- mode = "alpha" (alphabetically by name)
-	-- mode = "type" (grouped by item class, equip slot, subclass, rarity, then name)
-
 	if not mode or mode == "default" then
 		table.sort(items, function(a, b)
 			if a.Info.rarity ~= b.Info.rarity and a.Info.rarity and b.Info.rarity then
@@ -365,10 +361,12 @@ function Items:Sort(items, mode)
 
 			return (a.Info.subClass or 99) < (b.Info.subClass or 99)
 		end)
+	-- mode = "alpha" (alphabetically by name)
 	elseif mode == "alpha" then
 		table.sort(items, function(a, b)
 			return (a.Info.name or "") < (b.Info.name or "")
 		end)
+	-- mode = "type" (grouped by item class, equip slot, subclass, rarity, then name)
 	elseif mode == "type" then
 		table.sort(items, function(a, b)
 			if a.Info.class ~= b.Info.class then

@@ -5,14 +5,11 @@ local MailInventory = GBankClassic_MailInventory
 MailInventory.hasUpdated = false
 
 local Globals = GBankClassic_Globals
-local upvalues = Globals.GetUpvalues("time")
-local time = upvalues.time
-local upvalues = Globals.GetUpvalues("GetInboxNumItems", "GetInboxHeaderInfo", "GetInboxItem", "GetInboxItemLink", "GetServerTime", "GetItemInfo")
+local upvalues = Globals.GetUpvalues("GetInboxNumItems", "GetInboxHeaderInfo", "GetInboxItem", "GetInboxItemLink", "GetItemInfo")
 local GetInboxNumItems = upvalues.GetInboxNumItems
 local GetInboxHeaderInfo = upvalues.GetInboxHeaderInfo
 local GetInboxItem = upvalues.GetInboxItem
 local GetInboxItemLink = upvalues.GetInboxItemLink
-local GetServerTime = upvalues.GetServerTime
 local GetItemInfo = upvalues.GetItemInfo
 local upvalues = Globals.GetUpvalues("ATTACHMENTS_MAX_RECEIVE")
 local ATTACHMENTS_MAX_RECEIVE = upvalues.ATTACHMENTS_MAX_RECEIVE

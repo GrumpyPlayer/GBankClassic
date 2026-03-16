@@ -4,8 +4,7 @@ local Events = GBankClassic_Events
 local bagUpdateTimer = nil
 
 local Globals = GBankClassic_Globals
-local upvalues = Globals.GetUpvalues("After", "wipe")
-local After = upvalues.After
+local upvalues = Globals.GetUpvalues("wipe")
 local wipe = upvalues.wipe
 local upvalues = Globals.GetUpvalues("hooksecurefunc", "GuildRoster", "IsInInstance", "IsInRaid", "MailFrame", "NewTimer", "GetTime", "IsInGuild")
 local hooksecurefunc = upvalues.hooksecurefunc
@@ -266,13 +265,13 @@ function Events:GUILD_RANKS_UPDATE(_)
 
 	if GBankClassic_Guild:Init(guild) then
 		GBankClassic_Options:InitGuild()
-        
+
 		local cleaned = GBankClassic_Guild:CleanupMalformedAlts()
 		if cleaned and cleaned > 0 then
 			GBankClassic_Output:Info("Cleaned %d malformed guild bank alt entries from saved database.", cleaned)
 			GBankClassic_Output:Debug("EVENTS", "GUILD_RANKS_UPDATE: cleaned %d malformed alt entries from saved database", cleaned)
 		end
-        
+
         if GBankClassic_UI_Inventory.isOpen then
             GBankClassic_UI_Inventory:DrawContent()
 			GBankClassic_UI_Inventory:RefreshCurrentTab()
@@ -303,7 +302,7 @@ function Events:MAIL_SHOW(_)
     GBankClassic_Mail.isOpen = true
 	-- GBankClassic_Mail:InitSendHook()
     GBankClassic_Mail:Check()
-	
+
 	if not MailFrame.isGBankHooked then
 		MailFrame:HookScript("OnHide", function()
 			GBankClassic_Output:Debug("MAIL", "MailFrame OnHide fired (mailbox closed)")
@@ -358,7 +357,7 @@ function Events:BAG_UPDATE_DELAYED(_)
 
 		return
 	end
-	
+
     bagUpdateTimer = NewTimer(TIMER_INTERVALS.ALT_DATA_QUEUE_RETRY, function()
 		GBankClassic_Bank:OnUpdateStart()
 		GBankClassic_Bank:OnUpdateStop()

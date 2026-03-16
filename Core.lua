@@ -47,7 +47,7 @@ function Core:SendWhisper(prefix, text, target, prio, callbackFn, callbackArg)
     -- Send the whisper
     self:SendCommMessage(prefix, text, "WHISPER", target, prio, callbackFn, callbackArg)
     GBankClassic_Output:Debug("PROTOCOL", "SendCommMessage whisper completed for %s to %s", prefix, target)
-    
+
     -- The player is online and whisper was sent
     return true
 end
@@ -103,7 +103,7 @@ function Core:SerializeWithChecksum(data)
     end
 
     local checksum = self:Checksum(serialized)
-    
+
     return serialized .. CHECKSUM_SEPARATOR .. tostring(checksum)
 end
 
