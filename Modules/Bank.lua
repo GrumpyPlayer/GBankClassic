@@ -175,28 +175,6 @@ function Bank:Scan()
 		GBankClassic_Output:Debug("INVENTORY", "No inventory changes for %s, version unchanged (improvedInventoryHash=%s)", player, tostring(currentImprovedInventoryHash))
 	end
 
-	-- Compute hash for current mailbox state
-	-- mailHash is computed whenever mail is scanned (even if empty) to track all mail state changes (mailHash is nil when mail was never scanned)
-	if mailData and mailData.items then
-		local currentMailHash = self:ComputeLegacyInventoryHash(mailData.items, nil)
-		local previousMailHash = alt.mailHash
-		local currentImprovedMailHash = self:ComputeImprovedInventoryHash(mailData.items, nil)
-		local previousImprovedMailHash = alt.improvedMailHash
-		alt.mailHash = currentMailHash
-		alt.improvedMailHash = currentImprovedMailHash
-
-		if currentImprovedMailHash ~= previousImprovedMailHash then
-			alt.version = GetServerTime()
-			GBankClassic_Output:Debug("INVENTORY", "Mail changed for %s, version updated to %s (improvedMailHash=%s)", player, alt.version, tostring(currentMailHash))
-		else
-			GBankClassic_Output:Debug("INVENTORY", "No mail changes for %s, hash unchanged", player, tostring(currentMailHash))
-		end
-	else
-		-- No mail data structure (mail was never scanned this session)
-		-- Keep previous mailHash if it exists to preserve data across sessions
-		GBankClassic_Output:Debug("INVENTORY", "Mail not scanned this session for %s, preserving existing mail hash", player)
-	end
-
 	-- Write to GBankClassic_Guild.Info for normal use
 	if not info.alts then
 		info.alts = {}

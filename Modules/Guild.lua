@@ -497,8 +497,6 @@ function Guild:RebuildGuildBankAltsRoster()
 				money = 0,
 				inventoryHash = 0,
 				items = {},
-				mail = { version = 0 },
-				mailHash = 0,
 				ledger = {}
 			}
 			GBankClassic_Output:Debug("ROSTER", "Added missing guild bank alt stub data for %s", normName)
@@ -719,9 +717,7 @@ function Guild:GetVersion()
 					if v.inventoryHash then
 						data.alts[k] = {
 							version = v.version,
-							hash = v.inventoryHash,
-							mailHash = v.mailHash,
-							updatedAt = v.inventoryUpdatedAt or v.version,
+							hash = v.inventoryHash
 						}
 						GBankClassic_Output:Debug("PROTOCOL", "GetVersion: including %s in local version data (ver=%d, hash=%d)", k, v.version, v.inventoryHash)
 					else
@@ -1084,17 +1080,12 @@ function Guild:RespondToStateSummary(name, summary, requester)
 	end
 
 	local currentAlt = self.Info.alts[norm]
-	if currentAlt and not currentAlt.inventoryUpdatedAt and currentAlt.version then
-		currentAlt.inventoryUpdatedAt = currentAlt.version
-	end
 	local requesterVersion = summary.version or 0
 	local currentVersion = currentAlt.version or 0
 	local requesterHash = summary.hash or nil
 	local currentHash = currentAlt.inventoryHash or nil
-	local requesterMailHash = summary.mailHash or 0
-	local currentMailHash = currentAlt.mailHash or 0
 
-	GBankClassic_Output:DebugComm("RespondToStateSummary: %s requesterV=%d currentV=%d requesterHash=%s currentHash=%s requesterMailHash=%s currentMailHash=%s", norm, requesterVersion, currentVersion, tostring(requesterHash), tostring(currentHash), tostring(requesterMailHash), tostring(currentMailHash))
+	GBankClassic_Output:DebugComm("RespondToStateSummary: %s requesterV=%d currentV=%d requesterHash=%s currentHash=%s", norm, requesterVersion, currentVersion, tostring(requesterHash), tostring(currentHash))
 
 	-- If current alt doesn't have a hash, send full data (might be from pre-hash version)
 	if not currentHash then
@@ -1114,36 +1105,26 @@ function Guild:RespondToStateSummary(name, summary, requester)
 		return
 	end
 
-	-- Check both inventory and mail hashes
-	if requesterHash == currentHash and requesterMailHash == currentMailHash then
-		-- Both hashes match - no changes needed
+	-- Compare hashes
+	if requesterHash == currentHash then
 		local noChangeMsg = {
 			type = "no-change",
 			name = norm,
 			version = currentVersion,
-			hash = currentHash,
-			mailHash = currentMailHash,
+			hash = currentHash
 		}
 		local data = GBankClassic_Core:SerializeWithChecksum(noChangeMsg)
-		GBankClassic_Output:DebugComm("Sending no-change to %s for %s (hash match: inv=%d, mail=%d)", requester, norm, currentHash, currentMailHash)
+		GBankClassic_Output:DebugComm("Sending no-change to %s for %s (hash=%d)", requester, norm, currentHash)
 		if not GBankClassic_Core:SendWhisper("gbank-nochange", data, requester, "NORMAL") then
 			return
 		end
 
-		GBankClassic_Output:Debug("SYNC", "Sent no-change reply to %s for %s (hash=%d, mailHash=%d)", requester, norm, currentHash, currentMailHash)
-
-		return
-	elseif requesterHash == currentHash and requesterMailHash ~= currentMailHash then
-		-- Only mail changed
-		GBankClassic_Output:DebugComm("Mail-only change - calling SendAltData for %s (mail: requester=%d, current=%d)", norm, requesterMailHash, currentMailHash)
-		GBankClassic_Output:Debug("SYNC", "Sending data to %s for %s (mail-only change: requester=%d, current=%d)", requester, norm, requesterMailHash, currentMailHash)
-		self:SendAltData(norm, requester)
+		GBankClassic_Output:Debug("SYNC", "Sent no-change reply to %s for %s (hash=%d)", requester, norm, currentHash)
 
 		return
 	else
-		-- Inventory changed (mail may or may not have changed)
-		GBankClassic_Output:DebugComm("Inventory change - calling SendAltData for %s (inv: requester=%d, current=%d, mail: requester=%d, current=%d)", norm, requesterHash, currentHash, requesterMailHash, currentMailHash)
-		GBankClassic_Output:Debug("SYNC", "Sending data to %s for %s (hash mismatch: inv=%d->%d, mail=%d->%d)", requester, norm, requesterHash, currentHash, requesterMailHash, currentMailHash)
+		GBankClassic_Output:DebugComm("Inventory change - calling SendAltData for %s (inv: requester=%d, current=%d)", norm, requesterHash, currentHash)
+		GBankClassic_Output:Debug("SYNC", "Sending data to %s for %s (hash mismatch: inv=%d->%d)", requester, norm, requesterHash, currentHash)
 		self:SendAltData(norm, requester)
 
 		return
@@ -1476,7 +1457,7 @@ function Guild:SendAltData(name, target)
 	local channel = target and "WHISPER" or "GUILD"
     local dest = target or nil
 
-	GBankClassic_Output:Debug("SYNC", "SendAltData for %s: mailHash=%s", norm, tostring(currentAlt.mailHash))
+	GBankClassic_Output:Debug("SYNC", "SendAltData for %s", norm)
 
 	-- Log what we're about to send
 	local itemsCount = currentAlt.items and #currentAlt.items or 0
@@ -1512,8 +1493,7 @@ function Guild:ReceiveAltData(name, alt, sender)
 			return nil
 		end
 
-		-- Log mailHash upon receiving alt data
-		GBankClassic_Output:Debug("SYNC", "ReceiveAltData for %s: received mailHash=%s", name, tostring(a.mailHash))
+		GBankClassic_Output:Debug("SYNC", "ReceiveAltData for %s", name)
 
 		-- Sanitize alt.items (array)
 		if a.items then
@@ -1574,7 +1554,7 @@ function Guild:ReceiveAltData(name, alt, sender)
 		-- We are a guild bank alt, and data is about a guild bank alt - only accept if sender is that guild bank alt
 		if senderNorm ~= norm then
 			-- Check timestamps before rejecting - allow if no existing data OR incoming is newer
-			local incomingUpdatedAt = alt.inventoryUpdatedAt or alt.version
+			local incomingUpdatedAt = alt.version
 			local existingUpdatedAt = existing and existing.version or nil
 			local shouldAccept = false
 
@@ -1600,11 +1580,8 @@ function Guild:ReceiveAltData(name, alt, sender)
 
 	-- Rule 3: Non-guild bank alts accept all data, non-guild bank alt data accepted from anyone
 	-- Non-guild bank alt conflict resolution: newest wins (timestamped hash)
-	local incomingUpdatedAt = alt.inventoryUpdatedAt or alt.version
-	local existingUpdatedAt = existing and (existing.inventoryUpdatedAt or existing.version) or nil
-	if incomingUpdatedAt and not alt.inventoryUpdatedAt then
-		alt.inventoryUpdatedAt = incomingUpdatedAt
-	end
+	local incomingUpdatedAt = alt.version
+	local existingUpdatedAt = existing and existing.version or nil
 	local existingHasContent = existing and self:HasAltContent(existing, norm) or false
 	local incomingHasContent = self:HasAltContent(alt, norm)
 
@@ -1687,9 +1664,7 @@ function Guild:ReceiveAltData(name, alt, sender)
 	end
 	self.Info.alts[norm] = alt
 	GBankClassic_Output:Debug("MAIL", "Overwrote self.Info.alts[%s], mail field now: %s", norm, alt.mail and "EXISTS" or "GONE")
-
-	-- Log mailHash after storing to verify it persisted
-	GBankClassic_Output:Debug("SYNC", "Stored alt data for %s: mailHash=%s", norm, tostring(self.Info.alts[norm].mailHash))
+	GBankClassic_Output:Debug("SYNC", "Stored alt data for %s", norm)
 
 	-- Restore preserved mail if we had it locally and incoming sync doesn't have it
 	-- This handles backward compatibility: new clients preserve mail when receiving from old clients

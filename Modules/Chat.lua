@@ -226,10 +226,8 @@ function Chat:ProcessVersionBroadcast(prefix, data, sender, message, distributio
 				-- See Guild:GetVersion() to understand what is a part of data.alts (v)
 				local theirVersion = type(v) == "table" and v.version or v
 				local theirHash = type(v) == "table" and v.hash or nil
-				local theirMailHash = type(v) == "table" and v.mailHash or nil
 				local ourVersion = type(ourAlt) == "table" and ourAlt.version or nil
 				local ourHash = type(ourAlt) == "table" and ourAlt.inventoryHash or nil
-				local ourMailHash = type(ourAlt) == "table" and ourAlt.mailHash or nil
 
 				-- Always log hash comparisons
 				if theirHash then
@@ -434,12 +432,9 @@ function Chat:OnCommReceived(prefix, message, distribution, sender)
 			local altName = data.name
 			local isGuildBankAlt = data.isGuildBankAlt or false
 			local hasData = data.hasData or false
-			local hashOnly = data.hashOnly or false
-			local expectedHash = data.expectedHash
-			local expectedUpdatedAt = data.expectedUpdatedAt
 
-			GBankClassic_Output:DebugComm("Received acknowledgment: gbank-rr from %s for alt %s (isGuildBankAlt=%s, hasData=%s, hashOnly=%s, hash=%s, updatedAt=%s)", sender, altName, tostring(isGuildBankAlt), tostring(hasData), tostring(hashOnly), tostring(expectedHash), tostring(expectedUpdatedAt))
-			GBankClassic_Output:Debug("SYNC", ">", colorPlayerName(sender), QUERIES_COLOR, string.format("acknowledged request for %s (altName=%s, hasData=%s, hash=%s)", colorPlayerName(altName), tostring(isGuildBankAlt), tostring(hasData), tostring(expectedHash)))
+			GBankClassic_Output:DebugComm("Received acknowledgment: gbank-rr from %s for alt %s (isGuildBankAlt=%s, hasData=%s)", sender, altName, tostring(isGuildBankAlt), tostring(hasData))
+			GBankClassic_Output:Debug("SYNC", ">", colorPlayerName(sender), QUERIES_COLOR, string.format("acknowledged request for %s (altName=%s, hasData=%s)", colorPlayerName(altName), tostring(isGuildBankAlt), tostring(hasData)))
 
 			-- If sender has the data, send our state summary to them
 			if hasData then
@@ -478,19 +473,13 @@ function Chat:OnCommReceived(prefix, message, distribution, sender)
 			-- If the responder sends corrected hash values, apply them
 			local norm = GBankClassic_Guild:NormalizeName(altName)
 			local correctedHash = data.hash
-			local correctedMailHash = data.mailHash
 			if correctedHash and correctedHash ~= 0 and GBankClassic_Guild.Info and GBankClassic_Guild.Info.alts then
 				local localAlt = GBankClassic_Guild.Info.alts[norm]
 				if localAlt then
 					local oldInvHash = localAlt.inventoryHash
-					local oldMailHash = localAlt.mailHash
 					if oldInvHash ~= correctedHash then
 						localAlt.inventoryHash = correctedHash
 						GBankClassic_Output:Debug("SYNC", "Hash correction: %s inventoryHash %s→%d (from %s)", norm, tostring(oldInvHash), correctedHash, sender)
-					end
-					if correctedMailHash ~= nil and oldMailHash ~= correctedMailHash then
-						localAlt.mailHash = correctedMailHash
-						GBankClassic_Output:Debug("SYNC", "Hash correction: %s mailHash %s→%d (from %s)", norm, tostring(oldMailHash), correctedMailHash, sender)
 					end
 				end
 			end
