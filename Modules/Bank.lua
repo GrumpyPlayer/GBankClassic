@@ -135,15 +135,25 @@ function Bank:Scan()
 		alt = info.alts[player]
 	end
 
-	-- Scan bank if available
-	local bankData = {}
-	scanBank(bankData)
+    -- Initialize persistent storage if needed
+	if not alt.cache then alt.cache = {} end
+    if not alt.cache.bank then alt.cache.bank = { items = {} } end
+    if not alt.cache.bags then alt.cache.bags = { items = {} } end
+    if not alt.cache.mail then alt.cache.mail = { items = {} } end
 
-	-- Scan bags
+    -- Scan bank if available, otherwise keep existing data
+    if isBankAvailable() then
+        local bankData = {}
+        scanBank(bankData)
+        alt.cache.bank.items = bankData
+    end
+
+	-- Scan bags (always available)
 	local bagData = {}
 	scanBags(bagData)
+    alt.cache.bags.items = bagData
 
-	-- Scan money
+	-- Scan money (always available)
 	local money = GetMoney()
 	alt.money = money
 
@@ -153,12 +163,15 @@ function Bank:Scan()
 	if GBankClassic_MailInventory.hasUpdated then
 		GBankClassic_Output:Debug("INVENTORY", "Starting mail scan for %s", player)
 		mailData = GBankClassic_MailInventory:ScanMailInventory()
+        if mailData then
+            alt.cache.mail.items = mailData
+        end
 		GBankClassic_Output:Debug("INVENTORY", "Clearing hasUpdated flag after successful scan")
 		GBankClassic_MailInventory.hasUpdated = false
 	end
 
 	-- Aggregate bank + bags + mail into alt.items
-	self:RecalculateAggregatedItems(bankData, bagData, mailData, alt)
+	self:RecalculateAggregatedItems(alt.cache.bank.items, alt.cache.bags.items, alt.cache.mail.items, alt)
 
 	-- Compute hash of the current inventory state
 	local currentHash = self:ComputeLegacyInventoryHash(alt.items, money)

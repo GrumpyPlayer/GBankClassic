@@ -163,6 +163,7 @@ function Guild:Reset(name)
 
     GBankClassic_UI_Inventory:Close()
     GBankClassic_Database:Reset(name)
+	GBankClassic_Guild.lastRosterRebuildTime = nil
     self.Info = GBankClassic_Database:Load(name)
 	-- self:EnsureRequestsInitialized()
 	self:RebuildGuildBankAltsRoster()
