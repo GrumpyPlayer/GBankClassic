@@ -348,6 +348,11 @@ function UI_Inventory:DrawContent()
             return
         end
 
+        local activeFilters = self:GetActiveFilterCount()
+        if activeFilters and activeFilters > 0 then
+            return
+        end
+
         local datetime = date("%b %d, %Y %H:%M", alt.version)
 		local mailCount = alt.mail and alt.mail.items and GBankClassic_Globals:Count(alt.mail.items) or 0
         local money = 0
@@ -364,6 +369,11 @@ function UI_Inventory:DrawContent()
     end)
 
     self.Window:SetCallback("OnLeaveStatusBar", function(_)
+        local activeFilters = self:GetActiveFilterCount()
+        if activeFilters and activeFilters > 0 then
+            return
+        end
+
         self.Window:SetStatusText(defaultStatus)
     end)
 
@@ -488,7 +498,11 @@ function UI_Inventory:DrawContent()
                     local activeFilters = self:GetActiveFilterCount()
                     local filterText = activeFilters > 0 and string.format(" |cff87ceeb(%d filters active)|r", activeFilters) or ""
                     local statusText = string.format("Showing %d of %d items%s", filteredCount, #list, filterText)
-                    self.Window:SetStatusText(statusText)
+                    if activeFilters > 0 then
+                        self.Window:SetStatusText(statusText)
+                    else
+                        self.Window:SetStatusText(defaultStatus)
+                    end
 
                     -- Release loading label and display filtered items
                     scroll:ReleaseChildren()
