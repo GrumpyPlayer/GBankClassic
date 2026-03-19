@@ -316,7 +316,7 @@ function Output:DebugComm(fmt, ...)
 		return false
 	end
 
-	return log(LOG_LEVEL.DEBUG, "|cff888888[DEBUG] (comm)|r", fmt, ...)
+	return log(LOG_LEVEL.DEBUG, "|cff888888[COMMS] (DEBUG)|r", fmt, ...)
 end
 
 -- Info: sync status, normal operations

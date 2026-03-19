@@ -14,7 +14,7 @@ local CHECKSUM_SEPARATOR = "\030" -- ASCII record separator, not used by AceSeri
 function Core:SendCommMessage(prefix, text, distribution, target, prio, callbackFn, callbackArg)
     local prefixDesc = COMM_PREFIX_DESCRIPTIONS[prefix] or "(Unknown)"
     if IsInInstance() or IsInRaid() then
-        GBankClassic_Output:Debug("COMMS", "< (suppressing) %s %s (in instance or raid)", prefix, prefixDesc)
+		GBankClassic_Output:Debug("COMMS", ">", "(suppressing)", prefix, prefixDesc, "to", GBankClassic_Chat:ColorPlayerName(target), "(in instance or raid)")
 
         return
     end
@@ -23,8 +23,7 @@ function Core:SendCommMessage(prefix, text, distribution, target, prio, callback
         return
     end
 
-    local bytes = text and #text or 0
-    GBankClassic_Output:Debug("COMMS", "< %s %s to %s (%d bytes)", prefix, prefixDesc, distribution, bytes)
+    GBankClassic_Output:Debug("COMMS", ">", prefix, prefixDesc, "via", string.upper(distribution), "to", target and GBankClassic_Chat:ColorPlayerName(target) or "guild", "(" .. (#text or 0) .. " bytes)")
 
     return AceComm_SendCommMessage(self, prefix, text, distribution, target, prio, callbackFn, callbackArg)
 end
@@ -32,21 +31,23 @@ end
 -- Centralized whisper send with automatic online check
 -- Returns true if sent, false if target offline or send failed
 function Core:SendWhisper(prefix, text, target, prio, callbackFn, callbackArg)
+    local prefixDesc = COMM_PREFIX_DESCRIPTIONS[prefix] or "(Unknown)"
+
     -- Strip realm suffix only for same-realm targets; cross-realm requires full name
     target = GBankClassic_Guild:NormalizeName(target, true)
 
     -- Check if target is online
     local isOnline = GBankClassic_Guild:IsPlayerOnlineMember(target)
-    GBankClassic_Output:Debug("PROTOCOL", "SendWhisper called: prefix=%s, target=%s, isOnline=%s", prefix, target, tostring(isOnline))
+    GBankClassic_Output:Debug("WHISPER", "SendWhisper called: prefix=%s %s, target=%s, isOnline=%s", prefix, prefixDesc, target, tostring(isOnline))
     if not isOnline then
-        GBankClassic_Output:Debug("WHISPER", "Cannot send %s whisper to %s - player is offline", prefix, target)
+        GBankClassic_Output:Debug("WHISPER", "Cannot send %s %s to %s (player is offline)", prefix, prefixDesc, target)
 
         return false
     end
 
     -- Send the whisper
     self:SendCommMessage(prefix, text, "WHISPER", target, prio, callbackFn, callbackArg)
-    GBankClassic_Output:Debug("PROTOCOL", "SendCommMessage whisper completed for %s to %s", prefix, target)
+    GBankClassic_Output:Debug("WHISPER", "SendCommMessage completed for %s %s to %s", prefix, prefixDesc, target)
 
     -- The player is online and whisper was sent
     return true
@@ -73,6 +74,7 @@ end
 -- Called when the addon is disabled
 function Core:OnDisable()
     GBankClassic_Events:UnregisterEvents()
+    GBankClassic_Chat:CancelAllDebounceTimers()
 end
 
 -- Checksum implementation for message integrity

@@ -61,7 +61,7 @@ function ItemHighlight:SetEnabled(enabled)
 	-- Only allow guild bank alts to use highlighting
 	local banks = GBankClassic_Guild:GetCachedGuildBankAlts()
 	if not banks then
-		GBankClassic_Output:Debug("REQUESTS", "Highlighting disabled: no banks found")
+		GBankClassic_Output:Debug("REQUESTS", "Highlighting disabled: no guild bank alts found")
 
 		return
 	end

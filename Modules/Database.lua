@@ -52,7 +52,7 @@ function Database:Reset(name)
 		guildProtocolVersions = {},
     }
 
-	GBankClassic_Output:Response("Reset database")
+	GBankClassic_Output:Response("Local database for %s has been emptied.", name)
 end
 
 function Database:ResetPlayer(name, player)
@@ -68,7 +68,7 @@ function Database:ResetPlayer(name, player)
 
     self.db.factionrealm[name].alts[player] = {}
 
-    GBankClassic_Core:Response("Reset player database")
+    GBankClassic_Core:Response("Local database for %s (guild: %s) has been emptied.", player, name)
 end
 
 function Database:Load(name)
@@ -115,13 +115,13 @@ function Database:Load(name)
 					for _, item in pairs(aggregated) do
 						table.insert(alt.items, item)
 					end
-					GBankClassic_Output:Debug("DATABASE", "Forced deduplication for guild bank alt %s: %d items.", altName, #alt.items)
+					GBankClassic_Output:Debug("DATABASE", "Forced deduplication for guild bank alt %s: %d items", altName, #alt.items)
 
 					local money = alt.money or 0
 					alt.inventoryHash = GBankClassic_Bank:ComputeLegacyInventoryHash(alt.items, money)
 					alt.improvedInventoryHash = GBankClassic_Bank:ComputeImprovedInventoryHash(alt.items, money)
-					GBankClassic_Output:Debug("DATABASE", "Recomputed inventory hash after recalculation for %s: %d.", altName, alt.inventoryHash)
-					GBankClassic_Output:Debug("DATABASE", "Recomputed improved inventory hash after recalculation for %s: %d.", altName, alt.improvedInventoryHash)
+					GBankClassic_Output:Debug("DATABASE", "Recomputed inventory hash after recalculation for %s: %d", altName, alt.inventoryHash)
+					GBankClassic_Output:Debug("DATABASE", "Recomputed improved inventory hash after recalculation for %s: %d", altName, alt.improvedInventoryHash)
 
 					GBankClassic_Guild:ReconstructItemLinks(alt.items)
 				end

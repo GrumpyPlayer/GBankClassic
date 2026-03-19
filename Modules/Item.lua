@@ -235,7 +235,7 @@ function Items:GetItems(items, callback)
 
 							-- Check if itemID matches what we expect
 							if not accessSuccess then
-								GBankClassic_Output:Debug("ITEM", "Cannot access itemData.itemID (protected?)")
+								GBankClassic_Output:Debug("ITEM", "Cannot access itemData.itemID")
 								processed = processed + 1
 								checkComplete()
 							elseif objectItemID == nil then

@@ -3,7 +3,7 @@ local upvalues = Globals.GetUpvalues("debugprofilestop")
 local debugprofilestop = upvalues.debugprofilestop
 local upvalues = Globals.GetUpvalues("LibStub")
 local LibStub = upvalues.LibStub
-local upvalues = Globals.GetUpvalues("CreateFrame", "IsShiftKeyDown", "ChatEdit_InsertLink", "IsControlKeyDown", "DressUpItemLink", "PickupItem", "GetItemQualityColor", "GameTooltip_SetDefaultAnchor")
+local upvalues = Globals.GetUpvalues("CreateFrame", "IsShiftKeyDown", "ChatEdit_InsertLink", "IsControlKeyDown", "DressUpItemLink", "PickupItem", "GetItemQualityColor", "GameTooltip_SetDefaultAnchor", "After")
 local CreateFrame = upvalues.CreateFrame
 local IsShiftKeyDown = upvalues.IsShiftKeyDown
 local ChatEdit_InsertLink = upvalues.ChatEdit_InsertLink
@@ -12,6 +12,7 @@ local DressUpItemLink = upvalues.DressUpItemLink
 local PickupItem = upvalues.PickupItem
 local GetItemQualityColor = upvalues.GetItemQualityColor
 local GameTooltip_SetDefaultAnchor = upvalues.GameTooltip_SetDefaultAnchor
+local After = upvalues.After
 local upvalues = Globals.GetUpvalues("UIParent", "UISpecialFrames", "WorldFrame", "GameTooltip")
 local UIParent = upvalues.UIParent
 local UISpecialFrames = upvalues.UISpecialFrames
@@ -20,11 +21,12 @@ local GameTooltip = upvalues.GameTooltip
 
 GBankClassic_UI = LibStub("AceGUI-3.0")
 
-GBankClassic_UI.tooltipThrottle = 0
-GBankClassic_UI.TOOLTIP_THROTTLE_MS = 50 -- 50ms between tooltip updates
-GBankClassic_UI.currentTooltipLink = nil
-
 local UI = GBankClassic_UI
+
+UI.tooltipThrottle = 0
+UI.TOOLTIP_THROTTLE_MS = 50 -- 50ms between tooltip updates
+UI.currentTooltipLink = nil
+UI.isRefreshPending = false
 
 function UI:Init()
     GBankClassic_UI_Minimap:Init()
@@ -33,6 +35,33 @@ function UI:Init()
     GBankClassic_UI_Donations:Init()
 	-- GBankClassic_UI_Requests:Init()
 	-- GBankClassic_UI_Mail:Init()
+end
+
+function UI:RequestRefresh()
+    if self.isRefreshPending then
+        return
+    end
+
+    self.isRefreshPending = true
+
+    After(1, function()
+        self.isRefreshPending = false
+
+        if GBankClassic_UI_Inventory and GBankClassic_UI_Inventory.isOpen then
+            GBankClassic_UI_Inventory:DrawContent()
+            GBankClassic_UI_Inventory:RefreshCurrentTab()
+        end
+        if GBankClassic_UI_Search and GBankClassic_UI_Search.isOpen then
+            GBankClassic_UI_Search:BuildSearchData()
+            GBankClassic_UI_Search:DrawContent()
+            if GBankClassic_UI_Search.searchField then
+                GBankClassic_UI_Search.searchField:Fire("OnEnterPressed")
+            end
+        end
+        if GBankClassic_UI_Donations and GBankClassic_UI_Donations.isOpen then
+            GBankClassic_UI_Donations:DrawContent()
+        end
+    end)
 end
 
 function UI:Controller()

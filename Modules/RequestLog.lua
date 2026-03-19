@@ -375,7 +375,7 @@ function Guild:NormalizeRequestList()
 					else
 						-- Only warn once per corrupted request ID to prevent spam
 						if not warnedAbout.corruptedTimestamps[clean.id] then
-							GBankClassic_Output:Warn("Skipping corrupted updatedAt timestamp %s for request id=%s", tostring(clean.updatedAt), tostring(clean.id))
+							GBankClassic_Output:Warn("Skipping corrupted updatedAt timestamp %s for request id=%s.", tostring(clean.updatedAt), tostring(clean.id))
 							warnedAbout.corruptedTimestamps[clean.id] = true
 						end
 					end
@@ -623,7 +623,7 @@ function Guild:ApplyRequestMutation(entry, sender)
 				-- Anyone can add, but the requester field must match the sender
 				local claimedRequester = entry.request.requester and self:NormalizeName(entry.request.requester)
 				if claimedRequester and claimedRequester ~= normSender then
-					TOGBankClassic_Output:Debug("SYNC", "ApplyRequestMutation: Add rejected - sender %s claimed requester %s", normSender, claimedRequester)
+					GBankClassic_Output:Debug("SYNC", "ApplyRequestMutation: Add rejected - sender %s claimed requester %s", normSender, claimedRequester)
 
 					return false
 				end
@@ -632,7 +632,7 @@ function Guild:ApplyRequestMutation(entry, sender)
 				-- Use existing req if we have it; fall back to the embedded snapshot
 				local reqForCheck = self.Info.requests[requestId] or entry.request
 				if not self:CanCancelRequest(reqForCheck, normSender) then
-					TOGBankClassic_Output:Debug("SYNC", "ApplyRequestMutation: Cancel rejected - sender %s lacks permission for id=%s", normSender, requestId)
+					GBankClassic_Output:Debug("SYNC", "ApplyRequestMutation: Cancel rejected - sender %s lacks permission for id=%s", normSender, requestId)
 
 					return false
 				end
@@ -825,7 +825,7 @@ function Guild:GetRequestsVersion()
 	if version < MIN_TIMESTAMP or version > MAX_TIMESTAMP then
 		-- Only warn once per session to prevent spam
 		if not warnedAbout.invalidRequestVersion then
-			GBankClassic_Output:Warn("Invalid request version %s detected, resetting to 0", tostring(version))
+			GBankClassic_Output:Warn("Invalid request version %s detected, resetting to 0.", tostring(version))
 			warnedAbout.invalidRequestVersion = true
 		end
 		self.Info.requestsVersion = 0 -- Actually fix the stored value
@@ -839,7 +839,7 @@ end
 function Guild:SendRequestsSnapshot(target)
 	-- Always send snapshot, even if empty (so querying player knows we have nothing)
 	if not self.Info then
-		GBankClassic_Output:DebugComm("SendRequestsSnapshot: Skipping (self.Info is nil)")
+		GBankClassic_Output:Debug("SYNC", "SendRequestsSnapshot: Skipping (self.Info is nil)")
 
 		return
 	end
@@ -867,7 +867,7 @@ function Guild:QueryRequestsSnapshot(priority)
 	local data = GBankClassic_Core:SerializeWithChecksum({ player = "*", type = "requests" })
 	-- Send on old prefix for backwards compat; new clients listen on both
 	GBankClassic_Core:SendCommMessage("gbank-r", data, "Guild", nil, priority or "BULK")
-	GBankClassic_Output:Debug("SYNC", "Sent wildcard query")
+	GBankClassic_Output:Debug("SYNC", "QueryRequestsSnapshot: sent wildcard query")
 end
 
 -- Request index query/response for hash-based sync.

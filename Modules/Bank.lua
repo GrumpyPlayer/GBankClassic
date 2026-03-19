@@ -258,22 +258,7 @@ function Bank:OnUpdateStop()
 		GBankClassic_Output:Debug("INVENTORY", "Calling scan")
         self:Scan()
 		GBankClassic_Output:Debug("INVENTORY", "Scan completed")
-
-		-- Trigger UI refresh if inventory window is open
-		if GBankClassic_UI_Inventory.isOpen then
-			if not GBankClassic_UI_Inventory.currentTab or GBankClassic_UI_Inventory.currentTab == GBankClassic_Guild.player then
-				GBankClassic_UI_Inventory:DrawContent()
-				GBankClassic_UI_Inventory:RefreshCurrentTab()
-			end
-		end
-		if GBankClassic_UI_Search.isOpen then
-			GBankClassic_UI_Search:BuildSearchData()
-			GBankClassic_UI_Search:DrawContent()
-			GBankClassic_UI_Search.searchField:Fire("OnEnterPressed")
-		end
-		if GBankClassic_UI_Donations.isOpen then
-			GBankClassic_UI_Donations:DrawContent()
-		end
+		GBankClassic_UI:RequestRefresh()
 	else
 		GBankClassic_Output:Debug("INVENTORY", "Skipping scan because hasUpdated is false")
     end
@@ -307,11 +292,11 @@ function Bank:RecalculateAggregatedItems(bankData, bagData, mailData, alt)
 	end
 
 	-- Aggregate all three sources
-	GBankClassic_Output:Debug("INVENTORY", "Before aggregation of items: bank=%d, bags=%d, and mail=%d.", #bankItems, #bagItems, #mailItems)
+	GBankClassic_Output:Debug("INVENTORY", "Before aggregation of items: bank=%d, bags=%d, and mail=%d", #bankItems, #bagItems, #mailItems)
 	local aggregated = GBankClassic_Item:Aggregate(bankItems, bagItems)
-	GBankClassic_Output:Debug("INVENTORY", "After aggregating bank + bags: %d unique items.", GBankClassic_Globals:Count(aggregated))
+	GBankClassic_Output:Debug("INVENTORY", "After aggregating bank + bags: %d unique items", GBankClassic_Globals:Count(aggregated))
 	aggregated = GBankClassic_Item:Aggregate(aggregated, mailItems)
-	GBankClassic_Output:Debug("INVENTORY", "After adding mail: %d unique items.", GBankClassic_Globals:Count(aggregated))
+	GBankClassic_Output:Debug("INVENTORY", "After adding mail: %d unique items", GBankClassic_Globals:Count(aggregated))
 
 	-- Convert table to array format
 	alt.items = {}

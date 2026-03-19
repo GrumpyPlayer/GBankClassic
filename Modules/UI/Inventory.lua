@@ -410,8 +410,8 @@ function UI_Inventory:DrawContent()
             loadingLabel:SetText(msg)
         else
             loadingLabel:SetText("|cff808080No available data for this guild bank alt.|r")
-            self:UpdateStatusText("", "", 0, "")
         end
+        self:UpdateStatusText("", "", 0, "")
         loadingLabel:SetFullWidth(true)
         scroll:AddChild(loadingLabel)
 
@@ -583,39 +583,6 @@ function UI_Inventory:PassesFilters(item)
     -- Type filter
     if self.filterType and self.filterType ~= "any" then
         local class = info.class or 0
-        local subClass = info.subClass or 0
-
-        --[[
-        local t = Enum.ItemClass
-        for k, v in pairs(t) do
-            print(k.."=".. v)
-        end
-
-        Enum.ItemClass
-
-        ++Armor=4
-        ++Weapon=2
-        ++Consumable=0
-        ++Tradegoods=7
-        ++Container=1
-        ++Recipe=9
-        ++Questitem=12
-
-        Miscellaneous=15
-        Reagent=5
-        CurrencyTokenObsolete=10
-        Key=13
-        PermanentObsolete=14
-        Gem=3
-        ItemEnhancement=8
-        Quiver=11
-        Projectile=6
-
-        Profession=19
-        WoWToken=18
-        Battlepet=17
-        Glyph=16
-        ]]--
 
         if self.filterType == "armor" and class ~= 4 then
             return false
@@ -639,63 +606,11 @@ function UI_Inventory:PassesFilters(item)
     -- Slot filter
     if self.filterSlot and self.filterSlot ~= "any" then
         local equipId = info.equipId or 0
-
-        --[[
-        local t = Enum.InventoryType
-        for k, v in pairs(t) do
-            print(k.."=".. v)
-        end
-
-        Enum.InventoryType
-        
-        IndexNonEquipType=0
-
-        IndexHeadType=1
-        IndexNeckType=2
-        IndexShoulderType=3
-        IndexBodyType=4
-        IndexChestType=5
-        IndexWaistType=6
-        IndexLegsType=7
-        IndexFeetType=8
-        IndexWristType=9
-        IndexHandType=10
-        IndexFingerType=11
-        IndexTrinketType=12
-        IndexWeaponType=13
-        IndexShieldType=14
-
-        IndexRangedType=15
-
-        IndexCloakType=16
-        Index2HweaponType=17
-        IndexBagType=18
-        IndexTabardType=19
-        IndexRobeType=20
-        IndexWeaponmainhandType=21
-        IndexWeaponoffhandType=22
-        IndexHoldableType=23
-
-        IndexAmmoType=24
-        IndexThrownType=25
-
-        IndexRangedrightType=26
-
-        IndexQuiverType=27
-        IndexRelicType=28
-        IndexProfessionToolType=29
-        IndexProfessionGearType=30
-        IndexEquipablespellOffensiveType=31
-        IndexEquipablespellUtilityType=32
-        IndexEquipablespellDefensiveType=33
-        IndexEquipablespellWeaponType=34
-        
-        ]]--
-
         local slotMap = {
             head = 1, neck = 2, shoulder = 3, shirt = 4, chest = 5, waist = 6, legs = 7, feet = 8, wrist = 9, hands = 10, finger = 11, trinket = 12, onehand = 13, shield = 14, ranged = 26, back = 16, twohand = 17, bag = 18, tabard = 19, robe = 20, mainhand = 21, offhand = 22, holdable = 23
         }
         local targetSlot = slotMap[self.filterSlot]
+
         if targetSlot and targetSlot ~= equipId then
             if self.filterSlot == "bag" and equipId ~= 0 then
                 return false

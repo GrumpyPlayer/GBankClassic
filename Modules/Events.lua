@@ -272,18 +272,7 @@ function Events:GUILD_RANKS_UPDATE(_)
 			end
 		end)
 
-        if GBankClassic_UI_Inventory.isOpen then
-            GBankClassic_UI_Inventory:DrawContent()
-			GBankClassic_UI_Inventory:RefreshCurrentTab()
-        end
-		if GBankClassic_UI_Search.isOpen then
-			GBankClassic_UI_Search:BuildSearchData()
-			GBankClassic_UI_Search:DrawContent()
-			GBankClassic_UI_Search.searchField:Fire("OnEnterPressed")
-		end
-		if GBankClassic_UI_Donations.isOpen then
-			GBankClassic_UI_Donations:DrawContent()
-		end
+        GBankClassic_UI:RequestRefresh()
 	end
 end
 

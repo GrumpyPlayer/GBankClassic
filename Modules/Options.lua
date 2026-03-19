@@ -238,7 +238,7 @@ function Options:Init()
 						order = 19,
 						type = "toggle",
 						width = "full",
-						name = "PROTOCOL - Protocol version negotiation",
+						name = "PROTOCOL - Protocol version negotiation and debouncing",
 						set = function(_, v)
 							GBankClassic_Output:SetCategoryEnabled("PROTOCOL", v)
 						end,

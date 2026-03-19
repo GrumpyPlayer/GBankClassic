@@ -267,7 +267,7 @@ function UI_Search:SubmitRequest()
 	self.RequestDialog:Hide()
 	self.requestContext = nil
 
-	GBankClassic_Output:Response("Requested %d x %s from %s", quantity, request.item, request.bank)
+	GBankClassic_Output:Response("Requested %d x %s from %s.", quantity, request.item, request.bank)
 end
 ]]--
 

@@ -65,7 +65,7 @@ if not StaticPopupDialogs["GBANK_SPLIT_STACK"] then
 				After(0.05, function()
 					-- Done! The split stack is now in inventory
 					if GBankClassic_UI_Requests and GBankClassic_UI_Requests.Window then
-						local message = string.format("Split %d %s complete. Click fulfill again to attach items.",
+						local message = string.format("Split %d %s complete. Click fulfill again to attach items",
 							data.amount, data.itemName)
 						GBankClassic_UI_Requests.Window:SetStatusText(message)
 						-- Refresh the request list to update the fulfill button icon
@@ -153,7 +153,7 @@ function Mail:ProcessMail(mailId, attachmentIndex)
     local money = tonumber(moneyString) or 0
 
     if not sender or wasReturned or isGM then
-        GBankClassic_Output:Debug("DONATION", "Processing aborted - invalid mail state")
+        GBankClassic_Output:Debug("DONATION", "Processing aborted: invalid mail state")
 
         return
     end
@@ -166,7 +166,7 @@ function Mail:ProcessMail(mailId, attachmentIndex)
             quantity = select(4, GetInboxItem(mailId, attachmentIndex)) or 1
 
             if not (itemLink and itemID) or quantity <= 0 then 
-                GBankClassic_Output:Debug("DONATION", "Processing aborted - invalid item")
+                GBankClassic_Output:Debug("DONATION", "Processing aborted: invalid item")
 
                 return
             end
@@ -549,7 +549,7 @@ function Mail:ApplyPendingSend()
 	for _, item in ipairs(pending.items) do
 		local applied = GBankClassic_Guild:FulfillRequest(pending.sender, pending.recipient, item.name, item.quantity, pending.requestId)
 		if applied > 0 then
-			GBankClassic_Output:Info("  Applied %dx %s toward %s's request (ID: %s)", applied, item.name, pending.recipient, tostring(pending.requestId))
+			GBankClassic_Output:Info("  Applied %dx %s toward %s's request (ID: %s).", applied, item.name, pending.recipient, tostring(pending.requestId))
 		end
 		totalApplied = totalApplied + applied
 	end
@@ -671,7 +671,7 @@ function Mail:Open(mailId)
 		score = money / 10000
 
 		if GBankClassic_Options:GetBankReporting() then
-			GBankClassic_Output:Info("Received %s gold from %s", score, sender)
+			GBankClassic_Output:Info("Received %s gold from %s.", score, sender)
 		end
 
 		if GBankClassic_UI_Mail.ScoreMail and not self.Roster[sender] then
@@ -704,7 +704,7 @@ function Mail:Open(mailId)
 					score = ((price + 1) / 10000) * quantity
 
 					if GBankClassic_Options:GetBankReporting() then
-						GBankClassic_Output:Info("Received %s (%d) from %s", name, quantity, sender)
+						GBankClassic_Output:Info("Received %s (%d) from %s.", name, quantity, sender)
 					end
 
 					-- Check if this fulfills an active request
@@ -717,7 +717,7 @@ function Mail:Open(mailId)
 						if fulfilled >= requested then
 							GBankClassic_Output:Response("|cff00ff00[Order Filled]|r Received %dx %s from %s - Request Complete!", quantity, name, sender)
 						else
-							GBankClassic_Output:Response("|cff00ff00[Order Filled]|r Received %dx %s from %s (%d/%d)", quantity, name, sender, fulfilled, requested)
+							GBankClassic_Output:Response("|cff00ff00[Order Filled]|r Received %dx %s from %s (%d/%d).", quantity, name, sender, fulfilled, requested)
 						end
 					end
 
