@@ -155,7 +155,6 @@ function UI_Inventory:DrawWindow()
     requestsButton:SetDisabled(true)
 	requestsButton:SetWidth(160)
 	requestsButton:SetHeight(24)
-    requestsButton:Hide()
 	buttonContainer:AddChild(requestsButton)
 
     -- Donations button (opens a donations pane on the right)
