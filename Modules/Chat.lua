@@ -341,7 +341,7 @@ function Chat:ProcessDebouncedMessageWithMultipleGuildBankAlts()
 
     local queryCount = self:ProcessFingerprintAltData(self.debounceQueues.multipleAlts)
 	local pluralQueries = (queryCount ~= 1 and "s" or "")
-	GBankClassic_Output:Debug("PROTOCOL", "Sync complete: queried data for %d guild bank alt%s from best sources.", queryCount, pluralQueries)
+	GBankClassic_Output:Debug("PROTOCOL", "Queried data for %d guild bank alt%s from best sources.", queryCount, pluralQueries)
 
     wipe(self.debounceQueues.multipleAlts)
 end
@@ -491,7 +491,7 @@ function Chat:ProcessFingerprint(data, sender)
 		if data.alts then
 			local queryCount = self:ProcessFingerprintAltData(data.alts, sender)
 			local pluralQueries = (queryCount ~= 1 and "s" or "")
-    		GBankClassic_Output:Info("Sync complete: queried data for %d guild bank alt%s.", queryCount, pluralQueries)
+			GBankClassic_Output:Debug("PROTOCOL", "Queried data for %d guild bank alt%s.", queryCount, pluralQueries)
 		end
 	end
 end
@@ -577,7 +577,6 @@ function Chat:ProcessStateNoChange(data, sender)
         GBankClassic_Guild.requestCount = (GBankClassic_Guild.requestCount or 0) - 1
         if GBankClassic_Guild.requestCount == 0 then
             GBankClassic_Guild.hasRequested = false
-            GBankClassic_Output:Info("Sync completed.")
         end
     end
 end

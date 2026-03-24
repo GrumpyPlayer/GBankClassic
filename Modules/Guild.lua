@@ -1620,7 +1620,6 @@ function Guild:ReceiveAltData(altName, incomingData, sender)
 		end
 		if self.requestCount == 0 then
 			self.hasRequested = false
-			GBankClassic_Output:Info("Sync completed.")
 		end
 	end
 
