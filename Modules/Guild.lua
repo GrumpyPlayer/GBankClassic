@@ -1508,63 +1508,21 @@ function Guild:ReceiveAltData(altName, incomingData, sender)
 	end
 
 	local existing = self.Info.alts[altName]
-	local senderNorm = sender and (self:NormalizeName(sender) or sender) or nil
-
-	-- Guild bank alt protection logic
-	-- Rule 1: Never accept data about yourself (you are source of truth)
-	-- Rule 2: Guild bank alts only accept data about other guild bank alts from that guild bank alt
-	-- Rule 3: Non-guild bank alts accept data from anyone
 	local playerNorm = self:GetNormalizedPlayer()
 	local isOwnData = playerNorm == altName
-	local targetIsGuildBankAlt = self:IsGuildBankAlt(altName)
-	local receiverIsGuildBankAlt = self:IsGuildBankAlt(playerNorm)
 
-	-- Rule 1: Reject data about ourselves (we already have our own current data)
 	if isOwnData then
 		GBankClassic_Output:Debug("SYNC", "ReceiveAltData: rejected data about ourselves")
 
 		return ADOPTION_STATUS.UNAUTHORIZED
 	end
 
-	-- Rule 2: Guild bank alt protection - only apply if WE are a guild bank alt protecting our data
-	-- Regular users should accept guild bank alt data from anyone
-	if receiverIsGuildBankAlt and targetIsGuildBankAlt then
-		-- We are a guild bank alt, and data is about a guild bank alt - only accept if sender is that guild bank alt
-		if senderNorm ~= altName then
-			-- Check timestamps before rejecting - allow if no existing data OR incoming is newer
-			local incomingVersion = incomingData.version
-			local existingVersion = existing and existing.version or nil
-			local shouldAccept = false
-
-			if not existing then
-				shouldAccept = true
-				GBankClassic_Output:Info("Accepting data about %s from %s.", altName, senderNorm or "unknown")
-			elseif incomingVersion and existingVersion and incomingVersion > existingVersion then
-				shouldAccept = true
-				GBankClassic_Output:Info("Accepting newer data about %s from %s.", altName, senderNorm or "unknown")
-			end
-
-			if not shouldAccept then
-				GBankClassic_Output:Debug("SYNC", "ReceiveAltData: rejected data about %s from %s (not newer: incomingVersion=%s, existingVersion=%s)", altName, senderNorm or "unknown", tostring(incomingVersion), tostring(existingVersion))
-
-				return ADOPTION_STATUS.UNAUTHORIZED
-			end
-
-		else
-			GBankClassic_Output:Debug("SYNC", "ReceiveAltData: rejected data from ourselves")
-
-			return ADOPTION_STATUS.UNAUTHORIZED
-		end
-	end
-
-	-- Rule 3: Non-guild bank alts accept all data, non-guild bank alt data accepted from anyone
-	-- Non-guild bank alt conflict resolution: newest wins (timestamped hash)
 	local incomingVersion = incomingData.version
 	local existingVersion = existing and existing.version or nil
 	local existingHasContent = existing and self:HasAltContent(existing, altName) or false
 	local incomingHasContent = self:HasAltContent(incomingData, altName)
+	local targetIsGuildBankAlt = self:IsGuildBankAlt(altName)
 
-	-- Allow incoming data if we have no existing data OR existing has no content
 	local allowStaleBecauseMissingContent = (not existing) or (not existingHasContent and incomingHasContent)
 	if allowStaleBecauseMissingContent then
 		GBankClassic_Output:Debug("SYNC", "ReceiveAltData: accepting data for %s (no existing data or existing has no content)", altName)
@@ -1576,7 +1534,6 @@ function Guild:ReceiveAltData(altName, incomingData, sender)
 		return ADOPTION_STATUS.STALE
 	end
 
-	-- Only reject if we actually have content - if existing has no content, always accept incoming data
 	if existing and existingHasContent and incomingData.inventoryHash and existing.inventoryHash and incomingData.inventoryHash == existing.inventoryHash then
 		GBankClassic_Output:Debug("SYNC", "ReceiveAltData: rejected data as stale for %s (hashes match: incomingHash=%d)", altName, incomingData.inventoryHash)
 
@@ -1599,7 +1556,6 @@ function Guild:ReceiveAltData(altName, incomingData, sender)
 		end
 	end
 
-	-- Legacy fallback: version-based staleness check
 	if existing and incomingData.version ~= nil and existing.version ~= nil and incomingData.version < existing.version and not allowStaleBecauseMissingContent then
 		return ADOPTION_STATUS.STALE
 	end
@@ -1621,12 +1577,10 @@ function Guild:ReceiveAltData(altName, incomingData, sender)
 	self.Info.alts[altName] = incomingData
 	GBankClassic_Output:Debug("SYNC", "ReceiveAltData: accepted and saved guild bank alt data for %s", altName)
 
-	-- Reset search data flag so inventory UI rebuilds search index
 	if GBankClassic_UI_Inventory then
 		GBankClassic_UI_Inventory.searchDataBuilt = false
 	end
 
-	-- Reconstruct links for items (bandwidth optimization)
 	if incomingData.items then
 		self:ReconstructItemLinks(incomingData.items)
 		GBankClassic_UI:RequestRefresh()
