@@ -186,6 +186,12 @@ function Mail:ProcessMail(mailId, attachmentIndex)
 		return
 	end
 
+	if not GBankClassic_Guild.guildMembersCache[sender] then
+        GBankClassic_Output:Debug("DONATION", "Processing aborted: sender %s is not in our guild (%d members)", sender, GBankClassic_Globals:Count(GBankClassic_Guild.guildMembersCache))
+
+		return
+	end
+
     local key, itemLink, itemID, quantity
     if attachmentIndex then
         itemLink = GetInboxItemLink(mailId, attachmentIndex)
