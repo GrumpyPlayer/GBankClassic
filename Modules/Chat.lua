@@ -341,7 +341,7 @@ function Chat:ProcessDebouncedMessageWithMultipleGuildBankAlts()
 
     local queryCount = self:ProcessFingerprintAltData(self.debounceQueues.multipleAlts)
 	local pluralQueries = (queryCount ~= 1 and "s" or "")
-    GBankClassic_Output:Info("Sync complete: queried data for %d guild bank alt%s from best sources.", queryCount, pluralQueries)
+	GBankClassic_Output:Debug("PROTOCOL", "Sync complete: queried data for %d guild bank alt%s from best sources.", queryCount, pluralQueries)
 
     wipe(self.debounceQueues.multipleAlts)
 end
@@ -686,7 +686,7 @@ function Chat:OnCommReceived(prefix, message, distribution, sender)
 			end
 		end
 
-		if data.type == "roster" then -- see Guild:QueryForRosterData
+		if data.type == "roster" then -- See Guild:QueryForRosterData
 			if (data.player and data.player == player) or not data.player then
 				GBankClassic_Output:Debug("PROTOCOL", self:ColorPlayerName(sender), QUERIES_COLOR, "roster data")
 
