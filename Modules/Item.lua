@@ -212,14 +212,17 @@ function Items:GetItems(items, callback)
 
 						if not success then
 							GBankClassic_Output:Debug("ITEM", "CreateFromItemID pcall failed: %s", tostring(itemData))
+							pendingAsync = pendingAsync - 1
 							processed = processed + 1
 							checkComplete()
 						elseif not itemData then
 							GBankClassic_Output:Debug("ITEM", "CreateFromItemID returned nil")
+							pendingAsync = pendingAsync - 1
 							processed = processed + 1
 							checkComplete()
 						elseif type(itemData) ~= "table" then
 							GBankClassic_Output:Debug("ITEM", "CreateFromItemID returned non-table: %s", type(itemData))
+							pendingAsync = pendingAsync - 1
 							processed = processed + 1
 							checkComplete()
 						else
@@ -236,18 +239,22 @@ function Items:GetItems(items, callback)
 							-- Check if itemID matches what we expect
 							if not accessSuccess then
 								GBankClassic_Output:Debug("ITEM", "Cannot access itemData.itemID")
+								pendingAsync = pendingAsync - 1
 								processed = processed + 1
 								checkComplete()
 							elseif objectItemID == nil then
 								GBankClassic_Output:Debug("ITEM", "ERROR: itemData.itemID is nil for requested ID %d", capturedItemID)
+								pendingAsync = pendingAsync - 1
 								processed = processed + 1
 								checkComplete()
 							elseif type(objectItemID) ~= "number" then
 								GBankClassic_Output:Debug("ITEM", "itemData.itemID is not a number: %s", type(objectItemID))
+								pendingAsync = pendingAsync - 1
 								processed = processed + 1
 								checkComplete()
 							elseif objectItemID ~= capturedItemID then
 								GBankClassic_Output:Debug("ITEM", "itemData.itemID mismatch: expected %d, got %d", capturedItemID, objectItemID)
+								pendingAsync = pendingAsync - 1
 								processed = processed + 1
 								checkComplete()
 							else
