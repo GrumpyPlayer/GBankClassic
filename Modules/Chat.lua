@@ -586,7 +586,7 @@ function Chat:OnCommReceived(prefix, message, distribution, sender)
 		return
 	end
 
-	local success, data = GBankClassic_Core:DeserializeWithChecksum(message)
+	local success, data = GBankClassic_Core:DeSerializePayload(message)
 	if not success then
 		GBankClassic_Output:Debug("COMMS", "<", "(error)", prefix, prefixDesc, "from", self:ColorPlayerName(sender), "(failed to deserialize, error=" .. tostring(data) .. ")")
 

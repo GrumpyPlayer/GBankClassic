@@ -11,6 +11,8 @@ local AceComm_SendCommMessage = Core.SendCommMessage
 
 local CHECKSUM_SEPARATOR = "\030" -- ASCII record separator, not used by AceSerializer
 
+local LibCBOR = LibStub("LibCBOR-1.0")
+
 function Core:SendCommMessage(prefix, text, distribution, target, prio, callbackFn, callbackArg)
     local prefixDesc = COMM_PREFIX_DESCRIPTIONS[prefix] or "(Unknown)"
     if IsInInstance() or IsInRaid() then
@@ -92,25 +94,26 @@ function Core:Checksum(str)
     return sum
 end
 
--- Serialize data with appended checksum for integrity verification
-function Core:SerializeWithChecksum(data)
+-- Serialize data
+function Core:SerializePayload(data)
     local serialized = self:Serialize(data)
+    local serializedCBOR = LibCBOR:Serialize(data)
+    GBankClassic_Output:Debug("COMMS", "!!!", "serialized:", #serialized, "serializedCBOR:", #serializedCBOR, "diff:", (#serializedCBOR/#serialized)*100)
     if not serialized then
         return nil
     end
 
-    local checksum = self:Checksum(serialized)
-
-    return serialized .. CHECKSUM_SEPARATOR .. tostring(checksum)
+    return serialized
 end
 
--- Deserialize data and verify checksum; returns success, data (or nil, error)
-function Core:DeserializeWithChecksum(message)
+-- Deserialize data; returns success, data (or nil, error)
+function Core:DeSerializePayload(message)
     if not message or type(message) ~= "string" then
         return false, "invalid message"
     end
 
     -- Find the checksum separator from the end (payload may contain separator)
+    -- TODO: Deprecate this legacy support at the right time (checksum is no longer added to messages as of v2.6.0)
     local sepPos = nil
     local sepByte = string.byte(CHECKSUM_SEPARATOR)
     for i = #message, 1, -1 do
@@ -122,6 +125,7 @@ function Core:DeserializeWithChecksum(message)
     if not sepPos then
         -- No checksum found - fall back to regular deserialize for backwards compatibility
         return self:Deserialize(message)
+        -- return LibCBOR:Deserialize(message)
     end
 
     local serialized = string.sub(message, 1, sepPos - 1)
@@ -138,4 +142,5 @@ function Core:DeserializeWithChecksum(message)
     end
 
     return self:Deserialize(serialized)
+    -- return LibCBOR:Deserialize(message)
 end

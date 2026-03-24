@@ -863,7 +863,7 @@ function Guild:QueryForRosterData(target, theirRosterVersion)
 	GBankClassic_Output:Debug("SYNC", "Querying %s for roster (theirRosterVersion=%d)", GBankClassic_Chat:ColorPlayerName(target), theirRosterVersion)
 
 	local payload = { type = "roster", version = theirRosterVersion }
-	local data = GBankClassic_Core:SerializeWithChecksum(payload)
+	local data = GBankClassic_Core:SerializePayload(payload)
 	if target and GBankClassic_Core:SendWhisper("gbank-r", data, target, "NORMAL") then
 		self:MarkPendingSync("roster", target)
 
@@ -921,7 +921,7 @@ function Guild:QueryForGuildBankAltData(target, altName)
 	else
 		payload = { type = "alt-request", name = altName, requester = self:GetNormalizedPlayer() }
 	end
-	local data = GBankClassic_Core:SerializeWithChecksum(payload)
+	local data = GBankClassic_Core:SerializePayload(payload)
 	if target and GBankClassic_Core:SendWhisper("gbank-r", data, target, "NORMAL") then
 		self:MarkPendingSync("alt", target, altName)
 
@@ -941,7 +941,7 @@ function Guild:SendRosterData(target)
 	end
 
 	local payload = { type = "roster", roster = self.Info.roster }
-	local data = GBankClassic_Core:SerializeWithChecksum(payload)
+	local data = GBankClassic_Core:SerializePayload(payload)
 	if target and GBankClassic_Core:SendWhisper("gbank-d", data, target, "BULK") then
 		return
 	end
@@ -1069,7 +1069,7 @@ function Guild:SendStateSummary(name, target)
 	end
 
 	local payload = { type = "state-summary", name = name, summary = summary }
-	local data = GBankClassic_Core:SerializeWithChecksum(payload)
+	local data = GBankClassic_Core:SerializePayload(payload)
 	if not GBankClassic_Core:SendWhisper("gbank-state", data, target, "NORMAL") then
 		return
 	end
@@ -1100,7 +1100,7 @@ function Guild:RespondToStateSummary(altName, summary, requester)
 
 	if theirHash == ourHash then
 		local payload = { type = "no-change", name = altName, version = ourVersion, hash = ourHash }
-		local data = GBankClassic_Core:SerializeWithChecksum(payload)
+		local data = GBankClassic_Core:SerializePayload(payload)
 		if not GBankClassic_Core:SendWhisper("gbank-nochange", data, requester, "NORMAL") then
 			return
 		end
@@ -1425,7 +1425,7 @@ function Guild:SendAltData(name, target)
 
 	local onChunkSent = createOnChunkSentCallback(norm, dest)
 	local payload = self:CraftDataPayload(currentAlt)
-	local data = GBankClassic_Core:SerializeWithChecksum({ type = "alt", name = norm, alt = payload })
+	local data = GBankClassic_Core:SerializePayload({ type = "alt", name = norm, alt = payload })
 	if channel == "WHISPER" and dest then
 		GBankClassic_Core:SendWhisper("gbank-d", data, dest, "NORMAL", onChunkSent)
 	else
@@ -1708,7 +1708,7 @@ function Guild:Hello(type)
 			GBankClassic_Output:Info(hello)
 		end
 
-		local data = GBankClassic_Core:SerializeWithChecksum(hello)
+		local data = GBankClassic_Core:SerializePayload(hello)
 		if type ~= "reply" then
 			GBankClassic_Core:SendCommMessage("gbank-h", data, "Guild", nil, "BULK")
 		else
@@ -1727,7 +1727,7 @@ function Guild:Wipe(type)
     local wipe = "I wiped all addon data from " .. guild .. "."
     self:Reset(guild)
 
-	local data = GBankClassic_Core:SerializeWithChecksum(wipe)
+	local data = GBankClassic_Core:SerializePayload(wipe)
     if type ~= "reply" then
         GBankClassic_Core:SendCommMessage("gbank-w", data, "Guild", nil, "BULK")
     else
@@ -1772,7 +1772,7 @@ function Guild:Share(type)
 		-- 	version timestamp + inventory hash (bags, bank, money + mail)
 		self:ShareAllGuildBankAltData()
 
-		local data = GBankClassic_Core:SerializeWithChecksum(share)
+		local data = GBankClassic_Core:SerializePayload(share)
 		if type ~= "reply" then
 			GBankClassic_Core:SendCommMessage("gbank-s", data, "Guild", nil, "NORMAL")
 		else
@@ -1829,6 +1829,6 @@ function Guild:ShareAllGuildBankAltData(priority)
 	local isGuildBankAlt = player and self:IsGuildBankAlt(player) or false
 	version.isGuildBankAlt = isGuildBankAlt
 
-	local data = GBankClassic_Core:SerializeWithChecksum(version)
+	local data = GBankClassic_Core:SerializePayload(version)
 	GBankClassic_Core:SendCommMessage("gbank-dv2", data, "Guild", nil, priority or "NORMAL")
 end
