@@ -473,7 +473,6 @@ function UI_Inventory:DrawContent()
 
                 GBankClassic_Output:Debug("ITEM", "Inventory tab %s: GetItems callback received %d items", tab, list and #list or 0)
                 scroll:ReleaseChildren()
-                GBankClassic_Item:Sort(list, GBankClassic_Options.db and GBankClassic_Options.db.char.sortMode)
 
                 -- Apply filters
                 local filteredList = {}
@@ -484,6 +483,7 @@ function UI_Inventory:DrawContent()
                         filteredCount = filteredCount + 1
                     end
                 end
+                GBankClassic_Item:Sort(filteredList, GBankClassic_Options.db and GBankClassic_Options.db.char.sortMode)
 
                 -- Update status text to show filter results
                 self:UpdateStatusText(filteredCount, #list, alt.money or 0, alt.version)
