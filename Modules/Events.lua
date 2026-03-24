@@ -336,8 +336,14 @@ end
 
 -- For guild bank alts
 function Events:BAG_UPDATE_DELAYED(_)
-	GBankClassic_Output:Debug("EVENTS", "BAG_UPDATE_DELAYED event fired (bagUpdateTimer=%s)", tostring(bagUpdateTimer))
+	GBankClassic_Output:Debug("EVENTS", "BAG_UPDATE_DELAYED event fired (bagUpdateTimer=%s, GBankClassic_Mail.isOpen=%s)", tostring(bagUpdateTimer), tostring(GBankClassic_Mail.isOpen))
     if bagUpdateTimer then
+		return
+	end
+
+	if GBankClassic_Mail.isOpen == true then
+		GBankClassic_Output:Debug("EVENTS", "BAG_UPDATE_DELAYED: skipping (mail is still open)")
+
 		return
 	end
 
