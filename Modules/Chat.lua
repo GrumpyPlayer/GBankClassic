@@ -281,7 +281,7 @@ function Chat:QueueDebouncedMessageWithMultipleGuildBankAlts(sender, data)
 
 		-- Addon version check
 		local myVersionData = GBankClassic_Guild:GetVersion()
-		if myVersionData.addon and data.addon > myVersionData.addon then
+		if myVersionData and myVersionData.addon and data.addon > myVersionData.addon then
 			if not self.isAddonOutdated then
 				-- Only make the callout once per session
 				self.isAddonOutdated = true

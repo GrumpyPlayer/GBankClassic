@@ -907,7 +907,7 @@ function Guild:QueryForGuildBankAltData(target, altName)
 		target = guildBankAlt or onlinePeer
 	end
 
-	local peerAddonVersion = GBankClassic_Chat.guildMembersFingerprintData[target].addonVersion
+	local peerAddonVersion = GBankClassic_Chat.guildMembersFingerprintData and GBankClassic_Chat.guildMembersFingerprintData[target] and GBankClassic_Chat.guildMembersFingerprintData[target].addonVersion
 	local isLegacy = false
 	if target and peerAddonVersion < self.addonVersion then
 		isLegacy = true
