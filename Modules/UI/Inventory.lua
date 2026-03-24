@@ -126,9 +126,11 @@ function UI_Inventory:DrawWindow()
     local sortList = {
         ["default"] = "Default (rarity/type)",
         ["alpha"]   = "Alphabetical",
-        ["type"]    = "By type (class/slot)"
+        ["type"]    = "By type (class/slot)",
+        ["rarity"]  = "By rarity",
+        ["level"]   = "By required level"
     }
-    local sortOrder = { "default", "alpha", "type" }
+    local sortOrder = { "default", "alpha", "type", "rarity", "level" }
     local sortDropdown = GBankClassic_UI:Create("Dropdown")
     sortDropdown:SetLabel("Sort")
     sortDropdown:SetList(sortList, sortOrder)

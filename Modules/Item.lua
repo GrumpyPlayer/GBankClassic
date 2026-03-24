@@ -392,6 +392,26 @@ function Items:Sort(items, mode)
 			end
 			return (a.Info.name or "") < (b.Info.name or "")
 		end)
+	-- mode = "rarity" (epic before rare before uncommon and so on, then A-Z)
+	elseif mode == "rarity" then
+		table.sort(items, function(a, b)
+			local aRarity = a.Info.rarity or 0
+			local bRarity = b.Info.rarity or 0
+			if aRarity ~= bRarity then
+				return aRarity > bRarity
+			end
+			return (a.Info.name or "") < (b.Info.name or "")
+		end)
+	-- mode = "level" (highest required level first, then A-Z)
+	elseif mode == "level" then
+		table.sort(items, function(a, b)
+			local aLevel = a.Info.level or 0
+			local bLevel = b.Info.level or 0
+			if aLevel ~= bLevel then
+				return aLevel > bLevel
+			end
+			return (a.Info.name or "") < (b.Info.name or "")
+		end)
 	end
 end
 
