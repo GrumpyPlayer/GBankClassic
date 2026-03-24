@@ -8,7 +8,7 @@ ADOPTION_STATUS = {
 
 -- Timer intervals (in seconds)
 TIMER_INTERVALS = {
-	VERSION_BROADCAST = 180,        -- 3 minutes: lightweight broadcast
+	VERSION_BROADCAST = 180,        -- 3 minutes: lightweight fingerprint broadcast with version and hash data
 	ALT_DATA_QUEUE_RETRY = 5,       -- 5 seconds: queue reprocessing delay
 }
 

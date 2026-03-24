@@ -368,6 +368,14 @@ function UI_Inventory:DrawContent()
 
     self.TabGroup:SetCallback("OnGroupSelected", function(group)
         local tab = group.localstatus.selected
+
+        -- -- Prevent processing the same tab multiple times
+        -- if self.currentTab == tab and self.tabLoaded then
+        --     GBankClassic_Output:Debug("INVENTORY", "Blocked duplicate OnGroupSelected for tab %s.", tab)
+
+        --     return
+        -- end
+
         self.currentTab = tab
         self.tabLoaded = false
         GBankClassic_Output:Debug("ITEM", "Loading tab %s", tab)
