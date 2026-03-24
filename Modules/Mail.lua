@@ -149,14 +149,41 @@ end
 
 -- Helper to extract informatiom from a mail
 function Mail:ProcessMail(mailId, attachmentIndex)
-    local _, _, sender, _, moneyString, _, daysLeft, itemCount, _, wasReturned, _, _, isGM = GetInboxHeaderInfo(mailId)
+    local _, _, sender, subject, moneyString, _, daysLeft, itemCount, _, wasReturned, _, _, isGM = GetInboxHeaderInfo(mailId)
     local money = tonumber(moneyString) or 0
+
+	local subjectPatterns = {
+		AHCancelled = gsub(AUCTION_REMOVED_MAIL_SUBJECT, "%%s", ".*"),
+		AHExpired = gsub(AUCTION_EXPIRED_MAIL_SUBJECT, "%%s", ".*"),
+		AHOutbid = gsub(AUCTION_OUTBID_MAIL_SUBJECT, "%%s", ".*"),
+		AHSuccess = gsub(AUCTION_SOLD_MAIL_SUBJECT, "%%s", ".*"),
+		AHWon = gsub(AUCTION_WON_MAIL_SUBJECT, "%%s", ".*")
+	}
+
+	local function getMailType(msgSubject)
+		if msgSubject then
+			for k, v in pairs(subjectPatterns) do
+				if msgSubject:find(v) then
+					return k
+				end
+			end
+		end
+
+		return "NonAHMail"
+	end
 
     if not sender or wasReturned or isGM then
         GBankClassic_Output:Debug("DONATION", "Processing aborted: invalid mail state")
 
         return
     end
+
+	local mailType = getMailType(subject)
+	if mailType ~= "NonAHMail" then
+        GBankClassic_Output:Debug("DONATION", "Processing aborted: ignoring mails from the auction house (type=%s)", mailType)
+
+		return
+	end
 
     local key, itemLink, itemID, quantity
     if attachmentIndex then
