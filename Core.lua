@@ -59,11 +59,6 @@ function Core:OnInitialize()
     GBankClassic_Chat:Init()
     GBankClassic_Options:Init()
     GBankClassic_UI:Init()
-
-    -- -- Initialize module for item highlights
-    -- if GBankClassic_ItemHighlight and GBankClassic_ItemHighlight.Initialize then
-    --     GBankClassic_ItemHighlight:Initialize()
-    -- end
 end
 
 -- Called when the addon is enabled

@@ -166,7 +166,6 @@ function Guild:Reset(name)
     GBankClassic_Database:Reset(name)
 	GBankClassic_Guild.lastRosterRebuildTime = nil
     self.Info = GBankClassic_Database:Load(name)
-	-- self:EnsureRequestsInitialized()
 	self:RebuildGuildBankAltsRoster()
 end
 
@@ -185,7 +184,6 @@ function Guild:Init(name)
 
 	self.Info = GBankClassic_Database:Load(name)
 	if self.Info then
-		-- self:EnsureRequestsInitialized()
 		self:RebuildGuildBankAltsRoster()
 
 		return true
@@ -732,12 +730,6 @@ function Guild:GetVersion()
     if self.Info.roster.version then
         data.roster = self.Info.roster.version
     end
-
-	-- -- Include request sync summary (version + hash) in version broadcasts.
-	-- data.requests = {
-	-- 	version = self:GetRequestsVersion(),
-	-- 	hash = self:GetRequestsHash(),
-	-- }
 
     for k, v in pairs(self.Info.alts) do
 		if self:IsGuildBankAlt(k) then
@@ -1711,42 +1703,6 @@ function Guild:Hello(type)
 		else
 			hello = hello .. " I know about 0 guild bank alts on the roster, and have guild bank data from 0 alts."
 		end
-
-		-- local pending_count = 0
-		-- local fulfilled_count = 0
-		-- local pending_banks = {}
-		-- for _, req in pairs(currentData.requests or {}) do
-		-- 	local clean = self:SanitizeRequest(req)
-		-- 	if clean and clean.item and clean.item ~= "" then
-		-- 		local qty = tonumber(clean.quantity or 0) or 0
-		-- 		local fulfilled = tonumber(clean.fulfilled or 0) or 0
-		-- 		if qty > 0 then
-		-- 			local is_fulfilled = clean.status == "fulfilled" or clean.status == "complete" or fulfilled >= qty
-		-- 			local is_pending = clean.status == "open" and fulfilled < qty
-		-- 			if is_fulfilled then
-		-- 				fulfilled_count = fulfilled_count + 1
-		-- 			elseif is_pending then
-		-- 				pending_count = pending_count + 1
-		-- 				if clean.bank and clean.bank ~= "" then
-		-- 					pending_banks[clean.bank] = true
-		-- 				end
-		-- 			end
-		-- 		end
-		-- 	end
-		-- end
-
-		-- local pending_bank_list = {}
-		-- for name in pairs(pending_banks) do
-		-- 	table.insert(pending_bank_list, name)
-		-- end
-		-- table.sort(pending_bank_list)
-
-		-- hello = hello .. "\n" .. string.format("I have %d pending item requests and %d fulfilled item requests.", pending_count, fulfilled_count)
-		-- if #pending_bank_list > 0 then
-		-- 	hello = hello .. "\n" .. "Pending requests for bank alts: " .. table.concat(pending_bank_list, ", ") .. "."
-		-- else
-		-- 	hello = hello .. "\n" .. "Pending requests for bank alts: none."
-		-- end
 
 		if type ~= "reply" then
 			GBankClassic_Output:Info(hello)

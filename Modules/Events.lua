@@ -67,23 +67,6 @@ function Events:RegisterGuildBankAltEvents()
 		GBankClassic_Mail:ProcessMoneyDonation(mailId)
 	end)
 
-	-- -- Hook the send mail tab to auto-open requests window for bank alts
-	-- if MailFrameTab2 and not MailFrameTab2.isGBankHooked then
-	-- 	MailFrameTab2.isGBankHooked = true
-	-- 	MailFrameTab2:HookScript("OnClick", function()
-	-- 		local player = GBankClassic_Guild:GetNormalizedPlayer()
-	-- 		if player and GBankClassic_Guild:IsGuildBankAlt(player) then
-	-- 			After(0.1, function()
-	-- 				if GBankClassic_UI_Requests.isOpen then
-	-- 					GBankClassic_UI_Requests:DrawContent()
-	-- 				else
-	-- 					GBankClassic_UI_Requests:Open()
-	-- 				end
-	-- 			end)
-	-- 		end
-	-- 	end)
-	-- end
-
     GBankClassic_Bank.guildBankAltEventsRegistered = true
 end
 
@@ -101,32 +84,10 @@ function Events:RegisterEvents()
 	self:RegisterEvent("PLAYER_REGEN_DISABLED")
 	self:RegisterEvent("MAIL_SHOW")
 	self:RegisterEvent("MAIL_CLOSED")
-	-- self:RegisterEvent("MAIL_SEND_SUCCESS")
 
     hooksecurefunc("ChatEdit_InsertLink", function(link)
         GBankClassic_UI:OnInsertLink(link)
     end)
-
-	-- -- Hook MailFrame visibility changes directly for more reliable detection
-	-- if MailFrame and not MailFrame.isGBankHooked then
-	-- 	MailFrame.isGBankHooked = true
-	-- 	MailFrame:HookScript("OnShow", function()
-	-- 		GBankClassic_Mail.isOpen = true
-	-- 		After(0.1, function()
-	-- 			if GBankClassic_UI_Requests.isOpen then
-	-- 				GBankClassic_UI_Requests:DrawContent()
-	-- 			end
-	-- 		end)
-	-- 	end)
-	-- 	MailFrame:HookScript("OnHide", function()
-	-- 		GBankClassic_Mail.isOpen = false
-	-- 		After(0.1, function()
-	-- 			if GBankClassic_UI_Requests.isOpen then
-	-- 				GBankClassic_UI_Requests:DrawContent()
-	-- 			end
-	-- 		end)
-	-- 	end)
-	-- end
 
 	self:SetShareTimer()
 
@@ -171,7 +132,6 @@ function Events:UnregisterEvents()
 	self:UnregisterEvent("PLAYER_REGEN_DISABLED")
 	self:UnregisterEvent("MAIL_SHOW")
 	self:UnregisterEvent("MAIL_CLOSED")
-	-- self:UnregisterEvent("MAIL_SEND_SUCCESS")
 
 	-- For guild bank alts
 	self:UnregisterGuildBankAltEvents()
@@ -239,8 +199,6 @@ function Events:GUILD_ROSTER_UPDATE(_, importantChange)
 
 	-- Always update online status
 	GBankClassic_Guild:RefreshOnlineMembersCache()
-
-	-- GBankClassic_Guild:RefreshRequestsUI()
 end
 
 function Events:GUILD_RANKS_UPDATE(_)
@@ -289,7 +247,6 @@ function Events:MAIL_SHOW(_)
 	GBankClassic_MailInventory.hasUpdated = true
 	GBankClassic_Output:Debug("MAIL", "MailInventory.hasUpdated set to %s", tostring(GBankClassic_MailInventory.hasUpdated))
     GBankClassic_Mail.isOpen = true
-	-- GBankClassic_Mail:InitSendHook()
     GBankClassic_Mail:Check()
 
 	if not MailFrame.isGBankHooked then
@@ -313,26 +270,9 @@ function Events:MAIL_CLOSED(_)
 	GBankClassic_Mail.isGoldDonationPending = nil
 	GBankClassic_Mail.goldBalanceBeforeDonation = nil
     GBankClassic_Mail.isOpen = false
-    -- GBankClassic_Mail.isScanning = false
-
     GBankClassic_Bank:OnUpdateStart()
     GBankClassic_Bank:OnUpdateStop()
-
-    -- GBankClassic_UI_Mail:Close()
-	-- -- Refresh requests UI to update fulfill button states
-	-- -- Delay slightly to ensure MailFrame state is updated
-	-- After(0.1, function()
-	-- 	if GBankClassic_UI_Requests.isOpen then
-	-- 		GBankClassic_UI_Requests:DrawContent()
-	-- 	end
-	-- end)
 end
-
--- function Events:MAIL_SEND_SUCCESS(_)
--- 	GBankClassic_Output:Debug("MAIL", "MAIL_SEND_SUCCESS event fired")
--- 	GBankClassic_Mail:InitSendHook()
--- 	GBankClassic_Mail:ApplyPendingSend()
--- end
 
 -- For guild bank alts
 function Events:BAG_UPDATE_DELAYED(_)
@@ -433,7 +373,6 @@ function Events:OnShareTimer()
 	end
 
 	GBankClassic_Guild:Share("reply")
-	-- GBankClassic_Guild:QueryRequestsIndex(nil, "NORMAL")
 	self:SetShareTimer()
 end
 

@@ -31,7 +31,6 @@ local function onClose(_)
     UI_Inventory.isOpen = false
     UI_Inventory.Window:Hide()
     GBankClassic_UI_Donations:Close()
-    -- GBankClassic_UI_Requests:Close()
     GBankClassic_UI_Search:Close()
 end
 
@@ -152,11 +151,9 @@ function UI_Inventory:DrawWindow()
 	local requestsButton = GBankClassic_UI:Create("Button")
 	requestsButton:SetText("Requests")
     requestsButton:SetDisabled(true)
-	-- requestsButton:SetCallback("OnClick", function(_)
-	-- 	GBankClassic_UI_Requests:Toggle()
-	-- end)
 	requestsButton:SetWidth(160)
 	requestsButton:SetHeight(24)
+    requestsButton:Hide()
 	buttonContainer:AddChild(requestsButton)
 
     -- Donations button (opens a donations pane on the right)
@@ -502,7 +499,6 @@ function UI_Inventory:DrawContent()
 
                                 return
                             end
-                            -- GBankClassic_UI_Search:ShowRequestDialog(item, tab)
                         end)
                     end
                 end

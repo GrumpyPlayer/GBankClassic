@@ -21,8 +21,6 @@ function Options:Init()
 	self.db.global.bank["report"] = self.db.global.bank["report"] or true
 	self.db.global.bank["logLevel"] = self.db.global.bank["logLevel"] or LOG_LEVEL.INFO
 	self.db.global.bank["commDebug"] = self.db.global.bank["commDebug"] or false
-	-- self.db.global.requests = self.db.global.requests or { maxRequestPercent = 100}
-	-- self.db.global.requests["maxRequestPercent"] = self.db.global.requests["maxRequestPercent"] or 100
 
 	-- Migrate from old shutup toggle to new logLevel
 	if self.db.global.bank["shutup"] ~= nil then
@@ -372,85 +370,6 @@ function Options:Init()
 					},
 				},
 			},
-			-- requests = {
-			-- 	order = 3,
-			-- 	type = "group",
-			-- 	name = "Requests",
-			-- 	hidden = function()
-			-- 		-- Only show to officers
-			-- 		return not CanViewOfficerNote()
-			-- 	end,
-			-- 	args = {
-			-- 		["requestsHeader"] = {
-			-- 			order = 0,
-			-- 			type = "header",
-			-- 			name = "Request settings",
-			-- 		},
-			-- 		["requestsDesc"] = {
-			-- 			order = 1,
-			-- 			type = "description",
-			-- 			name = "Configure how item requests work to help manage bank inventory fairly.",
-			-- 		},
-			-- 		["maxRequestPercent"] = {
-			-- 			order = 2,
-			-- 			type = "range",
-			-- 			width = "full",
-			-- 			name = "Maximum request amount",
-			-- 			desc = "Limit how much of available inventory can be requested at once. Set to 100% to allow requesting everything. Lower values help share inventory among multiple guild members.\n\nExample: At 50%, if bank has 100 Copper Ore, members can request up to 50.\n\nNote: Single items (like gear) can always be requested even at low percentages.",
-			-- 			min = 1,
-			-- 			max = 100,
-			-- 			step = 1,
-			-- 			get = function()
-			-- 				return Options:GetMaxRequestPercent()
-			-- 			end,
-			-- 			set = function(_, v)
-			-- 				-- Write to guild-synced settings (propagates to all clients)
-			-- 				if GBankClassic_Guild and GBankClassic_Guild.Info and GBankClassic_Guild.Info.settings then
-			-- 					GBankClassic_Guild.Info.settings.maxRequestPercent = v
-			-- 					-- Broadcast settings change to guild
-			-- 					if GBankClassic_Guild.SendRequestsData then
-			-- 						GBankClassic_Guild:SendRequestsData()
-			-- 					end
-			-- 				end
-			-- 				-- Also write to local settings as backup
-			-- 				self.db.global.requests.maxRequestPercent = v
-			-- 				GBankClassic_Output:Info("Maximum request amount set to %d%%.", v)
-			-- 			end,
-			-- 		},
-			-- 		["exampleGroup"] = {
-			-- 			order = 3,
-			-- 			type = "group",
-			-- 			inline = true,
-			-- 			name = "Example calculations",
-			-- 			args = {
-			-- 				["example1"] = {
-			-- 					order = 1,
-			-- 					type = "description",
-			-- 					fontSize = "medium",
-			-- 					name = function()
-			-- 						local pct = self.db.global.requests.maxRequestPercent or 100
-			-- 						local available = 100
-			-- 						local maxRequest = math.max(1, math.floor(available * pct / 100))
-
-			-- 						return string.format("|cff00ff00Current setting: %d%%|r\n\nIf bank has %d items available:\n  Max: |cffffd700%d items|r", pct, available, maxRequest)
-			-- 					end,
-			-- 				},
-			-- 				["example2"] = {
-			-- 					order = 2,
-			-- 					type = "description",
-			-- 					fontSize = "medium",
-			-- 					name = function()
-			-- 						local pct = self.db.global.requests.maxRequestPercent or 100
-			-- 						local available = 1
-			-- 						local maxRequest = math.max(1, math.floor(available * pct / 100))
-
-			-- 						return string.format("If bank has %d item available (gear/single):\n  Max: |cffffd700%d item|r", available, maxRequest)
-			-- 					end,
-			-- 				},
-			-- 			},
-			-- 		},
-			-- 	},
-			-- },
         },
     }
 
@@ -578,21 +497,6 @@ end
 function Options:GetCombatHide()
     return self.db.char.combat["hide"]
 end
-
---[[
-function Options:GetMaxRequestPercent()
-	-- Read from guild-synced settings first (officer-configured, syncs to all clients)
-	if GBankClassic_Guild and GBankClassic_Guild.Info and GBankClassic_Guild.Info.settings then
-		return GBankClassic_Guild.Info.settings.maxRequestPercent or 100
-	end
-	-- Fall back to local setting if guild data not loaded yet
-	if not self.db or not self.db.global or not self.db.global.requests then
-		return 100
-	end
-
-	return self.db.global.requests.maxRequestPercent or 100
-end
-]]--
 
 function Options:Open()
     Settings.OpenToCategory("GBankClassic - Revived")

@@ -33,8 +33,6 @@ function UI:Init()
     GBankClassic_UI_Inventory:Init()
     GBankClassic_UI_Search:Init()
     GBankClassic_UI_Donations:Init()
-	-- GBankClassic_UI_Requests:Init()
-	-- GBankClassic_UI_Mail:Init()
 end
 
 function UI:RequestRefresh()

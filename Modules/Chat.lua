@@ -101,19 +101,6 @@ function Chat:Init()
     GBankClassic_Core:RegisterComm("gbank-wr", function(prefix, message, distribution, sender)
         self:OnCommReceived(prefix, message, distribution, sender)
     end)
-
-	--[[
-	-- Request-specific message handlers
-	GBankClassic_Core:RegisterComm("gbank-rm", function(prefix, message, distribution, sender)
-		self:OnCommReceived(prefix, message, distribution, sender)
-	end)
-	GBankClassic_Core:RegisterComm("gbank-rq", function(prefix, message, distribution, sender)
-		self:OnCommReceived(prefix, message, distribution, sender)
-	end)
-	GBankClassic_Core:RegisterComm("gbank-rd", function(prefix, message, distribution, sender)
-		self:OnCommReceived(prefix, message, distribution, sender)
-	end)
-	]]--
 end
 
 -- Helper for the sync status
@@ -760,79 +747,6 @@ function Chat:OnCommReceived(prefix, message, distribution, sender)
 	if prefix == "gbank-wr" then
 		GBankClassic_Output:Debug("QUERIES",  "gbank-wr", data)
 	end
-
-	--[[
-	if prefix == "gbank-rm" then		
-		-- Critical debug for request mutations
-		if data.type == "requests-log" then
-			GBankClassic_Output:Debug("REQUESTS", "%s requests-log received from %s, about to call ReceiveRequestMutations", prefix, sender)
-		end
-		if data.type == "requests" then
-			local status = GBankClassic_Guild:ReceiveRequestsData(data)
-			GBankClassic_Output:Debug("REQUESTS", ">", self:ColorPlayerName(sender), SHARES_COLOR, "requests snapshot. We accept it by default", formatSyncStatus(status))
-		end
-		if data.type == "requests-index" then
-			GBankClassic_Output:Debug("REQUESTS", ">", self:ColorPlayerName(sender), SHARES_COLOR, "requests index. We accept it by default")
-			GBankClassic_Guild:ReceiveRequestsIndex(data, sender)
-		end
-		if data.type == "requests-by-id" then
-			local status = GBankClassic_Guild:ReceiveRequestsById(data)
-			GBankClassic_Output:Debug("REQUESTS", ">", self:ColorPlayerName(sender), SHARES_COLOR, "requests by-id data. We accept it by default", formatSyncStatus(status))
-		end
-		if data.type == "requests-log" then
-			GBankClassic_Output:Debug("REQUESTS", ">", self:ColorPlayerName(sender), SHARES_COLOR, "request mutations. We accept by default")
-			GBankClassic_Guild:ReceiveRequestMutations(data, sender)
-		end
-	end
-
-	if prefix == "gbank-rq" then
-		GBankClassic_Output:Debug("REQUESTS", ">", self:ColorPlayerName(sender), QUERIES_COLOR, "request query:", data.type or "unknown", "")
-
-		-- Request data is guild-wide, anyone can respond (player="*")
-		if data.type == "requests" then
-			local matches = (data.player == "*" or data.player == player)
-			if matches then
-				GBankClassic_Guild:SendRequestsSnapshot(sender)
-			end
-		end
-		if data.type == "requests-index" then
-			local matches = (data.player == "*" or data.player == player)
-			if matches then
-				-- If hashes match, querier already has exactly what we have - stay silent
-				local myHash = GBankClassic_Guild:GetRequestsHash()
-				local querierHash = tonumber(data.hash) or 0
-				if querierHash == 0 or myHash ~= querierHash then
-					GBankClassic_Guild:SendRequestsIndex(sender)
-				end
-			end
-		end
-		if data.type == "requests-by-id" then
-			local matches = (data.player == "*" or data.player == player)
-			if matches then
-				GBankClassic_Guild:SendRequestsById(sender, data.ids)
-			end
-		end
-	end
-
-	if prefix == "gbank-rd" then
-		if data.type == "requests" then
-			local status = GBankClassic_Guild:ReceiveRequestsData(data)
-			GBankClassic_Output:Debug("REQUESTS", ">", self:ColorPlayerName(sender), SHARES_COLOR, "requests snapshot", formatSyncStatus(status))
-		end
-		if data.type == "requests-index" then
-			GBankClassic_Output:Debug("REQUESTS", ">", self:ColorPlayerName(sender), SHARES_COLOR, "requests index")
-			GBankClassic_Guild:ReceiveRequestsIndex(data, sender)
-		end
-		if data.type == "requests-by-id" then
-			local status = GBankClassic_Guild:ReceiveRequestsById(data)
-			GBankClassic_Output:Debug("REQUESTS", ">", self:ColorPlayerName(sender), SHARES_COLOR, "requests by-id data", formatSyncStatus(status))
-		end
-		if data.type == "requests-log" then
-			GBankClassic_Output:Debug("REQUESTS", ">", self:ColorPlayerName(sender), SHARES_COLOR, "request mutations")
-			GBankClassic_Guild:ReceiveRequestMutations(data, sender)
-		end
-	end
-	]]--
 end
 
 -- Help text color codes
@@ -953,58 +867,6 @@ local COMMAND_REGISTRY = {
 			GBankClassic_Guild:Hello()
 		end,
 	},
-	-- {
-	-- 	name = "persistcheck",
-	-- 	help = "check current request persistence state",
-	-- 	expert = true,
-	-- 	handler = function()
-	-- 		if not GBankClassic_Guild or not GBankClassic_Guild.Info then
-	-- 			GBankClassic_Output:Error("Guild info not loaded.")
-
-	-- 			return
-	-- 		end
-
-	-- 		local logCount = #(GBankClassic_Guild.Info.requestLog or {})
-	-- 		local appliedCount = 0
-	-- 		local appliedActors = {}
-	-- 		if GBankClassic_Guild.Info.requestLogApplied then
-	-- 			for actor, seq in pairs(GBankClassic_Guild.Info.requestLogApplied) do
-	-- 				appliedCount = appliedCount + 1
-	-- 				table.insert(appliedActors, string.format("%s=%d", actor, seq))
-	-- 			end
-	-- 		end
-	-- 		local requestCount = #(GBankClassic_Guild.Info.requests or {})
-	-- 		local seqCount = GBankClassic_Guild.Info.requestLogSeq and GBankClassic_Globals:Count(GBankClassic_Guild.Info.requestLogSeq) or 0
-
-	-- 		GBankClassic_Output:Response("=== Request persistence state ===")
-	-- 		GBankClassic_Output:Response("requests: %d items", requestCount)
-	-- 		GBankClassic_Output:Response("requestLog: %d entries", logCount)
-	-- 		GBankClassic_Output:Response("requestLogApplied: %d actors", appliedCount)
-	-- 		if appliedCount > 0 then
-	-- 			GBankClassic_Output:Response("  %s", table.concat(appliedActors, ", "))
-	-- 		end
-	-- 		GBankClassic_Output:Response("requestLogSeq: %d actors", seqCount)
-
-	-- 		-- Check if data is referencing SavedVariables
-	-- 		local db = GBankClassic_Database and GBankClassic_Database.db
-	-- 		if db and db.faction then
-	-- 			local guildName = GBankClassic_Guild:GetGuildName()
-	-- 			if guildName and db.faction[guildName] then
-	-- 				local isSameRef = (GBankClassic_Guild.Info == db.faction[guildName])
-	-- 				GBankClassic_Output:Response("Guild.Info %s SavedVariables reference", isSameRef and "is" or "is not")
-	-- 			end
-	-- 		end
-	-- 	end,
-	-- },
-	-- {
-	-- 	name = "requestlog",
-	-- 	usage = "[N|all]",
-	-- 	help = "print the request log, optionally limited to N entries",
-	-- 	expert = true,
-	-- 	handler = function(arg1)
-	-- 		GBankClassic_Guild:PrintRequestLog(arg1)
-	-- 	end,
-	-- },
 	{
 		name = "roster",
 		help = "if officer notes are used to define guild bank alts, use this command to share the roster of guild bank alts with online guild members",

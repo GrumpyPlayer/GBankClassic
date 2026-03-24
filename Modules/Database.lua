@@ -43,12 +43,6 @@ function Database:Reset(name)
         name = name,
         roster = {},
         alts = {},
-		-- requests = {},
-		-- requestsVersion = 0,
-		-- requestsTombstones = {},
-		-- settings = {
-		-- 	maxRequestPercent = 100, -- Default to no limit
-		-- },
 		guildProtocolVersions = {},
     }
 
@@ -128,16 +122,6 @@ function Database:Load(name)
 			end
 		end
 	end
-
-	-- if not db.requests then
-	-- 	db.requests = {}
-	-- end
-	-- if not db.requestsVersion then
-	-- 	db.requestsVersion = 0
-	-- end
-	-- if not db.requestsTombstones then
-	-- 	db.requestsTombstones = {}
-	-- end
 
 	if not db.guildProtocolVersions then
 		db.guildProtocolVersions = {}

@@ -29,7 +29,7 @@ DEBUG_CATEGORY = {
 	CHUNK = "CHUNK",             -- Data synchronization operations specific to chunk sending
 	DONATION = "DONATION",		 -- Donation ledger operations
 	WHISPER = "WHISPER",         -- Whisper sends, skips, and online checks
-	-- REQUESTS = "REQUESTS",       -- Request system activity and updates
+	-- REQUESTS = "REQUESTS",    -- Request system activity and updates
 	UI = "UI",                   -- UI operations, window opens/closes
 	PROTOCOL = "PROTOCOL",       -- Protocol version negotiation and debouncing
 	DATABASE = "DATABASE",       -- Database operations, SavedVariables
@@ -42,19 +42,6 @@ DEBUG_CATEGORY = {
 	QUERIES = "QUERIES",         -- Peer query/response decisions and hash matching
 	REPLIES = "REPLIES",		 -- Debug output from /bank hello replies and /bank wipeall replies
 }
-
--- -- Request storage settings
--- REQUEST_LOG = {
--- 	EXPIRY_SECONDS = 30 * 24 * 60 * 60,      -- 30 days: completed/cancelled requests and tombstones removed after this
--- 	PRUNE_INTERVAL = 300,                    -- 5 minutes: minimum interval between automatic prunes
--- }
-
--- -- Request sync throttling settings
--- REQUESTS_SYNC = {
--- 	-- Short values for quick testing; production values should be higher.
--- 	INDEX_QUERY_COOLDOWN = 60,         -- Seconds between index queries (global and per-sender)
--- 	INDEX_INFLIGHT_TIMEOUT = 30,       -- Seconds before in-flight index sync is considered stale
--- }
 
 -- Communication prefix descriptions for debug logging (maximum of 16 characters)
 COMM_PREFIX_DESCRIPTIONS = {
@@ -71,10 +58,6 @@ COMM_PREFIX_DESCRIPTIONS = {
 	["gbank-sr"] = "(Share reply)",
 	["gbank-w"] = "(Wipe)",
 	["gbank-wr"] = "(Wipe reply)",
-
-	-- ["gbank-rq"] = "(Request query)",
-	-- ["gbank-rd"] = "(Request data)",
-	-- ["gbank-rm"] = "(Request mutations)",
 }
 
 -- Protocol version and capabilities
