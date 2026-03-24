@@ -13,7 +13,6 @@ local CHECKSUM_SEPARATOR = "\030" -- ASCII record separator, not used by AceSeri
 
 local LibSerialize = LibStub("LibSerialize")
 local LibDeflate = LibStub:GetLibrary("LibDeflate")
-local LibCBOR = LibStub("LibCBOR-1.0")
 
 function Core:SendCommMessage(prefix, text, distribution, target, prio, callbackFn, callbackArg)
     local prefixDesc = COMM_PREFIX_DESCRIPTIONS[prefix] or "(Unknown)"
@@ -98,36 +97,18 @@ end
 
 -- Serialize data
 function Core:SerializePayload(data)
+    --[[ NEW:
     local serializedData = LibSerialize:Serialize(data)
-    local compressedData = LibDeflate:CompressDeflate(serializedData, {level = 8})
+    local compressedData = LibDeflate:CompressDeflate(serializedData, {level = 6})
     local encodedData = LibDeflate:EncodeForWoWAddonChannel(compressedData)
-    local compressedDataMax = LibDeflate:CompressDeflate(serializedData, {level = 9})
-    local encodedDataMax = LibDeflate:EncodeForWoWAddonChannel(compressedDataMax)
 
-    local serializedCBOR = LibCBOR:Serialize(data)
-    local serializedCBORcompressedData = LibDeflate:CompressDeflate(serializedCBOR, {level = 8})
-    local serializedCBORencodedData = LibDeflate:EncodeForWoWAddonChannel(serializedCBORcompressedData)
-    local serializedCBORcompressedDataMax = LibDeflate:CompressDeflate(serializedCBOR, {level = 9})
-    local serializedCBORencodedDataMax = LibDeflate:EncodeForWoWAddonChannel(serializedCBORcompressedDataMax)
+    return encodedData
+    ]]-- OLD:
 
     local serialized = self:Serialize(data)
-    local serializedcompressedData = LibDeflate:CompressDeflate(serialized, {level = 8})
-    local serializedencodedData = LibDeflate:EncodeForWoWAddonChannel(serializedcompressedData)
-    local serializedcompressedDataMax = LibDeflate:CompressDeflate(serialized, {level = 9})
-    local serializedencodedDataMax = LibDeflate:EncodeForWoWAddonChannel(serializedcompressedDataMax)
     if not serialized then
         return nil
     end
-
-    GBankClassic_Output:Debug("COMMS", "!!!", "AceSerializer",                  ":", #serialized)
-    GBankClassic_Output:Debug("COMMS", "!!!", "AceSerializer + LibDeflate L8",  ":", #serializedencodedData,            "diff:", (#serializedencodedData/#serialized)*100)
-    GBankClassic_Output:Debug("COMMS", "!!!", "AceSerializer + LibDeflate L9",  ":", #serializedencodedDataMax,         "diff:", (#serializedencodedDataMax/#serialized)*100)
-    GBankClassic_Output:Debug("COMMS", "!!!", "LibSerialize",                   ":", #serializedData,                   "diff:", (#serializedData/#serialized)*100)
-    GBankClassic_Output:Debug("COMMS", "!!!", "LibSerialize + LibDeflate L8",   ":", #encodedData,                      "diff:", (#encodedData/#serialized)*100)
-    GBankClassic_Output:Debug("COMMS", "!!!", "LibSerialize + LibDeflate L9",   ":", #encodedDataMax,                   "diff:", (#encodedDataMax/#serialized)*100)
-    GBankClassic_Output:Debug("COMMS", "!!!", "LibCBOR",                        ":", #serializedCBOR,                   "diff:", (#serializedCBOR/#serialized)*100)
-    GBankClassic_Output:Debug("COMMS", "!!!", "LibCBOR + LibDeflate L8",        ":", #serializedCBORencodedData,        "diff:", (#serializedCBORencodedData/#serialized)*100)
-    GBankClassic_Output:Debug("COMMS", "!!!", "LibCBOR + LibDeflate L9",        ":", #serializedCBORencodedDataMax,     "diff:", (#serializedCBORencodedDataMax/#serialized)*100)
 
     return serialized
 end
@@ -137,6 +118,13 @@ function Core:DeSerializePayload(message)
     if not message or type(message) ~= "string" then
         return false, "invalid message"
     end
+
+    --[[ NEW:
+    local decoded = LibDeflate:DecodeForWoWAddonChannel(message)
+    local inflated = LibDeflate:DecompressDeflate(decoded)
+
+    return success, data = LibSerialize:Deserialize(inflated)
+    ]]-- OLD:
 
     -- Find the checksum separator from the end (payload may contain separator)
     -- TODO: Deprecate this legacy support at the right time (checksum is no longer added to messages as of v2.6.0)
@@ -168,5 +156,4 @@ function Core:DeSerializePayload(message)
     end
 
     return self:Deserialize(serialized)
-    -- return LibCBOR:Deserialize(message)
 end
