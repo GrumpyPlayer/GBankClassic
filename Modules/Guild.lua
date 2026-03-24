@@ -1161,9 +1161,9 @@ end
 local itemReconstructQueue = {}
 local isProcessingQueue = false
 local pendingAsyncLoads = 0 -- Track number of pending async loads
-local MAX_CONCURRENT_ASYNC = 3 -- Limit concurrent async operations
-local BATCH_SIZE = 10 -- Process 10 items at a time
-local BATCH_DELAY = 0.25 -- 0.25 second delay between batches (slower = smoother)
+local MAX_CONCURRENT_ASYNC = 8 -- Limit concurrent async operations
+local BATCH_SIZE = 25 -- Process 25 items at a time
+local BATCH_DELAY = 0.2 -- 0.2 second delay between batches (slower = smoother)
 
 local function processItemQueue()
 	if #itemReconstructQueue == 0 then
