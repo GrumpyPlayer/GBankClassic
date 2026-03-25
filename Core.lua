@@ -109,8 +109,9 @@ function Core:SerializePayload(data)
     if not serialized then
         return nil
     end
+    local checksum = self:Checksum(serialized)
 
-    return serialized
+    return serialized .. CHECKSUM_SEPARATOR .. tostring(checksum)
 end
 
 -- Deserialize data; returns success, data (or nil, error)
