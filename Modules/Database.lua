@@ -96,7 +96,7 @@ function Database:Load(name)
 				-- Clear and rebuild items from bank, bags, and mail if legacy data exists
 				if (alt.bank and alt.bank.items and #alt.bank.items > 0) or (alt.bags and alt.bags.items and #alt.bags.items > 0) or (alt.mail and alt.mail.items and #alt.mail.items > 0) then
 					alt.items = nil
-					GBankClassic_Bank:RecalculateAggregatedItems(alt.bank, alt.bags, alt.mail, alt)
+					GBankClassic_Bank:RecalculateAggregatedItems(alt.bank and alt.bank.items or nil, alt.bags and alt.bags.items or nil, alt.mail and alt.mail.items or nil, alt)
 					alt.bank = nil
 					alt.bags = nil
 					alt.mail = nil
@@ -104,6 +104,8 @@ function Database:Load(name)
 
 				-- Ensure items is always fully aggregated and then recompute the hash and reconstruct item links
 				if alt.items then
+					local money = alt.money or 0
+
 					local aggregated = GBankClassic_Item:Aggregate(alt.items, nil)
 					alt.items = {}
 					for _, item in pairs(aggregated) do
@@ -111,11 +113,19 @@ function Database:Load(name)
 					end
 					GBankClassic_Output:Debug("DATABASE", "Forced deduplication for guild bank alt %s: %d items", altName, #alt.items)
 
-					local money = alt.money or 0
-					alt.inventoryHash = GBankClassic_Bank:ComputeLegacyInventoryHash(alt.items, money)
-					alt.improvedInventoryHash = GBankClassic_Bank:ComputeImprovedInventoryHash(alt.items, money)
-					GBankClassic_Output:Debug("DATABASE", "Recomputed inventory hash after recalculation for %s: %d", altName, alt.inventoryHash)
-					GBankClassic_Output:Debug("DATABASE", "Recomputed improved inventory hash after recalculation for %s: %d", altName, alt.improvedInventoryHash)
+					-- Wipe hashes and version timestamp if there are no items
+					if #alt.items == 0 then
+						alt.inventoryHash = nil
+						alt.improvedInventoryHash = nil
+						alt.version = nil
+					end
+
+					-- Only recalculate the new hash if it does not already exist and if there is at least 1 item
+					local oldImprovedInventoryHash = alt.improvedInventoryHash
+					if not oldImprovedInventoryHash and #alt.items > 0 then
+						alt.improvedInventoryHash = GBankClassic_Bank:ComputeImprovedInventoryHash(alt.items, money)
+						GBankClassic_Output:Debug("DATABASE", "Recomputed improved inventory hash after recalculation for %s: %d", altName, alt.improvedInventoryHash)
+					end
 
 					GBankClassic_Guild:ReconstructItemLinks(alt.items)
 				end

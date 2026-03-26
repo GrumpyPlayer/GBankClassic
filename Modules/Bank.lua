@@ -174,11 +174,8 @@ function Bank:Scan()
 	self:RecalculateAggregatedItems(alt.cache.bank.items, alt.cache.bags.items, alt.cache.mail.items, alt)
 
 	-- Compute hash of the current inventory state
-	local currentHash = self:ComputeLegacyInventoryHash(alt.items, money)
-	local previousHash = alt.inventoryHash
 	local currentImprovedInventoryHash = self:ComputeImprovedInventoryHash(alt.items, money)
 	local previousImprovedInventoryHash = alt.improvedInventoryHash
-	alt.inventoryHash = currentHash
 	alt.improvedInventoryHash = currentImprovedInventoryHash
 
 	if currentImprovedInventoryHash ~= previousImprovedInventoryHash then
@@ -285,34 +282,6 @@ function Bank:ComputeImprovedInventoryHash(items, money)
 				end
 
 				table.insert(sorted, string.format("%s:%d", itemIdentity, itemCount))
-			end
-		end
-		table.sort(sorted)
-
-		return table.concat(sorted, ",")
-	end
-
-	table.insert(parts, "I:" .. hashItems(items))
-	local combined = table.concat(parts, "|")
-
-	return GBankClassic_Core:Checksum(combined) or 0
-end
-
--- Compute the legacy hash of the inventory state to detect changes
-function Bank:ComputeLegacyInventoryHash(items, money)
-	local parts = {}
-	table.insert(parts, tostring(money))
-
-	-- Hash aggregated items directly
-	local function hashItems(itemsArray)
-		if not itemsArray or type(itemsArray) ~= "table" then
-			return ""
-		end
-
-		local sorted = {}
-		for _, item in ipairs(itemsArray) do
-			if item and item.ID then
-				table.insert(sorted, string.format("%d:%d", item.ID, item.Count or 0))
 			end
 		end
 		table.sort(sorted)
