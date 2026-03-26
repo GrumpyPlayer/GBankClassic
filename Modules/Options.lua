@@ -351,7 +351,7 @@ function Options:Init()
 						name = "Enable all categories",
 						func = function()
 							GBankClassic_Output:EnableAllCategories()
-							GBankClassic_Output:Info("All debug categories enabled.")
+							GBankClassic_Output:Response("All debug categories enabled.")
 						end,
 					},
 					["disableAll"] = {
@@ -360,7 +360,7 @@ function Options:Init()
 						name = "Disable all categories",
 						func = function()
 							GBankClassic_Output:DisableAllCategories()
-							GBankClassic_Output:Info("All debug categories disabled.")
+							GBankClassic_Output:Response("All debug categories disabled.")
 						end,
 					},
 					["spacer2"] = {

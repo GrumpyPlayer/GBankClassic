@@ -285,7 +285,7 @@ function Chat:QueueDebouncedMessageWithMultipleGuildBankAlts(sender, data)
 			if not self.isAddonOutdated then
 				-- Only make the callout once per session
 				self.isAddonOutdated = true
-				GBankClassic_Output:Info("A newer version is available! Download it from https://www.curseforge.com/wow/addons/gbankclassic-revived")
+				GBankClassic_Output:Response("A newer version is available! Download it from https://www.curseforge.com/wow/addons/gbankclassic-revived")
 			end
 		end
     end
@@ -743,7 +743,7 @@ function Chat:OnCommReceived(prefix, message, distribution, sender)
 				if not self.isAddonOutdated then
 					-- Only make the callout once per session
 					self.isAddonOutdated = true
-					GBankClassic_Output:Info("A newer version is available! Download it from https://www.curseforge.com/wow/addons/gbankclassic-revived")
+					GBankClassic_Output:Response("A newer version is available! Download it from https://www.curseforge.com/wow/addons/gbankclassic-revived")
 				end
 			end
 		end
@@ -755,7 +755,7 @@ function Chat:OnCommReceived(prefix, message, distribution, sender)
 				self.printVersionsTimer = nil
 			end
 			self.printVersionsTimer = GBankClassic_Core:ScheduleTimer(function()
-				GBankClassic_Chat:PrintVersions()
+				self:PrintVersions()
 			end, 15)
 		end
 	end

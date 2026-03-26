@@ -1694,7 +1694,7 @@ end
 -- Create and send latest version of the roster after enabling a new guild bank alt or /bank roster
 function Guild:AuthorRosterData()
 	if GBankClassic_Guild.isAnyoneAuthority then
-	 	GBankClassic_Output:Info("All guild members can view officer notes. There's no point in broadcasting your roster. Aborted.")
+	 	GBankClassic_Output:Response("All guild members can view officer notes. There's no point in broadcasting your roster. Aborted.")
 
 		return
 	end
@@ -1709,15 +1709,15 @@ function Guild:AuthorRosterData()
 				table.insert(characterNames, guildBankAltName)
 			end
 			if #characterNames > 0 then
-				GBankClassic_Output:Info("Sent updated roster containing the follow banks: " .. table.concat(characterNames, ", ") .. ".")
+				GBankClassic_Output:Response("Sent updated roster containing the follow banks: " .. table.concat(characterNames, ", ") .. ".")
 			else
-				GBankClassic_Output:Info("Sent empty roster.")
+				GBankClassic_Output:Response("Sent empty roster.")
 			end
 		else
-			GBankClassic_Output:Info("Sent empty roster.")
+			GBankClassic_Output:Response("Sent empty roster.")
 		end
 	else
-		GBankClassic_Output:Warn("You lack permissions to share the roster. Only players that can view officer notes are permitted.")
+		GBankClassic_Output:Response("You lack permissions to share the roster. Only players that can view officer notes are permitted.")
 
 		return
 	end
