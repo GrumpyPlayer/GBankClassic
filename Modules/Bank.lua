@@ -176,7 +176,14 @@ function Bank:Scan()
 	-- Compute hash of the current inventory state
 	local currentImprovedInventoryHash = self:ComputeImprovedInventoryHash(alt.items, money)
 	local previousImprovedInventoryHash = alt.improvedInventoryHash
-	alt.improvedInventoryHash = currentImprovedInventoryHash
+	-- Store the hash if there's at least 1 item
+	if #alt.items > 0 then
+		alt.improvedInventoryHash = currentImprovedInventoryHash
+		alt.inventoryHash = currentImprovedInventoryHash
+	else
+		alt.improvedInventoryHash = nil
+		alt.inventoryHash = nil
+	end
 
 	if currentImprovedInventoryHash ~= previousImprovedInventoryHash then
 		alt.version = GetServerTime()
