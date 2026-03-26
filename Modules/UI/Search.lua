@@ -3,11 +3,13 @@ GBankClassic_UI_Search = GBankClassic_UI_Search or {}
 local UI_Search = GBankClassic_UI_Search
 
 local Globals = GBankClassic_Globals
-local upvalues = Globals.GetUpvalues("GetCursorInfo", "ClearCursor", "IsShiftKeyDown", "IsControlKeyDown")
+local upvalues = Globals.GetUpvalues("GetCursorInfo", "ClearCursor", "IsShiftKeyDown", "IsControlKeyDown", "CreateFrame", "GameTooltip")
 local GetCursorInfo = upvalues.GetCursorInfo
 local ClearCursor = upvalues.ClearCursor
 local IsShiftKeyDown = upvalues.IsShiftKeyDown
 local IsControlKeyDown = upvalues.IsControlKeyDown
+local CreateFrame = upvalues.CreateFrame
+local GameTooltip = upvalues.GameTooltip
 local upvalues = Globals.GetUpvalues("Item")
 local Item = upvalues.Item
 
@@ -102,32 +104,61 @@ function UI_Search:DrawWindow()
     searchWindow:SetWidth(250)
     self.Window = searchWindow
 
-    local searchInput = GBankClassic_UI:Create("EditBox")
-    searchInput:SetMaxLetters(50)
-    searchInput:SetLabel("Item name")
-    searchInput:SetCallback("OnTextChanged", function(input)
-        self.SearchText = input:GetText()
+    local searchLabel = searchWindow.frame:CreateFontString(nil, "BACKGROUND", "GameFontHighlightSmall")
+    searchLabel:SetTextColor(1,.82,0)
+    searchLabel:SetPoint("TOPLEFT", searchWindow.frame, "TOPLEFT", 17, -19)
+    searchLabel:SetHeight(44)
+    searchLabel:SetText("Item name")
+    self.searchLabel = searchLabel
+
+    local instructions = "Type at least 3 letters to search"
+    local searchInput = CreateFrame("EditBox", "GBankClassicSearch", searchWindow.frame, "SearchBoxTemplate")
+    searchInput:SetPoint("TOPLEFT", searchWindow.frame, "TOPLEFT", 24, -51)
+    searchInput:SetSize(210, 20)
+    searchInput.Instructions:SetText(instructions)
+    searchInput:SetScript("OnEditFocusLost", function(input)
+        if input:GetText() == "" then
+            self.searchField.Instructions:SetText(instructions)
+        end
+    end)
+	searchInput:SetScript("OnEnter", function()
+		GameTooltip:SetOwner(searchInput, "ANCHOR_BOTTOM")
+		GameTooltip:ClearLines()
+		GameTooltip:AddLine("Search all guild banks")
+		GameTooltip:AddLine("Find items across all bank characters.", 0.9, 0.9, 0.9, true)
+		GameTooltip:AddLine("Type at least 3 letters.", 0.9, 0.9, 0.9, true)
+		GameTooltip:AddLine("Or drag an item here.", 0.9, 0.9, 0.9, true)
+		GameTooltip:Show()
+	end)
+	searchInput:SetScript("OnLeave", function()
+		GBankClassic_UI:HideTooltip()
+	end)
+    searchInput:SetScript("OnTextChanged", function(input)
+        local text = input:GetText()
+        if text and text ~= "" then
+            self.searchField.Instructions:SetText("")
+        else
+            self.searchField.Instructions:SetText(instructions)
+        end
+        self.SearchText = text
         self:DrawContent()
     end)
-    searchInput:SetCallback("OnEnterPressed", function(input)
+    searchInput:SetScript("OnEnterPressed", function(input)
         self.SearchText = input:GetText()
         self:DrawContent()
         self.searchField:ClearFocus()
     end)
-    searchInput:SetFullWidth(true)
-    searchInput.editbox:SetScript("OnReceiveDrag", function(input)
+    searchInput:SetScript("OnReceiveDrag", function(input)
         local type, _, info = GetCursorInfo()
-        if type == "item" then
-            self.SearchText = info
+        local itemName = info:match("%[(.+)%]")
+        if type == "item" and itemName then
+            self.SearchText = itemName
             self:DrawContent()
             ClearCursor()
             self.searchField:ClearFocus()
         end
     end)
-
     self.searchField = searchInput
-
-    searchWindow:AddChild(searchInput)
 
     local scrollGroup = GBankClassic_UI:Create("SimpleGroup")
     scrollGroup:SetLayout("Fill")
@@ -149,15 +180,12 @@ function UI_Search:DrawWindow()
         },
         spaceH = 5,
     })
-
     resultGroup.scrollframe:ClearAllPoints()
-    resultGroup.scrollframe:SetPoint("TOPLEFT", 10, -10)
-
+    resultGroup.scrollframe:SetPoint("TOPLEFT", 4, -51)
     resultGroup.scrollbar:ClearAllPoints()
-    resultGroup.scrollbar:SetPoint("TOPLEFT", resultGroup.scrollframe, "TOPRIGHT", -6, -12)
-    resultGroup.scrollbar:SetPoint("BOTTOMLEFT", resultGroup.scrollframe, "BOTTOMRIGHT", -6, 22)
+    resultGroup.scrollbar:SetPoint("TOPLEFT", resultGroup.scrollframe, "TOPRIGHT", 2, -12)
+    resultGroup.scrollbar:SetPoint("BOTTOMLEFT", resultGroup.scrollframe, "BOTTOMRIGHT", 2, 22)
     scrollGroup:AddChild(resultGroup)
-
     self.Results = resultGroup
 end
 
@@ -318,7 +346,7 @@ function UI_Search:DrawContent()
     if self.SearchText then
         self.searchField:SetText(self.SearchText)
         local searchLength = string.len(self.SearchText)
-        self.searchField.editbox:SetCursorPosition(searchLength)
+        self.searchField:SetCursorPosition(searchLength)
     end
 
     local search = self.SearchText

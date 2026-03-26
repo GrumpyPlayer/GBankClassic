@@ -53,7 +53,10 @@ function UI:RequestRefresh()
             GBankClassic_UI_Search:BuildSearchData()
             GBankClassic_UI_Search:DrawContent()
             if GBankClassic_UI_Search.searchField then
-                GBankClassic_UI_Search.searchField:Fire("OnEnterPressed")
+                local onEnterPressed = GBankClassic_UI_Search.searchField:GetScript("OnEnterPressed")
+                if onEnterPressed then
+                    onEnterPressed(GBankClassic_UI_Search.searchField)
+                end
             end
         end
         if GBankClassic_UI_Donations and GBankClassic_UI_Donations.isOpen then

@@ -3,6 +3,8 @@ GBankClassic_Mail = GBankClassic_Mail or {}
 local Mail = GBankClassic_Mail
 
 local Globals = GBankClassic_Globals
+local upvalues = Globals.GetUpvalues("gsub")
+local gsub = upvalues.gsub
 local upvalues = Globals.GetUpvalues("CheckInbox", "GetInboxHeaderInfo", "GetInboxItemLink", "GetInboxItem", "GetItemInfo", "GetMoney", "GetCoinTextureString")
 local CheckInbox = upvalues.CheckInbox
 local GetInboxHeaderInfo = upvalues.GetInboxHeaderInfo
@@ -11,12 +13,17 @@ local GetInboxItem = upvalues.GetInboxItem
 local GetItemInfo = upvalues.GetItemInfo
 local GetMoney = upvalues.GetMoney
 local GetCoinTextureString = upvalues.GetCoinTextureString
-local upvalues = Globals.GetUpvalues("ATTACHMENTS_MAX_RECEIVE", "LOOT_ITEM_SELF_MULTIPLE", "LOOT_ITEM_SELF", "LOOT_ITEM_PUSHED_SELF_MULTIPLE", "LOOT_ITEM_PUSHED_SELF")
+local upvalues = Globals.GetUpvalues("ATTACHMENTS_MAX_RECEIVE", "LOOT_ITEM_SELF_MULTIPLE", "LOOT_ITEM_SELF", "LOOT_ITEM_PUSHED_SELF_MULTIPLE", "LOOT_ITEM_PUSHED_SELF", "AUCTION_REMOVED_MAIL_SUBJECT", "AUCTION_EXPIRED_MAIL_SUBJECT", "AUCTION_OUTBID_MAIL_SUBJECT", "AUCTION_SOLD_MAIL_SUBJECT", "AUCTION_WON_MAIL_SUBJECT")
 local ATTACHMENTS_MAX_RECEIVE = upvalues.ATTACHMENTS_MAX_RECEIVE
 local LOOT_ITEM_SELF_MULTIPLE = upvalues.LOOT_ITEM_SELF_MULTIPLE
 local LOOT_ITEM_SELF = upvalues.LOOT_ITEM_SELF
 local LOOT_ITEM_PUSHED_SELF_MULTIPLE = upvalues.LOOT_ITEM_PUSHED_SELF_MULTIPLE
 local LOOT_ITEM_PUSHED_SELF = upvalues.LOOT_ITEM_PUSHED_SELF
+local AUCTION_REMOVED_MAIL_SUBJECT = upvalues.AUCTION_REMOVED_MAIL_SUBJECT
+local AUCTION_EXPIRED_MAIL_SUBJECT = upvalues.AUCTION_EXPIRED_MAIL_SUBJECT
+local AUCTION_OUTBID_MAIL_SUBJECT = upvalues.AUCTION_OUTBID_MAIL_SUBJECT
+local AUCTION_SOLD_MAIL_SUBJECT = upvalues.AUCTION_SOLD_MAIL_SUBJECT
+local AUCTION_WON_MAIL_SUBJECT = upvalues.AUCTION_WON_MAIL_SUBJECT
 
 Mail.donationItemRegistry = {}
 Mail.itemDonationVerificationQueue = {}

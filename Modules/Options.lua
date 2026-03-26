@@ -3,8 +3,9 @@ GBankClassic_Options = GBankClassic_Options or {}
 local Options = GBankClassic_Options
 
 local Globals = GBankClassic_Globals
-local upvalues = Globals.GetUpvalues("LibStub")
+local upvalues = Globals.GetUpvalues("LibStub", "GetAddOnMetadata")
 local LibStub = upvalues.LibStub
+local GetAddOnMetadata = upvalues.GetAddOnMetadata
 local upvalues = Globals.GetUpvalues("Settings")
 local Settings = upvalues.Settings
 
@@ -34,9 +35,13 @@ function Options:Init()
 	GBankClassic_Output:SetLevel(self.db.global.bank["logLevel"])
 	GBankClassic_Output:SetCommDebug(self.db.global.bank["commDebug"])
 
+    local title = GetAddOnMetadata("GBankClassic", "Title")
+    local version = GetAddOnMetadata("GBankClassic", "Version")
+    local outdated = GBankClassic_Chat.isAddonOutdated and " |cffe6cc80(a newer version is available)|r" or ""
+    local text = title .. " v" .. version .. outdated
     local options = {
         type = "group",
-        name = "GBankClassic - Revived",
+        name = text,
 		childGroups = "tab",
         args = {
 			general = {
