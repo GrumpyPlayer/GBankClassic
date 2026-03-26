@@ -140,7 +140,6 @@ function Core:DeSerializePayload(message)
     if not sepPos then
         -- No checksum found - fall back to regular deserialize for backwards compatibility
         return self:Deserialize(message)
-        -- return LibCBOR:Deserialize(message)
     end
 
     local serialized = string.sub(message, 1, sepPos - 1)
