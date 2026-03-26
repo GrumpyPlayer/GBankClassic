@@ -734,8 +734,6 @@ function Chat:OnCommReceived(prefix, message, distribution, sender)
 				end
 			end
 		end
-
-		-- /dump GBankClassic_Chat.guildMembersFingerprintData
 	end
 
 	if prefix == "gbank-s" then
