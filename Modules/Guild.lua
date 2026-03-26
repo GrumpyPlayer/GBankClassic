@@ -612,6 +612,9 @@ function Guild:RebuildGuildBankAltsRoster()
 	-- Update online status
 	self:RefreshOnlineMembersCache(true)
 
+	-- Notify others that we're ready
+	self:Hello()
+
 	-- Return the guildBankAlts table so it can be cached
 	return guildBankAlts
 end
