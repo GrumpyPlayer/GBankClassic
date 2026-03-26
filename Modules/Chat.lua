@@ -435,8 +435,7 @@ function Chat:ProcessFingerprintAltData(fingerprintAltData, sender)
 					shouldQuery = true
 					GBankClassic_Output:Debug("PROTOCOL", "Query decision for %s: we don't have data, query", self:ColorPlayerName(altName))
 				elseif theirHash ~= ourHash then
-					shouldQuery = true
-					GBankClassic_Output:Debug("PROTOCOL", "Query decision for %s: hash differs, query (ourHash=%d, theirHash=%d)", self:ColorPlayerName(altName), ourHash, theirHash)
+					GBankClassic_Output:Debug("PROTOCOL", "Query decision for %s: hash differs, don't query", self:ColorPlayerName(altName))
 				else
 					GBankClassic_Output:Debug("PROTOCOL", "Query decision for %s: hashes match, don't query", self:ColorPlayerName(altName))
 				end
