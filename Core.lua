@@ -26,19 +26,24 @@ function Core:SendCommMessage(prefix, text, distribution, target, prio, callback
         return
     end
 
-    --GBankClassic_Output:Debug("COMMS", ">", prefix, prefixDesc, "via", string.upper(distribution), "to", target and GBankClassic_Chat:ColorPlayerName(target) or "guild", "(" .. (#text or 0) .. " bytes)")
-	local success, data = GBankClassic_Core:DeSerializePayload(text)
-    local tablePayload = {}
-    local payload
-    if type(data) == "table" then
-      for k, v in pairs(data) do
-        table.insert(tablePayload, k .. "=" .. tostring(v))
-      end
-      payload = table.concat(tablePayload, ",")
+    if GBankClassic_Options:GetLogLevel() == LOG_LEVEL.DEBUG then
+        local success, data = GBankClassic_Core:DeSerializePayload(text)
+        if success then
+            local tablePayload = {}
+            local payload
+            if type(data) == "table" then
+                for k, v in pairs(data) do
+                    table.insert(tablePayload, k .. "=" .. tostring(v))
+                end
+                payload = table.concat(tablePayload, ",")
+            else
+                payload = data
+            end
+            GBankClassic_Output:Debug("COMMS", ">", prefix, prefixDesc, "via", string.upper(distribution), "to", target and target or "guild", "(" .. (#text or 0) .. " bytes)", "payload:", payload)
+        end
     else
-      payload = data
+        GBankClassic_Output:Debug("COMMS", ">", prefix, prefixDesc, "via", string.upper(distribution), "to", target and GBankClassic_Chat:ColorPlayerName(target) or "guild", "(" .. (#text or 0) .. " bytes)")
     end
-    GBankClassic_Output:Debug("COMMS", ">", prefix, prefixDesc, "via", string.upper(distribution), "to", target and target or "guild", "(" .. (#text or 0) .. " bytes)", "payload:", payload)
 
     return AceComm_SendCommMessage(self, prefix, text, distribution, target, prio, callbackFn, callbackArg)
 end
