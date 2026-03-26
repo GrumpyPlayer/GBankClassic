@@ -598,7 +598,18 @@ function Chat:OnCommReceived(prefix, message, distribution, sender)
         return
 	end
 
-	GBankClassic_Output:Debug("COMMS", "<", prefix, prefixDesc, "via", string.upper(distribution), "from", self:ColorPlayerName(sender), "(" .. (#message or 0) .. " bytes" .. (data.type and ", type=" .. tostring(data and data.type) or "") ..")")
+	-- GBankClassic_Output:Debug("COMMS", "<", prefix, prefixDesc, "via", string.upper(distribution), "from", self:ColorPlayerName(sender), "(" .. (#message or 0) .. " bytes" .. (data.type and ", type=" .. tostring(data and data.type) or "") ..")")
+    local tablePayload = {}
+    local payload
+    if type(data) == "table" then
+      for k, v in pairs(data) do
+        table.insert(tablePayload, k .. "=" .. tostring(v))
+      end
+      payload = table.concat(tablePayload, ",")
+    else
+      payload = data
+    end
+	GBankClassic_Output:Debug("COMMS", "<", prefix, prefixDesc, "via", string.upper(distribution), "from", sender, "(" .. (#message or 0) .. " bytes" .. (data.type and ", type=" .. tostring(data and data.type) or "") ..")", "payload:", payload)
 
 	if prefix == "gbank-dv2" then
 		if self:QueueDebouncedMessageWithMultipleGuildBankAlts(sender, data) then
@@ -733,6 +744,15 @@ function Chat:OnCommReceived(prefix, message, distribution, sender)
 				end
 			end
 		end
+
+		-- Print versions after a quiet period
+		if self.printVersionsTimer then
+			GBankClassic_Core:CancelTimer(self.printVersionsTimer)
+			self.printVersionsTimer = nil
+		end
+		self.printVersionsTimer = GBankClassic_Core:ScheduleTimer(function()
+			GBankClassic_Chat:PrintVersions()
+		end, 15)
 	end
 
 	if prefix == "gbank-s" then
