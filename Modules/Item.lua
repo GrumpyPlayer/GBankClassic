@@ -42,39 +42,7 @@ function Items:NeedsLink(itemLink)
 	return false
 end
 
--- Get normalized item key for deduplication (strips unique instance ID)
--- Items with same ID+suffix but different instance IDs will have same key
--- Format: itemID:enchant:gem1:gem2:gem3:gem4:suffixID (7 parts)
-function Items:GetItemKey(link)
-	if not link or link == "" then
-		return ""
-	end
-
-	local itemString = link:match("|Hitem:([^|]+)|h")
-	if not itemString then
-		itemString = link:match("item:([%d:]+)")
-	end
-
-	if itemString then
-		-- Split into parts
-		local parts = {}
-		for part in string.gmatch(itemString, "([^:]+)") do
-			table.insert(parts, part)
-		end
-
-		-- Keep first 7 parts only (strip uniqueID and specializationID)
-		if #parts >= 7 then
-			return "item:" .. table.concat({parts[1], parts[2], parts[3], parts[4], parts[5], parts[6], parts[7]}, ":")
-		else
-			return "item:" .. itemString
-		end
-	end
-
-	return link
-end
-
--- Get normalized item key for deduplication (strips unique instance ID)
--- Items with same ID+suffix but different instance IDs will have same key
+-- Get normalized item key for deduplication
 -- Format: itemID:enchant:suffixID (3 parts)
 function Items:GetImprovedItemKey(link)
 	if not link or link == "" then

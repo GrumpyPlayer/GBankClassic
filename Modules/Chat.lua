@@ -511,7 +511,7 @@ function Chat:ProcessGuildBankAltData(data, sender)
         GBankClassic_Output:Info("Received data for %s from %s (%d item%s).", self:ColorPlayerName(altName), self:ColorPlayerName(sender), itemCount, pluralItems)
         GBankClassic_UI:RequestRefresh()
 	elseif allowed then
-		GBankClassic_Output:Info("Ignoring data for %s from %s (reason: %s).", self:ColorPlayerName(altName), self:ColorPlayerName(sender), status)
+		GBankClassic_Output:Debug("PROTOCOL", "Ignoring data for %s from %s (reason: %s).", self:ColorPlayerName(altName), self:ColorPlayerName(sender), status)
 	else
 		return
     end
@@ -547,7 +547,7 @@ function Chat:ProcessStateSummary(data, sender)
 		local pluralItems = (itemCount ~= 1 and "s" or "")
 		GBankClassic_Output:Info("Received data (link-less) for %s from %s (%d item%s).", self:ColorPlayerName(altName), self:ColorPlayerName(sender), itemCount, pluralItems)
 	elseif allowed then
-		GBankClassic_Output:Info("Ignoring data (link-less) for %s from %s (reason: %s).", self:ColorPlayerName(altName), self:ColorPlayerName(sender), status)
+		GBankClassic_Output:Debug("PROTOCOL", "Ignoring data (link-less) for %s from %s (reason: %s).", self:ColorPlayerName(altName), self:ColorPlayerName(sender), status)
 	else
 		return
     end
@@ -573,6 +573,12 @@ function Chat:OnCommReceived(prefix, message, distribution, sender)
 	local prefixDesc = COMM_PREFIX_DESCRIPTIONS[prefix] or "(Unknown)"
 	local player = GBankClassic_Guild:GetNormalizedPlayer()
 	sender = GBankClassic_Guild:NormalizeName(sender) or sender
+
+	if not GBankClassic_Guild.player and not GBankClassic_Guild.addonVersion then
+		GBankClassic_Output:Debug("COMMS", "<", "(ignoring)", prefix, prefixDesc, "(not ready yet)")
+
+		return
+	end
 
 	if IsInInstance() or IsInRaid() then
 		GBankClassic_Output:Debug("COMMS", "<", "(suppressing)", prefix, prefixDesc, "from", self:ColorPlayerName(sender), "(in instance or raid)")
@@ -1016,23 +1022,23 @@ end
 function Chat:PrintVersions()
 	-- Get our own version
 	local myVersionData = GBankClassic_Guild:GetVersion()
-    local myVersionNumber = myVersionData.addon
+    local myVersionNumber = myVersionData and myVersionData.addon
 	local myPlayer = GBankClassic_Guild:GetNormalizedPlayer()
 
 	-- Collect versions into a sortable list
 	local versions = {}
 
 	-- Add ourselves
-	table.insert(versions, { name = myPlayer, addonVersion = myVersionNumber, seen = time(), isSelf = true })
+	table.insert(versions, { name = myPlayer, addonVersion = tonumber(myVersionNumber), seen = time(), isSelf = true })
 
 	-- Add tracked guild members
 	for name, info in pairs(self.guildMembersFingerprintData) do
-		table.insert(versions, { name = name, addonVersion = tostring(info.addonVersion), seen = info.seen, isSelf = false })
+		table.insert(versions, { name = name, addonVersion = tonumber(info.addonVersion), seen = info.seen, isSelf = false })
 	end
 
 	-- Sort by version (descending), then by name
 	table.sort(versions, function(a, b)
-		if a.addonVersion ~= b.addonVersion then
+		if (a and a.addonVersion and b and b.addonVersion) and (a.addonVersion ~= b.addonVersion) then
 			return a.addonVersion > b.addonVersion
 		end
 

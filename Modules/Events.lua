@@ -347,7 +347,7 @@ function Events:SetShareTimer()
 		GBankClassic_Core:CancelTimer(self.shareTimer)
 		self.shareTimer = nil
 	end
-	self.shareTimer = GBankClassic_Core:ScheduleTimer(function(...)
+	self.shareTimer = GBankClassic_Core:ScheduleTimer(function()
 		self:OnShareTimer()
 	end, TIMER_INTERVALS.VERSION_BROADCAST)
 end

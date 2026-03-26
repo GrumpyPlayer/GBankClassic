@@ -909,7 +909,7 @@ function Guild:QueryForGuildBankAltData(target, altName)
 
 	local peerAddonVersion = GBankClassic_Chat.guildMembersFingerprintData and GBankClassic_Chat.guildMembersFingerprintData[target] and GBankClassic_Chat.guildMembersFingerprintData[target].addonVersion
 	local isLegacy = false
-	if target and peerAddonVersion < self.addonVersion then
+	if target and peerAddonVersion <= 254 then
 		isLegacy = true
 	end
 
@@ -1074,56 +1074,6 @@ function Guild:SendStateSummary(name, target)
 		return
 	end
 	GBankClassic_Output:Debug("SYNC", "SendStateSummary: sent for %s to %s (items=%d, %d bytes)", name, target, summary.items and #summary.items or 0, string.len(data))
-end
-
--- Respond to state summary
--- Compare requester's state with our data and send appropriate response
-function Guild:RespondToStateSummary(altName, summary, requester)
-	if not altName or not summary or not requester then
-		GBankClassic_Output:Debug("SYNC", "RespondToStateSummary: early exit because of missing parameters")
-
-		return
-	end
-
-	if not self.Info or not self.Info.alts or not self.Info.alts[altName] then
-		GBankClassic_Output:Debug("SYNC", "RespondToStateSummary: early exit for %s (no data)", altName)
-
-		return
-	end
-
-	local shouldShare = false
-	local ourAlt = self.Info.alts[altName]
-	local ourVersion = ourAlt.version
-	local ourHash = ourAlt.inventoryHash or nil
-	local theirVersion = summary.version or 0
-	local theirHash = summary.hash or nil
-
-	if theirHash == ourHash then
-		local payload = { type = "no-change", name = altName, version = ourVersion, hash = ourHash }
-		local data = GBankClassic_Core:SerializePayload(payload)
-		if not GBankClassic_Core:SendWhisper("gbank-nochange", data, requester, "NORMAL") then
-			return
-		end
-
-		GBankClassic_Output:Debug("SYNC", "RespondToStateSummary decision: hashes match for %s, sent no-change to %s", GBankClassic_Chat:ColorPlayerName(altName), GBankClassic_Chat:ColorPlayerName(requester))
-
-		return
-	end
-
-	if ourVersion and ourVersion > theirVersion then
-		shouldShare = true
-		GBankClassic_Output:Debug("SYNC", "RespondToStateSummary decision for %s: our version is newer, share data with %s", GBankClassic_Chat:ColorPlayerName(altName), GBankClassic_Chat:ColorPlayerName(requester))
-	elseif not theirHash then
-		shouldShare = true
-		GBankClassic_Output:Debug("SYNC", "RespondToStateSummary decision for %s: requester has no data, share data with %s", GBankClassic_Chat:ColorPlayerName(altName), GBankClassic_Chat:ColorPlayerName(requester))
-	elseif ourHash and theirHash ~= ourHash and ourVersion == theirVersion then
-		shouldShare = true
-		GBankClassic_Output:Debug("SYNC", "RespondToStateSummary decision for %s: hash mismatch (theirHash=%d, ourHash=%d), share data with %s", GBankClassic_Chat:ColorPlayerName(altName), theirHash, ourHash, GBankClassic_Chat:ColorPlayerName(requester))
-	end
-
-	if shouldShare then
-		self:SendAltData(altName, requester)
-	end
 end
 
 -- Strip link fields from items for transmission (bandwidth optimization)
@@ -1363,7 +1313,11 @@ local function createOnChunkSentCallback(altName, destination)
 			end
 
 			GBankClassic_Output:Debug("CHUNK", summary)
-			GBankClassic_Output:Info("Finished sending data for %s%s.", GBankClassic_Chat:ColorPlayerName(altName), destination and string.format(" to %s", GBankClassic_Chat:ColorPlayerName(destination)))
+			if altName == GBankClassic_Guild.player then
+				GBankClassic_Output:Response("Finished sending your latest data%s.", destination and string.format(" to %s", GBankClassic_Chat:ColorPlayerName(destination)))
+			else
+				GBankClassic_Output:Info("Finished sending data for %s%s.", GBankClassic_Chat:ColorPlayerName(altName), destination and string.format(" to %s", GBankClassic_Chat:ColorPlayerName(destination)))
+			end
 
 			-- Decrement peer send queue counter
 			if Guild.pendingSendCount > 0 then
@@ -1626,44 +1580,43 @@ function Guild:Hello(type)
 	local myVersionData = self:GetVersion()
 	local currentData = Guild.Info
 	if myVersionData and currentData then
-		local rosterAlts = ""
-		local guildBankAlts = ""
-		local hello = "Hi! " .. self:GetNormalizedPlayer() .. " is using version " .. myVersionData.addon .. "."
-		if GBankClassic_Globals:Count(currentData.roster) > 0 and GBankClassic_Globals:Count(currentData.alts) > 0 then
-			for _, v in pairs(currentData.roster.alts) do
-				if rosterAlts ~= "" then
-					rosterAlts = rosterAlts .. ", "
-				end
-				rosterAlts = rosterAlts .. v
-			end
-			if rosterAlts ~= "" then
-				rosterAlts = " (" .. rosterAlts .. ")"
-			end
-			for k, _ in pairs(currentData.alts) do
-				if guildBankAlts ~= "" then
-					guildBankAlts = guildBankAlts .. ", "
-				end
-				guildBankAlts = guildBankAlts .. k
-			end
-			if guildBankAlts ~= "" then
-				guildBankAlts = " (" .. guildBankAlts .. ")"
-			end
+		local helloParts = { "Hi! ", self:GetNormalizedPlayer(), " is using version ", myVersionData.addon, "." }
+		local rosterCount = GBankClassic_Globals:Count(currentData.roster)
+		local altsCount = GBankClassic_Globals:Count(currentData.alts)
+
+		if rosterCount > 0 and altsCount > 0 then
+			local rosterList = {}
 			if currentData.roster.alts then
-				hello = hello .. "\n"
-				hello = hello .. "I know about " .. GBankClassic_Globals:Count(currentData.roster.alts) .. " guild bank alts" .. rosterAlts .. " on the roster."
-				hello = hello .. "\n"
-				hello = hello .. "I have guild bank data from " .. GBankClassic_Globals:Count(currentData.alts) .. " alts" .. guildBankAlts .. "."
+				for _, v in pairs(currentData.roster.alts) do
+					table.insert(rosterList, v)
+				end
+			end
+			local rosterAlts = #rosterList > 0 and " (" .. table.concat(rosterList, ", ") .. ")" or ""
+
+			local guildBankList = {}
+			for k, v in pairs(currentData.alts) do
+				if v and v.items and GBankClassic_Globals:Count(v.items) > 0 then
+					table.insert(guildBankList, k)
+				end
+			end
+			local guildBankAlts = #guildBankList > 0 and " (" .. table.concat(guildBankList, ", ") .. ")" or ""
+
+			local pluralRosterAlts = (rosterList ~= 1 and "s" or "")
+			local pluralGuildBankAlts = (guildBankList ~= 1 and "s" or "")
+			if currentData.roster.alts then
+				table.insert(helloParts, "\n")
+				table.insert(helloParts, "I know about " .. #rosterList .. " guild bank alt" .. pluralRosterAlts .. rosterAlts .. " on the roster.")
+				table.insert(helloParts, "\n")
+				table.insert(helloParts, "I have guild bank data from " .. #guildBankList .. " alt" .. pluralGuildBankAlts .. guildBankAlts .. ".")
 			end
 		else
-			hello = hello .. " I know about 0 guild bank alts on the roster, and have guild bank data from 0 alts."
+			table.insert(helloParts, " I know about 0 guild bank alts on the roster, and have guild bank data from 0 alts.")
 		end
 
-		if type ~= "reply" then
-			GBankClassic_Output:Info(hello)
-		end
-
+		local hello = table.concat(helloParts)
 		local data = GBankClassic_Core:SerializePayload(hello)
 		if type ~= "reply" then
+			GBankClassic_Output:Info(hello)
 			GBankClassic_Core:SendCommMessage("gbank-h", data, "Guild", nil, "BULK")
 		else
 			GBankClassic_Core:SendCommMessage("gbank-hr", data, "Guild", nil, "BULK")

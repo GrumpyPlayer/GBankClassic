@@ -52,10 +52,8 @@ function MailInventory:ScanMailInventory()
 						storageLink = link
 					end
 
-					-- Use normalized key for deduplication (strips unique instance ID)
-					-- This allows identical items to merge even if they have different instance IDs
-					local itemKey = GBankClassic_Item:GetItemKey(link)
-					local key = tostring(itemID) .. itemKey
+					-- Use normalized key for deduplication
+					local key = GBankClassic_Item:GetImprovedItemKey(link)
 
 					if mailItemsTable[key] then
 						-- Item already exists, add to count
