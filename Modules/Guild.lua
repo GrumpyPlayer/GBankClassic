@@ -1357,8 +1357,10 @@ function Guild:CraftDataPayload(alt)
 	local stripped = {
 		version = alt.version,
 		itemsHash = alt.itemsHash,
+		inventoryHash = alt.itemsHash, -- for v2.5.4 addon users
 		money = alt.money,
 		items = strippedItems,
+		bags = { items = strippedItems },
 		ledger = alt.ledger
 	}
 
