@@ -1326,8 +1326,32 @@ function Guild:SendAltData(name, target)
 	GBankClassic_Output:Debug("SYNC", "SendAltData: sending %d items for guild bank alt %s to %s", itemsCount, norm, dest or "guild")
 
 	local onChunkSent = createOnChunkSentCallback(norm, dest)
-	local payload = self:CraftDataPayload(currentAlt)
-	local data = GBankClassic_Core:SerializePayload({ type = "alt", name = norm, alt = payload })
+	local craftedPayload = self:CraftDataPayload(currentAlt)
+	if not craftedPayload then
+		GBankClassic_Output:Debug("SYNC", "SendAltData: skipped sending guild bank alt %s to %s, no valid payload", norm, dest or "guild")
+
+		return
+	end
+	local payload = { type = "alt", name = norm, alt = craftedPayload }
+
+	local peerAddonVersionNumber = GBankClassic_Chat.guildMembersFingerprintData and GBankClassic_Chat.guildMembersFingerprintData[target] and GBankClassic_Chat.guildMembersFingerprintData[target].addonVersionNumber
+	local isLegacy = false
+	if target and peerAddonVersionNumber and peerAddonVersionNumber <= 254 then --TODO: fix hard coding
+		isLegacy = true
+	end
+
+	-- TODO
+	-- if target == "Grumpyplays-Soulseeker" or target == "Grumpycodes-Soulseeker" then
+	-- 	isLegacy = false
+	-- end
+
+	if isLegacy and payload.alt then
+		payload.alt.bags = { items = payload.alt.items }
+		payload.alt.items = nil
+	end
+
+	local data = GBankClassic_Core:SerializePayload(payload)
+
 	if channel == "WHISPER" and dest then
 		GBankClassic_Core:SendWhisper("gbank-d", data, dest, "NORMAL", onChunkSent)
 	else
