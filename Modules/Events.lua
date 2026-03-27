@@ -191,6 +191,7 @@ function Events:GUILD_ROSTER_UPDATE(_, importantChange)
 		return
 	end
 
+	-- TODO: to instantly enable/disable bank scanning upon add or removal of "gbank" in someone's note we could scan the full roster each GUILD_ROSTER_UPDATE event; is that worth it or do we just keep it limited to PLAYER_ENTERING_WORLD (/reload)
 	-- When the loading screen has appeared, the player has joined a guild, rank promotions/demotions, or rank privileges (such as being able to view officer notes) changed
 	if importantChange or GBankClassic_Guild.rosterRefreshNeeded then
 		GBankClassic_Guild:VerifyOfficerNotePermissions()
