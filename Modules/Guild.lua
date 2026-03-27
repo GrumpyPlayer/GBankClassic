@@ -522,7 +522,7 @@ function Guild:RebuildGuildBankAltsRoster()
 				--   senderIsAuthority: true, 
 				--   self.areOfficerNotesUsedToDefineGuildBankAlts: true,
 				--   version: unix timestamp
-				--   hash: GBankClassic_Bank:ComputeImprovedInventoryHash(guildBankAlts.items, true)
+				--   itemsHash: GBankClassic_Bank:ComputeItemsHash(guildBankAlts.items, true)
 
 				-- when player receives the heartbeat, and if they are not an authority:
 				--   gbank-roster-request WHISPER to sender that is an authority: send me your roster
@@ -595,7 +595,6 @@ function Guild:RebuildGuildBankAltsRoster()
 				name = normName,
 				version = 0,
 				money = 0,
-				inventoryHash = 0,
 				items = {},
 				ledger = {}
 			}
@@ -736,16 +735,12 @@ function Guild:GetVersion()
 				GBankClassic_Output:Debug("SYNC", "GetVersion: excluding %s from version broadcast (no content)", k)
 			else
 				if type(v) == "table" and v.version then
-					if v.inventoryHash then
+					if v.itemsHash then
 						data.alts[k] = {
 							version = v.version,
-							hash = v.inventoryHash
+							itemsHash = v.itemsHash
 						}
-						GBankClassic_Output:Debug("SYNC", "GetVersion: including %s in local version data (version=%d, hash=%d)", k, v.version, v.inventoryHash)
-					else
-						-- Legacy format for old clients
-						data.alts[k] = v.version
-						GBankClassic_Output:Debug("SYNC", "GetVersion: including %s in local version data (version=%d, no hash)", k, v.version)
+						GBankClassic_Output:Debug("SYNC", "GetVersion: including %s in local version data (version=%d, itemsHash=%d)", k, v.version, v.itemsHash)
 					end
 				end
 			end
@@ -1395,18 +1390,18 @@ function Guild:CraftDataPayload(alt)
 	if not alt.version or alt.version == 0 then
 		return
 	end
-	if not alt.inventoryHash or alt.inventoryHash == 0 then
+	if not alt.itemsHash or alt.itemsHash == 0 then
 		return
 	end
-	if #alt.items == 0 and alt.money == 0 then
+	local itemCount = alt.items and #alt.items or 0
+	if itemCount == 0 and alt.money == 0 then
 		return
 	end
 
 	local strippedItems = self:StripItemLinks(alt.items)
 	local stripped = {
 		version = alt.version,
-		inventoryHash = alt.inventoryHash,
-		improvedInventoryHash = alt.improvedInventoryHash,
+		itemsHash = alt.itemsHash,
 		money = alt.money,
 		items = strippedItems,
 		ledger = alt.ledger
@@ -1486,8 +1481,8 @@ function Guild:ReceiveAltData(altName, incomingData, sender)
 		return ADOPTION_STATUS.STALE
 	end
 
-	if existing and existingHasContent and incomingData.inventoryHash and existing.inventoryHash and incomingData.inventoryHash == existing.inventoryHash then
-		GBankClassic_Output:Debug("SYNC", "ReceiveAltData: rejected data as stale for %s (hashes match: incomingHash=%d)", altName, incomingData.inventoryHash)
+	if existing and existingHasContent and incomingData.itemsHash and existing.itemsHash and incomingData.itemsHash == existing.itemsHash then
+		GBankClassic_Output:Debug("SYNC", "ReceiveAltData: rejected data as stale for %s (hashes match: incomingHash=%d)", altName, incomingData.itemsHash)
 
 		return ADOPTION_STATUS.STALE
 	end
@@ -1550,7 +1545,7 @@ function Guild:HasAltData(alt)
 		return true
 	end
 
-	if alt.inventoryHash and alt.inventoryHash > 0 and alt.inventoryHash ~= 48095047 then
+	if alt.itemsHash and alt.itemsHash > 0 then
 		return true
 	end
 

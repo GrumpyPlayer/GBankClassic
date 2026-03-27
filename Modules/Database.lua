@@ -115,16 +115,18 @@ function Database:Load(name)
 
 					-- Wipe hashes and version timestamp if there are no items
 					if #alt.items == 0 then
-						alt.inventoryHash = nil
-						alt.improvedInventoryHash = nil
+						alt.itemsHash = nil
 						alt.version = nil
 					end
 
+					-- Remove the old hash
+					alt.inventoryHash = nil
+
 					-- Only recalculate the new hash if it does not already exist and if there is at least 1 item
-					local oldImprovedInventoryHash = alt.improvedInventoryHash
-					if not oldImprovedInventoryHash and #alt.items > 0 then
-						alt.improvedInventoryHash = GBankClassic_Bank:ComputeImprovedInventoryHash(alt.items, money)
-						GBankClassic_Output:Debug("DATABASE", "Recomputed improved inventory hash after recalculation for %s: %d", altName, alt.improvedInventoryHash)
+					local previousItemsHash = alt.itemsHash
+					if not previousItemsHash and #alt.items > 0 then
+						alt.itemsHash = GBankClassic_Bank:ComputeItemsHash(alt.items, money)
+						GBankClassic_Output:Debug("DATABASE", "Recomputed improved inventory hash after recalculation for %s: %d", altName, alt.itemsHash)
 					end
 
 					GBankClassic_Guild:ReconstructItemLinks(alt.items)

@@ -174,22 +174,20 @@ function Bank:Scan()
 	self:RecalculateAggregatedItems(alt.cache.bank.items, alt.cache.bags.items, alt.cache.mail.items, alt)
 
 	-- Compute hash of the current inventory state
-	local currentImprovedInventoryHash = self:ComputeImprovedInventoryHash(alt.items, money)
-	local previousImprovedInventoryHash = alt.improvedInventoryHash
+	local currentItemsHash = self:ComputeItemsHash(alt.items, money)
+	local previousItemsHash = alt.itemsHash
 	-- Store the hash if there's at least 1 item
 	if #alt.items > 0 then
-		alt.improvedInventoryHash = currentImprovedInventoryHash
-		alt.inventoryHash = currentImprovedInventoryHash
+		alt.itemsHash = currentItemsHash
 	else
-		alt.improvedInventoryHash = nil
-		alt.inventoryHash = nil
+		alt.itemsHash = nil
 	end
 
-	if currentImprovedInventoryHash ~= previousImprovedInventoryHash then
+	if currentItemsHash ~= previousItemsHash then
 		alt.version = GetServerTime()
-		GBankClassic_Output:Debug("INVENTORY", "Inventory changed for %s, version updated to %d (improvedInventoryHash=%s)", player, alt.version, tostring(currentImprovedInventoryHash))
+		GBankClassic_Output:Debug("INVENTORY", "Inventory changed for %s, version updated to %d (itemsHash=%s)", player, alt.version, tostring(currentItemsHash))
 	else
-		GBankClassic_Output:Debug("INVENTORY", "No inventory changes for %s, version unchanged (improvedInventoryHash=%s)", player, tostring(currentImprovedInventoryHash))
+		GBankClassic_Output:Debug("INVENTORY", "No inventory changes for %s, version unchanged (itemsHash=%s)", player, tostring(currentItemsHash))
 	end
 
 	-- Write to GBankClassic_Guild.Info for normal use
@@ -264,7 +262,7 @@ function Bank:RecalculateAggregatedItems(bankData, bagData, mailData, alt)
 end
 
 -- Compute an immproved hash of inventory state to detect changes considering enchant/suffix for weapons/gear
-function Bank:ComputeImprovedInventoryHash(items, money)
+function Bank:ComputeItemsHash(items, money)
 	local parts = {}
 	table.insert(parts, tostring(money))
 

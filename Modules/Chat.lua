@@ -38,8 +38,8 @@ function Chat:Init()
 		},
 	}
 	self.debounceQueues = {
-		multipleAlts = {},					-- For gbank-dv2: [altName] = { version, hash, sender, queuedAt }
-		singularAlt = {},					-- For other messages: [key] = { version, hash, sender, data, message, queuedAt }
+		multipleAlts = {},					-- For gbank-dv2: [altName] = { version, itemsHash, sender, queuedAt }
+		singularAlt = {},					-- For other messages: [key] = { version, itemsHash, sender, data, message, queuedAt }
 	}
 	self.debounceTimers = {
 		multipleAlts = nil,          		-- Single timer for gbank-dv2 processing
@@ -195,7 +195,7 @@ function Chat:GetDebounceKey(prefix, data)
     return prefix .. ":" .. (data.name or "unknown")
 end
 
--- Extract version/hash from the payload of messages  a singular guild bank alt
+-- Extract version/hash from the payload of messages with a singular guild bank alt
 function Chat:ExtractVersionHashFromSingularGuildBankAltPayload(prefix, data)
     if prefix == "gbank-dv2" then
         return nil, nil -- Extracted in QueueDebouncedMessageWithMultipleGuildBankAlts
@@ -203,7 +203,7 @@ function Chat:ExtractVersionHashFromSingularGuildBankAltPayload(prefix, data)
         if data.type == "roster" and data.roster then
             return data.roster.version, nil
         elseif data.type == "alt" and data.alt then
-            return data.alt.version, data.alt.inventoryHash
+            return data.alt.version, data.alt.itemsHash
         end
     elseif prefix == "gbank-state" and data.summary then
         return data.summary.version, data.summary.hash
@@ -221,8 +221,8 @@ function Chat:ShouldReplaceQueuedData(existing, newVersion, newHash)
     end
 
     -- Hash comparison, prefer higher version as tiebreaker
-    if newHash and existing.hash then
-        if newHash ~= existing.hash then
+    if newHash and existing.itemsHash then
+        if newHash ~= existing.itemsHash then
             if not newVersion or not existing.version then
                 return true
             end
@@ -289,31 +289,34 @@ function Chat:QueueDebouncedMessageWithMultipleGuildBankAlts(sender, data)
     end
 
     -- For each alt in payload, track best sender across all senders
+	local queued = false
     for altName, altInfo in pairs(data.alts) do
         local altNorm = GBankClassic_Guild:NormalizeName(altName) or altName
         local theirVersion = type(altInfo) == "table" and altInfo.version or altInfo
-        local theirHash = type(altInfo) == "table" and altInfo.hash or nil
-
+        local theirHash = type(altInfo) == "table" and altInfo.itemsHash or nil
         local existing = self.debounceQueues.multipleAlts[altNorm]
 
         if self:ShouldReplaceQueuedData(existing, theirVersion, theirHash) then
             self.debounceQueues.multipleAlts[altNorm] = {
                 version = theirVersion,
-                hash = theirHash,
+                itemsHash = theirHash,
                 sender = sender, -- This sender has best data for this alt
                 queuedAt = GetServerTime(),
             }
             GBankClassic_Output:Debug("PROTOCOL", "Best sender for %s is now %s (theirVersion=%s, theirHash=%s)", self:ColorPlayerName(altNorm), self:ColorPlayerName(sender), tostring(theirVersion), tostring(theirHash))
+			queued = true
         end
     end
 
     -- Schedule processing after quiet period
-    local interval = self.debounceConfig.intervals["gbank-dv2"] or 3.0
-    self.debounceTimers.multipleAlts = GBankClassic_Core:ScheduleTimer(function()
-        self:ProcessDebouncedMessageWithMultipleGuildBankAlts()
-    end, interval)
+	if queued then
+		local interval = self.debounceConfig.intervals["gbank-dv2"] or 3.0
+		self.debounceTimers.multipleAlts = GBankClassic_Core:ScheduleTimer(function()
+			self:ProcessDebouncedMessageWithMultipleGuildBankAlts()
+		end, interval)
 
-    GBankClassic_Output:Debug("PROTOCOL", "Queued processing of guild bank alt data from %s for %d guild bank alts (processing in %.1fs)", self:ColorPlayerName(sender), GBankClassic_Globals:Count(data.alts or {}), interval)
+		GBankClassic_Output:Debug("PROTOCOL", "Queued processing of guild bank alt data from %s for %d guild bank alts (processing in %.1fs)", self:ColorPlayerName(sender), GBankClassic_Globals:Count(data.alts or {}), interval)
+	end
 
     return true
 end
@@ -338,12 +341,12 @@ function Chat:QueueDebouncedMessageWithSingularGuildBankAlt(prefix, message, dis
     end
 
     local key = self:GetDebounceKey(prefix, data)
-    local version, hash = self:ExtractVersionHashFromSingularGuildBankAltPayload(prefix, data)
+    local version, itemsHash = self:ExtractVersionHashFromSingularGuildBankAltPayload(prefix, data)
     local interval = self.debounceConfig.intervals[key] or self.debounceConfig.intervals[prefix] or 2.0
     local existing = self.debounceQueues.singularAlt[key]
 
     -- Check if we should replace existing queued data
-    if not self:ShouldReplaceQueuedData(existing, version, hash) then
+    if not self:ShouldReplaceQueuedData(existing, version, itemsHash) then
         GBankClassic_Output:Debug("PROTOCOL", "Discarded older %s for key `%s` (queued version=%d vs incoming version=%d)", prefix, key, existing and existing.version or 0, version or 0)
 
 		return true
@@ -363,7 +366,7 @@ function Chat:QueueDebouncedMessageWithSingularGuildBankAlt(prefix, message, dis
         sender = sender,
         data = data,
         version = version,
-        hash = hash,
+        itemsHash = itemsHash,
         queuedAt = GetServerTime(),
     }
 
@@ -372,7 +375,7 @@ function Chat:QueueDebouncedMessageWithSingularGuildBankAlt(prefix, message, dis
         self:ProcessDebouncedMessageWithSingularGuildBankAlt(key)
     end, interval)
 
-    GBankClassic_Output:Debug("PROTOCOL", "Queued processing of %s for %s (version=%s, hash=%s, processing in %.1fs)", prefix, key, tostring(version), tostring(hash), interval)
+    GBankClassic_Output:Debug("PROTOCOL", "Queued processing of %s (version=%s, itemsHash=%s, processing in %.1fs)", key, tostring(version), tostring(itemsHash), interval)
 
     return true
 end
@@ -386,7 +389,7 @@ function Chat:ProcessDebouncedMessageWithSingularGuildBankAlt(key)
     self.debounceQueues.singularAlt[key] = nil
     self.debounceTimers.singularAlt[key] = nil
 
-    GBankClassic_Output:Debug("PROTOCOL", "Processing debounced %s for %s (version=%s)", queued.prefix, key, tostring(queued.version))
+    GBankClassic_Output:Debug("PROTOCOL", "Processing debounced queue for %s (version=%s)", key, tostring(queued.version))
 
     -- Route to appropriate handler
     if queued.prefix == "gbank-d" then
@@ -419,9 +422,9 @@ function Chat:ProcessFingerprintAltData(fingerprintAltData, sender)
 			local shouldQuery = false
 			local ourAlt = GBankClassic_Guild.Info and GBankClassic_Guild.Info.alts and GBankClassic_Guild.Info.alts[altName]
 			local ourVersion = type(ourAlt) == "table" and ourAlt.version
-			local ourHash = type(ourAlt) == "table" and ourAlt.inventoryHash or nil
+			local ourHash = type(ourAlt) == "table" and ourAlt.itemsHash or nil
 			local theirVersion = type(altData) == "table" and altData.version or 0
-			local theirHash = type(altData) == "table" and altData.hash or nil
+			local theirHash = type(altData) == "table" and altData.itemsHash or nil
 
 			GBankClassic_Output:Debug("PROTOCOL", "Evaluating fingerprint from %s for %s (theirVersion=%d, theirHash=%d, ourVersion=%s, ourHash=%s)", self:ColorPlayerName(sender or altData.sender), self:ColorPlayerName(altName), tostring(theirVersion), tostring(theirHash), tostring(ourVersion), tostring(ourHash))
 
@@ -601,12 +604,12 @@ function Chat:OnCommReceived(prefix, message, distribution, sender)
 		local tablePayload = {}
 		local payload
 		if type(data) == "table" then
-		for k, v in pairs(data) do
-			table.insert(tablePayload, k .. "=" .. tostring(v))
-		end
-		payload = table.concat(tablePayload, ",")
+			for k, v in pairs(data) do
+				table.insert(tablePayload, k .. "=" .. tostring(v))
+			end
+			payload = table.concat(tablePayload, ",")
 		else
-		payload = data
+			payload = data
 		end
 		GBankClassic_Output:Debug("COMMS", "<", prefix, prefixDesc, "via", string.upper(distribution), "from", sender, "(" .. (#message or 0) .. " bytes" .. (data.type and ", type=" .. tostring(data and data.type) or "") ..")", "payload:", payload)
 	else
@@ -860,7 +863,7 @@ local COMMAND_REGISTRY = {
 					if queueMultipleAltCount > 0 then
 						GBankClassic_Output:Response("Messages with multiple guild bankt alts:")
 						for altNorm, best in pairs(GBankClassic_Chat.debounceQueues.multipleAlts) do
-							GBankClassic_Output:Response("  %s: sender=%s, version=%s, hash=%s", altNorm, best.sender, tostring(best.version), tostring(best.hash))
+							GBankClassic_Output:Response("  %s: sender=%s, version=%s, itemsHash=%s", altNorm, best.sender, tostring(best.version), tostring(best.itemsHash))
 						end
 					end
 					if queueSingularAltCount > 0 then
