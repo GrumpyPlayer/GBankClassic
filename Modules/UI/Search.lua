@@ -182,7 +182,8 @@ function UI_Search:DrawWindow()
     self.Results = resultGroup
 end
 
-function UI_Search:BuildSearchData() -- TODO: ideally this is only done for the guild bank alts with changed data instead of always rebuild the entire corpus for the smallest change
+function UI_Search:BuildSearchData()
+    -- TODO: ideally this is only done for the guild bank alts with changed data instead of always rebuild the entire corpus for the smallest change
 	GBankClassic_Output:Debug("SEARCH", "BuildSearchData called - clearing and rebuilding search data")
     self.SearchData = {
         Corpus = {},
