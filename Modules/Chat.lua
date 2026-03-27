@@ -966,7 +966,7 @@ function Chat:PrintVersions()
 			end
 		end
 		local marker = entry.isSelf and " (you)" or ""
-		GBankClassic_Output:Response("  %s: %s%s%s", entry.name, entry.addonVersionNumber, marker, age)
+		GBankClassic_Output:Response("  %s: %s%s%s", entry.playerName, entry.addonVersionNumber, marker, age)
 	end
 end
 
