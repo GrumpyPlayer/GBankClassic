@@ -900,20 +900,8 @@ function Guild:QueryForGuildBankAltData(target, altName)
 		target = guildBankAlt or onlinePeer
 	end
 
-	local peerAddonVersionNumber = GBankClassic_Chat.guildMembersFingerprintData and GBankClassic_Chat.guildMembersFingerprintData[target] and GBankClassic_Chat.guildMembersFingerprintData[target].addonVersionNumber
-	local isLegacy = false
-	if target and peerAddonVersionNumber <= 254 then --TODO: fix hard coding
-		isLegacy = true
-	end
-
-	GBankClassic_Output:Debug("SYNC", "Querying %s for %s (isLegacy=%s)", target and GBankClassic_Chat:ColorPlayerName(target) or "guild", GBankClassic_Chat:ColorPlayerName(altName), tostring(isLegacy))
-
-	local payload
-	if isLegacy then
-		payload = { type = "alt", name = altName, player = target }
-	else
-		payload = { type = "alt-request", name = altName, requester = self:GetNormalizedPlayer() }
-	end
+	GBankClassic_Output:Debug("SYNC", "Querying %s for %s", target and GBankClassic_Chat:ColorPlayerName(target) or "guild", GBankClassic_Chat:ColorPlayerName(altName))
+	local payload = { type = "alt-request", name = altName, requester = self:GetNormalizedPlayer() }
 	local data = GBankClassic_Core:SerializePayload(payload)
 	if target and GBankClassic_Core:SendWhisper("gbank-r", data, target, "NORMAL") then
 		self:MarkPendingSync("alt", target, altName)
@@ -1333,25 +1321,7 @@ function Guild:SendAltData(name, target)
 		return
 	end
 	local payload = { type = "alt", name = norm, alt = craftedPayload }
-
-	local peerAddonVersionNumber = GBankClassic_Chat.guildMembersFingerprintData and GBankClassic_Chat.guildMembersFingerprintData[target] and GBankClassic_Chat.guildMembersFingerprintData[target].addonVersionNumber
-	local isLegacy = false
-	if target and peerAddonVersionNumber and peerAddonVersionNumber <= 254 then --TODO: fix hard coding
-		isLegacy = true
-	end
-
-	-- TODO
-	-- if target == "Grumpyplays-Soulseeker" or target == "Grumpycodes-Soulseeker" then
-	-- 	isLegacy = false
-	-- end
-
-	if isLegacy and payload.alt then
-		payload.alt.bags = { items = payload.alt.items }
-		payload.alt.items = nil
-	end
-
 	local data = GBankClassic_Core:SerializePayload(payload)
-
 	if channel == "WHISPER" and dest then
 		GBankClassic_Core:SendWhisper("gbank-d", data, dest, "NORMAL", onChunkSent)
 	else
@@ -1381,10 +1351,8 @@ function Guild:CraftDataPayload(alt)
 	local stripped = {
 		version = alt.version,
 		itemsHash = alt.itemsHash,
-		inventoryHash = alt.itemsHash, -- for v2.5.4 addon users
 		money = alt.money,
 		items = strippedItems,
-		bags = { items = strippedItems },
 		ledger = alt.ledger
 	}
 
