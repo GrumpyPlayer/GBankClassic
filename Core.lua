@@ -1,8 +1,9 @@
 local Globals = GBankClassic_Globals
-local upvalues = Globals.GetUpvalues("LibStub", "IsInRaid", "IsInInstance")
+local upvalues = Globals.GetUpvalues("LibStub", "IsInRaid", "IsInInstance", "GetAddOnMetadata")
 local LibStub = upvalues.LibStub
 local IsInRaid = upvalues.IsInRaid
 local IsInInstance = upvalues.IsInInstance
+local GetAddOnMetadata = upvalues.GetAddOnMetadata
 
 GBankClassic_Core = LibStub("AceAddon-3.0"):NewAddon("GBankClassic", "AceComm-3.0", "AceConsole-3.0", "AceEvent-3.0", "AceSerializer-3.0", "AceTimer-3.0")
 
@@ -79,6 +80,15 @@ function Core:OnInitialize()
     GBankClassic_Chat:Init()
     GBankClassic_Options:Init()
     GBankClassic_UI:Init()
+
+    local addonTitle = GetAddOnMetadata("GBankClassic", "Title")
+    local addonVersion = GetAddOnMetadata("GBankClassic", "Version")
+    local addonVersionNumber = tonumber((addonVersion:gsub("%.", "")))
+    local addonIsOutdated = GBankClassic_Chat.isAddonOutdated and " |cffe6cc80(a newer version is available)|r" or ""
+    local addonHeader = addonTitle .. " v" .. addonVersion .. addonIsOutdated
+	self.addonHeader = addonHeader
+	self.addonVersion = addonVersion
+	self.addonVersionNumber = addonVersionNumber
 end
 
 -- Called when the addon is enabled

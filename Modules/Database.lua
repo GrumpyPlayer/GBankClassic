@@ -161,7 +161,7 @@ function Database:DeepCopy(obj)
 end
 
 -- Update protocol version for a guild member
-function Database:UpdatePeerProtocol(name, sender, protocolVersion)
+function Database:UpdatePeerProtocol(name, sender, protocolVersionNumber)
 	if not name or not sender then
 		return false
 	end
@@ -172,7 +172,7 @@ function Database:UpdatePeerProtocol(name, sender, protocolVersion)
 	end
 
 	db.guildProtocolVersions[sender] = {
-		version = protocolVersion or 1,
+		protocolVersionNumber = protocolVersionNumber,
 		lastSeen = GetServerTime(),
 	}
 

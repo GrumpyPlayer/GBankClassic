@@ -5,12 +5,11 @@ local UI_Inventory = GBankClassic_UI_Inventory
 local Globals = GBankClassic_Globals
 local upvalues = Globals.GetUpvalues("date")
 local date = upvalues.date
-local upvalues = Globals.GetUpvalues("GetServerTime", "GetCoinTextureString", "IsShiftKeyDown", "IsControlKeyDown", "GetAddOnMetadata", "CreateFrame", "GameTooltip")
+local upvalues = Globals.GetUpvalues("GetServerTime", "GetCoinTextureString", "IsShiftKeyDown", "IsControlKeyDown", "CreateFrame", "GameTooltip")
 local GetServerTime = upvalues.GetServerTime
 local GetCoinTextureString = upvalues.GetCoinTextureString
 local IsShiftKeyDown = upvalues.IsShiftKeyDown
 local IsControlKeyDown = upvalues.IsControlKeyDown
-local GetAddOnMetadata = upvalues.GetAddOnMetadata
 local CreateFrame = upvalues.CreateFrame
 local GameTooltip = upvalues.GameTooltip
 
@@ -84,11 +83,7 @@ function UI_Inventory:DrawWindow()
     local window = GBankClassic_UI:Create("Frame")
     window:Hide()
     window:SetCallback("OnClose", onClose)
-    local title = GetAddOnMetadata("GBankClassic", "Title")
-    local version = GetAddOnMetadata("GBankClassic", "Version")
-    local outdated = GBankClassic_Chat.isAddonOutdated and " |cffe6cc80(a newer version is available)|r" or ""
-    local text = title .. " v" .. version .. outdated
-    window:SetTitle(text)
+    window:SetTitle(GBankClassic_Core.addonHeader)
     window:SetLayout("Flow")
 	if GBankClassic_Options.db then
 		window:SetStatusTable(GBankClassic_Options.db.char.framePositions or { width = 550, height = 500 })

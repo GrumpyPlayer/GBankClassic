@@ -5,7 +5,6 @@ local Guild = GBankClassic_Guild
 Guild.Info = nil
 
 Guild.player = nil
-Guild.addonVersion = nil
 Guild.banksCache = {}
 Guild.guildMembersCache = {}
 Guild.areOfficerNotesUsedToDefineGuildBankAlts = false
@@ -27,7 +26,7 @@ local Globals = GBankClassic_Globals
 local upvalues = Globals.GetUpvalues("wipe", "debugprofilestop")
 local wipe = upvalues.wipe
 local debugprofilestop = upvalues.debugprofilestop
-local upvalues = Globals.GetUpvalues("GetNormalizedRealmName", "UnitName", "NewTicker", "IsInGuild", "GetGuildInfo", "GetNumGuildMembers", "GetGuildRosterInfo", "GetAddOnMetadata", "GetServerTime", "GetTime", "GetItemInfo", "After", "CanViewOfficerNote", "GuildControlGetNumRanks", "GuildControlGetRankFlags")
+local upvalues = Globals.GetUpvalues("GetNormalizedRealmName", "UnitName", "NewTicker", "IsInGuild", "GetGuildInfo", "GetNumGuildMembers", "GetGuildRosterInfo", "GetServerTime", "GetTime", "GetItemInfo", "After", "CanViewOfficerNote", "GuildControlGetNumRanks", "GuildControlGetRankFlags")
 local GetNormalizedRealmName = upvalues.GetNormalizedRealmName
 local UnitName = upvalues.UnitName
 local NewTicker = upvalues.NewTicker
@@ -35,7 +34,6 @@ local IsInGuild = upvalues.IsInGuild
 local GetGuildInfo = upvalues.GetGuildInfo
 local GetNumGuildMembers = upvalues.GetNumGuildMembers
 local GetGuildRosterInfo = upvalues.GetGuildRosterInfo
-local GetAddOnMetadata = upvalues.GetAddOnMetadata
 local GetServerTime = upvalues.GetServerTime
 local GetTime = upvalues.GetTime
 local GetItemInfo = upvalues.GetItemInfo
@@ -717,21 +715,18 @@ function Guild:GetVersion()
 		return nil
 	end
 
-    local versionInfo = GetAddOnMetadata("GBankClassic", "Version"):gsub("%.", "")
-    local versionNumber = tonumber(versionInfo)
-	self.addonVersion = versionNumber
     local data = {
-        addon = self.addonVersion,
-		protocol_version = PROTOCOL.VERSION,
-		roster = nil,
+        addonVersionNumber = GBankClassic_Core.addonVersionNumber,
+		protocolVersionNumber = PROTOCOL.VERSION,
+		rosterVersionNumber = nil,
 		alts = {},
     }
 
     if self.Info.name then
-        data.name = self.Info.name
+        data.guildName = self.Info.name
     end
     if self.Info.roster.version then
-        data.roster = self.Info.roster.version
+        data.rosterVersionNumber = self.Info.roster.version
     end
 
     for k, v in pairs(self.Info.alts) do
@@ -910,9 +905,9 @@ function Guild:QueryForGuildBankAltData(target, altName)
 		target = guildBankAlt or onlinePeer
 	end
 
-	local peerAddonVersion = GBankClassic_Chat.guildMembersFingerprintData and GBankClassic_Chat.guildMembersFingerprintData[target] and GBankClassic_Chat.guildMembersFingerprintData[target].addonVersion
+	local peerAddonVersionNumber = GBankClassic_Chat.guildMembersFingerprintData and GBankClassic_Chat.guildMembersFingerprintData[target] and GBankClassic_Chat.guildMembersFingerprintData[target].addonVersionNumber
 	local isLegacy = false
-	if target and peerAddonVersion <= 254 then
+	if target and peerAddonVersionNumber <= 254 then --TODO: fix hard coding
 		isLegacy = true
 	end
 
@@ -1583,7 +1578,7 @@ function Guild:Hello(type)
 	local myVersionData = self:GetVersion()
 	local currentData = Guild.Info
 	if myVersionData and currentData then
-		local helloParts = { "Hi! ", self:GetNormalizedPlayer(), " is using version ", myVersionData.addon, "." }
+		local helloParts = { "Hi! ", self:GetNormalizedPlayer(), " is using version ", myVersionData.addonVersionNumber, "." }
 		local rosterCount = GBankClassic_Globals:Count(currentData.roster)
 		local altsCount = GBankClassic_Globals:Count(currentData.alts)
 
@@ -1657,12 +1652,12 @@ end
 
 -- /bank share + after Bank:Scan() + Events:OnShareTimer() every 3 minutes (TIMER_INTERVALS.VERSION_BROADCAST) + once every 30 seconds if UI inventory is empty
 function Guild:Share(type)
-    local guild = self:GetGuildName()
-	if not guild then
+    local guildName = self:GetGuildName()
+	if not guildName then
 		return
 	end
 
-	if self.Info and self.Info.name == guild then
+	if self.Info and self.Info.name == guildName then
 		local normPlayer = self:GetNormalizedPlayer()
 		local share = "I'm sharing my bank data. Share yours please."
 

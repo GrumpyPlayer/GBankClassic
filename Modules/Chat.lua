@@ -12,7 +12,6 @@ local GetClassColor = upvalues.GetClassColor
 local IsInRaid = upvalues.IsInRaid
 local IsInInstance = upvalues.IsInInstance
 local GetServerTime = upvalues.GetServerTime
-local GetAddOnMetadata = upvalues.GetAddOnMetadata
 
 local SHARES_COLOR = "|cff80bfffshares|r"
 local QUERIES_COLOR = "|cffffff00queries|r"
@@ -260,28 +259,27 @@ function Chat:QueueDebouncedMessageWithMultipleGuildBankAlts(sender, data)
     end
 
     -- Track sender metadata (addon version, protocol, roster version)
-    if data.addon then
+    if data.addonVersionNumber then
         if not self.guildMembersFingerprintData then
             self.guildMembersFingerprintData = {}
         end
-		local guildName = data.name or nil
+		local guildName = data.guildName or nil
 		local isGuildBankAlt = data.isGuildBankAlt or false
-		local addonVersion = data.addon
-		local protocolVersion = data.protocol_version or 1
-		local rosterVersion = data.roster or nil
+		local addonVersionNumber = data.addonVersionNumber or 0
+		local protocolVersionNumber = data.protocolVersionNumber or 0
+		local rosterVersionNumber = data.rosterVersionNumber or 0
         self.guildMembersFingerprintData[sender] = {
             seen = GetServerTime(),
             isGuildBankAlt = isGuildBankAlt,
-            addonVersion = addonVersion,
-            protocolVersion = protocolVersion,
-            rosterVersion = rosterVersion,
+            addonVersionNumber = addonVersionNumber,
+            protocolVersionNumber = protocolVersionNumber,
+            rosterVersionNumber = rosterVersionNumber,
         }
-		GBankClassic_Database:UpdatePeerProtocol(guildName, sender, protocolVersion)
-		GBankClassic_Output:Debug("ROSTER", "Tracking member %s from %s with addon version %s (isGuildBankAlt=%s, protocolVersion=%s, rosterVersion=%s)", self:ColorPlayerName(sender), tostring(guildName), tostring(addonVersion), tostring(isGuildBankAlt), tostring(protocolVersion), tostring(rosterVersion))
+		GBankClassic_Database:UpdatePeerProtocol(guildName, sender, protocolVersionNumber)
+		GBankClassic_Output:Debug("ROSTER", "Tracking member %s from %s with addon version %s (isGuildBankAlt=%s, protocolVersionNumber=%s, rosterVersionNumber=%s)", self:ColorPlayerName(sender), tostring(guildName), tostring(addonVersionNumber), tostring(isGuildBankAlt), tostring(protocolVersionNumber), tostring(rosterVersionNumber))
 
 		-- Addon version check
-		local myVersionData = GBankClassic_Guild:GetVersion()
-		if myVersionData and myVersionData.addon and data.addon > myVersionData.addon then
+		if data.addonVersionNumber > GBankClassic_Core.addonVersionNumber then
 			if not self.isAddonOutdated then
 				-- Only make the callout once per session
 				self.isAddonOutdated = true
@@ -458,19 +456,20 @@ function Chat:ProcessFingerprint(data, sender)
 	local altCount = data.alts and GBankClassic_Globals:Count(data.alts)
 	GBankClassic_Output:Debug("PROTOCOL", self:ColorPlayerName(sender), SHARES_COLOR, "fingerprint", string.format("(%d guild bank alts)", altCount))
 
-	local myVersionData = GBankClassic_Guild:GetVersion()
-	if myVersionData then
-		if data.name then
-			if myVersionData.name ~= data.name then
-				GBankClassic_Output:Debug("PROTOCOL", "Rejecting fingerprint from %s (ourGuild=%s, theirGuild=%s)", self:ColorPlayerName(sender), myVersionData.name, data.name)
+	local guildName = GBankClassic_Guild:GetGuildName()
+	local rosterVersionNumber = GBankClassic_Guild.Info and GBankClassic_Guild.Info.roster and GBankClassic_Guild.Info.roster.version
+	if guildName and rosterVersionNumber then
+		if data.guildName then
+			if guildName ~= data.guildName then
+				GBankClassic_Output:Debug("PROTOCOL", "Rejecting fingerprint from %s (ourGuild=%s, theirGuild=%s)", self:ColorPlayerName(sender), guildName, data.guildName)
 
 				return
 			end
 		end
 
-		if data.roster then
-			if myVersionData.roster == nil or data.roster > myVersionData.roster then
-				GBankClassic_Guild:QueryForRosterData(sender, data.roster)
+		if data.rosterVersionNumber then
+			if rosterVersionNumber == nil or data.rosterVersionNumber > rosterVersionNumber then
+				GBankClassic_Guild:QueryForRosterData(sender, data.rosterVersionNumber)
 			end
 		end
 
@@ -573,7 +572,7 @@ function Chat:OnCommReceived(prefix, message, distribution, sender)
 	local player = GBankClassic_Guild:GetNormalizedPlayer()
 	sender = GBankClassic_Guild:NormalizeName(sender) or sender
 
-	if not GBankClassic_Guild.player and not GBankClassic_Guild.addonVersion then
+	if not GBankClassic_Guild.player and not GBankClassic_Core.addonVersionNumber then
 		GBankClassic_Output:Debug("COMMS", "<", "(ignoring)", prefix, prefixDesc, "(not ready yet)")
 
 		return
@@ -727,19 +726,18 @@ function Chat:OnCommReceived(prefix, message, distribution, sender)
 		local message = tostring(data)
 		local versionStr = string.match(message, "version (%d+)")
 		if versionStr then
-			local addonVersion = tonumber(versionStr)
+			local incomingAddonVersionNumber = tonumber(versionStr)
 			if not self.guildMembersFingerprintData then
 				self.guildMembersFingerprintData = {}
 			end
 			self.guildMembersFingerprintData[sender] = {
-				addonVersion = addonVersion,
+				addonVersionNumber = incomingAddonVersionNumber,
 				seen = GetServerTime()
 			}
-			GBankClassic_Output:Debug("ROSTER", "Parsed version %s for %s from hello reply", addonVersion, self:ColorPlayerName(sender))
+			GBankClassic_Output:Debug("ROSTER", "Parsed version %s for %s from hello reply", incomingAddonVersionNumber, self:ColorPlayerName(sender))
 
 			-- Addon version check
-			local myVersionData = GBankClassic_Guild:GetVersion()
-			if myVersionData.addon and addonVersion > myVersionData.addon then
+			if incomingAddonVersionNumber > GBankClassic_Core.addonVersionNumber then
 				if not self.isAddonOutdated then
 					-- Only make the callout once per session
 					self.isAddonOutdated = true
@@ -800,8 +798,7 @@ local COMMAND_REGISTRY = {
 		name = "version",
 		help = "display the GBankClassic version",
 		handler = function()
-			local version = GetAddOnMetadata("GBankClassic", "Version") or "unknown"
-			GBankClassic_Output:Response("GBankClassic version: %s.", version)
+			GBankClassic_Output:Response("GBankClassic version: %s.", GBankClassic_Core.addonVersion)
 		end,
 	},
 	{
@@ -1042,29 +1039,27 @@ function Chat:ShowHelp()
 end
 
 function Chat:PrintVersions()
-	-- Get our own version
-	local myVersionData = GBankClassic_Guild:GetVersion()
-    local myVersionNumber = myVersionData and myVersionData.addon
+	-- Get our own addon version
 	local myPlayer = GBankClassic_Guild:GetNormalizedPlayer()
 
 	-- Collect versions into a sortable list
 	local versions = {}
 
 	-- Add ourselves
-	table.insert(versions, { name = myPlayer, addonVersion = tonumber(myVersionNumber), seen = time(), isSelf = true })
+	table.insert(versions, { playerName = myPlayer, addonVersionNumber = GBankClassic_Core.addonVersionNumber, seen = time(), isSelf = true })
 
 	-- Add tracked guild members
-	for name, info in pairs(self.guildMembersFingerprintData) do
-		table.insert(versions, { name = name, addonVersion = tonumber(info.addonVersion), seen = info.seen, isSelf = false })
+	for playerName, info in pairs(self.guildMembersFingerprintData) do
+		table.insert(versions, { playerName = playerName, addonVersionNumber = tonumber(info.addonVersionNumber), seen = info.seen, isSelf = false })
 	end
 
 	-- Sort by version (descending), then by name
 	table.sort(versions, function(a, b)
-		if (a and a.addonVersion and b and b.addonVersion) and (a.addonVersion ~= b.addonVersion) then
-			return a.addonVersion > b.addonVersion
+		if (a and a.addonVersionNumber and b and b.addonVersionNumber) and (a.addonVersionNumber ~= b.addonVersionNumber) then
+			return a.addonVersionNumber > b.addonVersionNumber
 		end
 
-		return a.name < b.name
+		return a.playerName < b.playerName
 	end)
 
 	-- Print header
@@ -1086,7 +1081,7 @@ function Chat:PrintVersions()
 			end
 		end
 		local marker = entry.isSelf and " (you)" or ""
-		GBankClassic_Output:Response("  %s: %s%s%s", entry.name, entry.addonVersion, marker, age)
+		GBankClassic_Output:Response("  %s: %s%s%s", entry.name, entry.addonVersionNumber, marker, age)
 	end
 end
 
