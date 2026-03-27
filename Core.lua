@@ -78,17 +78,9 @@ end
 function Core:OnInitialize()
     GBankClassic_Database:Init()
     GBankClassic_Chat:Init()
+    self:LoadMetadata()
     GBankClassic_Options:Init()
     GBankClassic_UI:Init()
-
-    local addonTitle = GetAddOnMetadata("GBankClassic", "Title")
-    local addonVersion = GetAddOnMetadata("GBankClassic", "Version")
-    local addonVersionNumber = tonumber((addonVersion:gsub("%.", "")))
-    local addonIsOutdated = GBankClassic_Chat.isAddonOutdated and " |cffe6cc80(a newer version is available)|r" or ""
-    local addonHeader = addonTitle .. " v" .. addonVersion .. addonIsOutdated
-	self.addonHeader = addonHeader
-	self.addonVersion = addonVersion
-	self.addonVersionNumber = addonVersionNumber
 end
 
 -- Called when the addon is enabled
@@ -100,6 +92,21 @@ end
 function Core:OnDisable()
     GBankClassic_Events:UnregisterEvents()
     GBankClassic_Chat:CancelAllDebounceTimers()
+end
+
+-- Load metadata from the addon (called again when isAddonOutdated is set to true based on incoming messages)
+function Core:LoadMetadata()
+    local addonTitle = GetAddOnMetadata("GBankClassic", "Title")
+    local addonVersion = GetAddOnMetadata("GBankClassic", "Version")
+    local addonVersionNumber = tonumber((addonVersion:gsub("%.", "")))
+    local addonIsOutdated = GBankClassic_Chat.isAddonOutdated and " |cffe6cc80(a newer version is available)|r" or ""
+    local addonHeader = addonTitle .. " v" .. addonVersion .. addonIsOutdated
+	self.addonHeader = addonHeader
+	self.addonVersion = addonVersion
+	self.addonVersionNumber = addonVersionNumber
+    if GBankClassic_UI_Inventory.Window then
+        GBankClassic_UI_Inventory.Window:SetTitle(addonHeader)
+    end
 end
 
 -- Checksum implementation for message integrity

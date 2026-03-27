@@ -36,7 +36,9 @@ function Options:Init()
 
     local options = {
         type = "group",
-        name = GBankClassic_Core.addonHeader,
+        name = function()
+    		return GBankClassic_Core.addonHeader
+		end,
 		childGroups = "tab",
         args = {
 			general = {
