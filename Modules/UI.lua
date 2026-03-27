@@ -42,11 +42,12 @@ function UI:RequestRefresh()
 
     self.isRefreshPending = true
 
-    After(1, function()
+    After(2.5, function()
         self.isRefreshPending = false
 
         if GBankClassic_UI_Inventory and GBankClassic_UI_Inventory.isOpen then
             GBankClassic_UI_Inventory:DrawContent()
+            -- TODO: can we avoid always refreshing the current tab any time any data changes and instead detect if the changed data is for the currently displayed guild bank alt (GBankClassic_UI_Inventory.currentTab)?
             GBankClassic_UI_Inventory:RefreshCurrentTab()
         end
         if GBankClassic_UI_Search and GBankClassic_UI_Search.isOpen then
@@ -206,7 +207,7 @@ function UI:HideTooltip()
 end
 
 function UI:OnInsertLink(link)
-    if GBankClassic_UI_Search.searchField and GBankClassic_UI_Search.searchField.editbox:HasFocus() then
+    if GBankClassic_UI_Search.searchField and GBankClassic_UI_Search.searchField:HasFocus() then
         GBankClassic_UI_Search.SearchText = link
         GBankClassic_UI_Search:DrawContent()
     end
