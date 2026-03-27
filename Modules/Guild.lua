@@ -1024,51 +1024,6 @@ function Guild:GetOnlineGuildBankAlts()
     return onlineGuildBankAltsCache
 end
 
--- Compute minimal state summary for pull-based protocol
-function Guild:ComputeStateSummary(name)
-	if not name then
-		return nil
-	end
-
-	local norm = self:NormalizeName(name) or name
-
-	-- If we don't have data for this alt, return a "no data" summary
-	if not self.Info or not self.Info.alts or not self.Info.alts[norm] then
-		return { version = 0, hash = nil, money = 0, items = {}, ledger = {} }
-	end
-
-	local alt = self.Info.alts[norm]
-	local summary = {
-		version = alt.version or 0,
-		hash = alt.inventoryHash or nil
-	}
-
-	return summary
-end
-
--- Send state summary to responder
-function Guild:SendStateSummary(name, target)
-	if not name or not target then
-		GBankClassic_Output:Debug("SYNC", "SendStateSummary: early exit because of missing parameters")
-
-		return
-	end
-
-	local summary = self:ComputeStateSummary(name)
-	if not summary then
-		GBankClassic_Output:Debug("SYNC", "SendStateSummary: early exit for %s (no data)", name)
-
-		return
-	end
-
-	local payload = { type = "state-summary", name = name, summary = summary }
-	local data = GBankClassic_Core:SerializePayload(payload)
-	if not GBankClassic_Core:SendWhisper("gbank-state", data, target, "NORMAL") then
-		return
-	end
-	GBankClassic_Output:Debug("SYNC", "SendStateSummary: sent for %s to %s (items=%d, %d bytes)", name, target, summary.items and #summary.items or 0, string.len(data))
-end
-
 -- Strip link fields from items for transmission (bandwidth optimization)
 function Guild:StripItemLinks(items)
 	if not items then

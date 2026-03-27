@@ -45,13 +45,9 @@ DEBUG_CATEGORY = {
 
 -- Communication prefix descriptions for debug logging (maximum of 16 characters)
 COMM_PREFIX_DESCRIPTIONS = {
-	["gbank-dv2"] = "(Fingerprint)", -- Broadcast addon and roster version, alts: version + hash
-	["gbank-r"] = "(Query)", -- Request specific missing data (type = alt-request, roster)
-	["gbank-rr"] = "(Query reply)", -- Acknowledge to requester that we have the data they want
-	["gbank-state"] = "(State summary)", -- Send to acknowledger our version/hash for one specific guild bank alt (type = state-summary, name = alt, summary = { version, hash })
+	["gbank-dv2"] = "(Fingerprint)", -- Broadcast addon and roster version, alts: version + itemsHash
 	["gbank-d"] = "(Data)", -- Share data (type = alt, roster)
-	["gbank-nochange"] = "(No change)", -- Confirm we have nothing to share
-
+	["gbank-r"] = "(Query)", -- Request specific missing data (type = alt-request, roster) or for legacy clients (type = alt)
 	["gbank-h"] = "(Hello)",
 	["gbank-hr"] = "(Hello reply)",
 	["gbank-s"] = "(Share)",
