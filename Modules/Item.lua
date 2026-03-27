@@ -146,11 +146,10 @@ function Items:GetItems(items, callback)
 				processed = processed + 1
 				checkComplete()
 			else
-
 				if capturedItemLink then
 					GBankClassic_Output:Debug("ITEM", "Item %d has link, using directly", capturedItemID)
 					if not capturedItem.Info then
-						local name, _, rarity, level, _, _, _, _, _, icon, price, itemClassId, itemSubClassId = GetItemInfo(capturedItemID)
+						local name, _, rarity, level, _, _, _, _, _, icon, price, itemClassId, itemSubClassId = GetItemInfo(capturedItemLink)
 						if name then
 							GBankClassic_Output:Debug("ITEM", "Item %d already cached", capturedItemID)
 							local equip = GetItemInventoryTypeByID(capturedItemID)
