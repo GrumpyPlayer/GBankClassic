@@ -297,5 +297,20 @@ function Bank:ComputeItemsHash(items, money)
 	table.insert(parts, "I:" .. hashItems(items))
 	local combined = table.concat(parts, "|")
 
-	return GBankClassic_Core:Checksum(combined) or 0
+	-- Inline checksum
+	if type(combined) ~= "string" then
+		return 0
+	end
+
+	local sum = 0
+	local len = #combined
+	for i = 1, len do
+		local byte = string.byte(combined, i)
+		sum = (sum * 31 + byte) % 2147483647
+	end
+
+	-- Include length to catch truncation
+	sum = (sum * 31 + len) % 2147483647
+
+	return sum
 end

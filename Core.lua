@@ -10,8 +10,6 @@ GBankClassic_Core = LibStub("AceAddon-3.0"):NewAddon("GBankClassic", "AceComm-3.
 local Core = GBankClassic_Core
 local AceComm_SendCommMessage = Core.SendCommMessage
 
-local CHECKSUM_SEPARATOR = "\030" -- ASCII record separator, not used by AceSerializer
-
 local LibSerialize = LibStub("LibSerialize")
 local LibDeflate = LibStub:GetLibrary("LibDeflate")
 
@@ -109,85 +107,19 @@ function Core:LoadMetadata()
     end
 end
 
--- Checksum implementation for message integrity
--- Uses a simple but effective hash that detects corruption
-function Core:Checksum(str)
-    if not str or type(str) ~= "string" then
-        return 0
-    end
-
-    -- Simple additive checksum with bit mixing for better distribution
-    local sum = 0
-    local len = #str
-    for i = 1, len do
-        local byte = string.byte(str, i)
-        sum = (sum * 31 + byte) % 2147483647
-    end
-    -- Include length to catch truncation
-    sum = (sum * 31 + len) % 2147483647
-
-    return sum
-end
-
 -- Serialize data
 function Core:SerializePayload(data)
-    --[[ NEW:
     local serializedData = LibSerialize:Serialize(data)
     local compressedData = LibDeflate:CompressDeflate(serializedData, {level = 6})
     local encodedData = LibDeflate:EncodeForWoWAddonChannel(compressedData)
 
     return encodedData
-    ]]-- OLD:
-
-    local serialized = self:Serialize(data)
-    if not serialized then
-        return nil
-    end
-    local checksum = self:Checksum(serialized)
-
-    return serialized .. CHECKSUM_SEPARATOR .. tostring(checksum)
 end
 
 -- Deserialize data; returns success, data (or nil, error)
 function Core:DeSerializePayload(message)
-    if not message or type(message) ~= "string" then
-        return false, "invalid message"
-    end
-
-    --[[ NEW:
     local decoded = LibDeflate:DecodeForWoWAddonChannel(message)
     local inflated = LibDeflate:DecompressDeflate(decoded)
 
-    return success, data = LibSerialize:Deserialize(inflated)
-    ]]-- OLD:
-
-    -- Find the checksum separator from the end (payload may contain separator)
-    -- TODO: Deprecate this legacy support at the right time (checksum is no longer added to messages as of v2.6.0)
-    local sepPos = nil
-    local sepByte = string.byte(CHECKSUM_SEPARATOR)
-    for i = #message, 1, -1 do
-        if string.byte(message, i) == sepByte then
-            sepPos = i
-            break
-        end
-    end
-    if not sepPos then
-        -- No checksum found - fall back to regular deserialize for backwards compatibility
-        return self:Deserialize(message)
-    end
-
-    local serialized = string.sub(message, 1, sepPos - 1)
-    local checksumStr = string.sub(message, sepPos + 1)
-    local expectedChecksum = tonumber(checksumStr)
-
-    if not expectedChecksum then
-        return false, "invalid checksum format"
-    end
-
-    local actualChecksum = self:Checksum(serialized)
-    if actualChecksum ~= expectedChecksum then
-        return false, "checksum mismatch (expected " .. expectedChecksum .. ", got " .. actualChecksum .. ")"
-    end
-
-    return self:Deserialize(serialized)
+    return LibSerialize:Deserialize(inflated)
 end
