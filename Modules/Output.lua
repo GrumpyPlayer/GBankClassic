@@ -12,11 +12,14 @@ local Globals = GBankClassic_Globals
 local upvalues = Globals.GetUpvalues("date", "GetServerTime")
 local date = upvalues.date
 local GetServerTime = upvalues.GetServerTime
-local upvalues = Globals.GetUpvalues("FCF_DockFrame", "FCF_SetLocked", "FCF_SetWindowColor", "FCF_SetWindowName", "GetChatWindowInfo", "ChatFrame_RemoveAllMessageGroups", "ChatFrame_RemoveAllChannels")
+local upvalues = Globals.GetUpvalues("FCF_DockFrame", "FCF_ResetChatWindows", "FCF_SetLocked", "FCF_SetWindowColor", "FCF_SetWindowName", "FCF_SelectDockFrame", "ChatFrame1", "GetChatWindowInfo", "ChatFrame_RemoveAllMessageGroups", "ChatFrame_RemoveAllChannels")
 local FCF_DockFrame = upvalues.FCF_DockFrame
+local FCF_ResetChatWindows = upvalues.FCF_ResetChatWindows
 local FCF_SetLocked = upvalues.FCF_SetLocked
 local FCF_SetWindowColor = upvalues.FCF_SetWindowColor
 local FCF_SetWindowName = upvalues.FCF_SetWindowName
+local FCF_SelectDockFrame = upvalues.FCF_SelectDockFrame
+local ChatFrame1 = upvalues.ChatFrame1
 local GetChatWindowInfo = upvalues.GetChatWindowInfo
 local ChatFrame_RemoveAllMessageGroups = upvalues.ChatFrame_RemoveAllMessageGroups
 local ChatFrame_RemoveAllChannels = upvalues.ChatFrame_RemoveAllChannels
@@ -152,6 +155,9 @@ function Output:CreateDebugTab()
 			self.debugFrame:Show()
 			FCF_DockFrame(self.debugFrame)
 
+			-- Restore General as the active tab so the debug frame isn't selected on the next reload
+			FCF_SelectDockFrame(ChatFrame1)
+
 			-- Initial draw of buffered messages
 			self:RedrawDebugMessages()
 
@@ -207,6 +213,9 @@ function Output:CreateDebugTab()
 	-- Make visible and dock it
 	frame:Show()
 	FCF_DockFrame(frame)
+
+	-- Restore General as the active tab so the debug frame isn't selected on the next reload
+	FCF_SelectDockFrame(ChatFrame1)
 
 	-- Hook OnShow to redraw messages when tab becomes visible
 	if not frame.gbankClassicHooked then
@@ -297,10 +306,10 @@ function Output:Debug(fmt, ...)
 		-- Shift parameters: first arg after category becomes the format string
 		local actualFmt = select(1, ...)
 		local args = {select(2, ...)}
-
+		
 		return log(LOG_LEVEL.DEBUG, "|cff888888[" .. category .. "]|r", actualFmt, unpack(args))
 	end
-
+	
 	-- Fallback: no category specified
 	return log(LOG_LEVEL.DEBUG, "|cff888888[DEBUG]|r", fmt, ...)
 end
@@ -315,8 +324,8 @@ function Output:DebugComm(fmt, ...)
 	if not self:IsCategoryEnabled("COMMS") then
 		return false
 	end
-
-	return log(LOG_LEVEL.DEBUG, "|cff888888[COMMS] (DEBUG)|r", fmt, ...)
+	
+	return log(LOG_LEVEL.DEBUG, "|cff888888[DEBUG] (comm)|r", fmt, ...)
 end
 
 -- Info: sync status, normal operations

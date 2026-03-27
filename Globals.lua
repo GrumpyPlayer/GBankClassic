@@ -10,13 +10,11 @@ local hooksecurefunc = hooksecurefunc
 local date = date
 local time = time
 local wipe = wipe
-local gsub = gsub
 Globals.debugprofilestop = debugprofilestop
 Globals.hooksecurefunc = hooksecurefunc
 Globals.date = date
 Globals.time = time
 Globals.wipe = wipe
-Globals.gsub = gsub
 
 -- WoW APIs
 local IsInRaid = IsInRaid
@@ -34,11 +32,13 @@ local FCF_ResetChatWindows = FCF_ResetChatWindows
 local FCF_SetLocked = FCF_SetLocked
 local FCF_SetWindowColor = FCF_SetWindowColor
 local FCF_SetWindowName = FCF_SetWindowName
+local FCF_SelectDockFrame = FCF_SelectDockFrame
 Globals.FCF_DockFrame = FCF_DockFrame
 Globals.FCF_ResetChatWindows = FCF_ResetChatWindows
 Globals.FCF_SetLocked = FCF_SetLocked
 Globals.FCF_SetWindowColor = FCF_SetWindowColor
 Globals.FCF_SetWindowName = FCF_SetWindowName
+Globals.FCF_SelectDockFrame = FCF_SelectDockFrame
 local ChatFrame_RemoveAllMessageGroups = ChatFrame_RemoveAllMessageGroups
 local GetChatWindowInfo = GetChatWindowInfo
 local CreateFrame = CreateFrame
@@ -152,6 +152,7 @@ local MailFrame = MailFrame
 local UIParent = UIParent
 local UISpecialFrames = UISpecialFrames
 local WorldFrame = WorldFrame
+local ChatFrame1 = ChatFrame1
 Globals.GameFontNormal = GameFontNormal
 Globals.GameTooltip = GameTooltip
 Globals.SendMailNameEditBox = SendMailNameEditBox
@@ -161,6 +162,7 @@ Globals.MailFrame = MailFrame
 Globals.UIParent = UIParent
 Globals.UISpecialFrames = UISpecialFrames
 Globals.WorldFrame = WorldFrame
+Globals.ChatFrame1 = ChatFrame1
 
 -- WoW global variables
 local ATTACHMENTS_MAX_RECEIVE = ATTACHMENTS_MAX_RECEIVE
@@ -175,16 +177,6 @@ Globals.BANK_CONTAINER = BANK_CONTAINER
 Globals.ITEM_UNIQUE = ITEM_UNIQUE
 Globals.NUM_CHAT_WINDOWS = NUM_CHAT_WINDOWS
 Globals.NUM_BANKGENERIC_SLOTS = NUM_BANKGENERIC_SLOTS
-local AUCTION_REMOVED_MAIL_SUBJECT = AUCTION_REMOVED_MAIL_SUBJECT
-local AUCTION_EXPIRED_MAIL_SUBJECT = AUCTION_EXPIRED_MAIL_SUBJECT
-local AUCTION_OUTBID_MAIL_SUBJECT = AUCTION_OUTBID_MAIL_SUBJECT
-local AUCTION_SOLD_MAIL_SUBJECT = AUCTION_SOLD_MAIL_SUBJECT
-local AUCTION_WON_MAIL_SUBJECT = AUCTION_WON_MAIL_SUBJECT
-Globals.AUCTION_REMOVED_MAIL_SUBJECT = AUCTION_REMOVED_MAIL_SUBJECT
-Globals.AUCTION_EXPIRED_MAIL_SUBJECT = AUCTION_EXPIRED_MAIL_SUBJECT
-Globals.AUCTION_OUTBID_MAIL_SUBJECT = AUCTION_OUTBID_MAIL_SUBJECT
-Globals.AUCTION_SOLD_MAIL_SUBJECT = AUCTION_SOLD_MAIL_SUBJECT
-Globals.AUCTION_WON_MAIL_SUBJECT = AUCTION_WON_MAIL_SUBJECT
 
 -- Embedded libraries or other AddOns
 local LibStub = LibStub
