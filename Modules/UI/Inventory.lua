@@ -90,13 +90,9 @@ function UI_Inventory:DrawWindow()
     local text = title .. " v" .. version .. outdated
     window:SetTitle(text)
     window:SetLayout("Flow")
-    window:SetWidth(550)
-
-	-- Persist window position/size across reloads
 	if GBankClassic_Options.db then
-		window:SetStatusTable(GBankClassic_Options.db.char.framePositions)
+		window:SetStatusTable(GBankClassic_Options.db.char.framePositions or { width = 550, height = 500 })
 	end
-
     window.frame:SetResizeBounds(500, 500)
     window.frame:EnableKeyboard(true)
     window.frame:SetPropagateKeyboardInput(true)

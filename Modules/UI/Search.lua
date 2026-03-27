@@ -94,14 +94,7 @@ function UI_Search:DrawWindow()
     searchWindow:SetTitle("Search")
     searchWindow:SetLayout("Flow")
     searchWindow:EnableResize(false)
-
-	-- Persist window position/size across reloads
-	if GBankClassic_Options and GBankClassic_Options.db then
-		searchWindow:SetStatusTable(GBankClassic_Options.db.char.framePositions)
-	end
-
-	-- Set width after SetStatusTable to override any saved width
-    searchWindow:SetWidth(250)
+    searchWindow.frame:SetSize(250, 500)
     self.Window = searchWindow
 
     local searchLabel = searchWindow.frame:CreateFontString(nil, "BACKGROUND", "GameFontHighlightSmall")

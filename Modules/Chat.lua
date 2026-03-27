@@ -1093,8 +1093,15 @@ end
 function Chat:RestoreUI()
 	if GBankClassic_Options and GBankClassic_Options.db and GBankClassic_Options.db.char then
 		local count = GBankClassic_Globals:Count(GBankClassic_Options.db.char.framePositions)
-		GBankClassic_Options.db.char.framePositions = {}
-		GBankClassic_Output:Response("Cleared %d saved window position(s).", count)
+		if count > 0 then
+			GBankClassic_Options.db.char.framePositions = nil
+			GBankClassic_Output:Response("Cleared saved window positions.")
+		else
+			GBankClassic_Output:Response("Nothing to be done.")
+		end
+		GBankClassic_UI_Inventory.Window.frame:ClearAllPoints()
+		GBankClassic_UI_Inventory.Window.frame:SetPoint("CENTER", UIParent, "CENTER", 0 ,0)
+		GBankClassic_UI_Inventory.Window.frame:SetSize(550, 500)
 		if GBankClassic_UI_Inventory.isOpen then
 			GBankClassic_UI_Inventory:Close()
 			GBankClassic_UI_Inventory:Toggle()
@@ -1102,6 +1109,6 @@ function Chat:RestoreUI()
 			GBankClassic_UI_Inventory:Open()
 		end
 	else
-		GBankClassic_Output:Response("No frame positions to clear.")
+		GBankClassic_Output:Response("Nothing to be done.")
 	end
 end
