@@ -9,10 +9,11 @@ local ITEM_CLASSES_NEEDING_LINK = {
 }
 
 local Globals = GBankClassic_Globals
-local upvalues = Globals.GetUpvalues("GetItemInfo", "GetItemInventoryTypeByID", "CreateFrame")
+local upvalues = Globals.GetUpvalues("GetItemInfo", "GetItemInventoryTypeByID", "CreateFrame", "GetItemInfoInstant")
 local GetItemInfo = upvalues.GetItemInfo
 local GetItemInventoryTypeByID = upvalues.GetItemInventoryTypeByID
 local CreateFrame = upvalues.CreateFrame
+local GetItemInfoInstant = upvalues.GetItemInfoInstant
 local upvalues = Globals.GetUpvalues("Item")
 local Item = upvalues.Item
 local upvalues = Globals.GetUpvalues("UIParent")
@@ -42,9 +43,10 @@ function Items:NeedsLink(itemLink)
 	return false
 end
 
--- Get normalized item key for deduplication
--- Format: itemID:enchant:suffixID (3 parts)
-function Items:GetImprovedItemKey(link)
+-- Get normalized item key for deduplication (strips unique instance ID)
+-- Items with same ID+suffix but different instance IDs will have same key
+-- Format: itemID:enchant:gem1:gem2:gem3:gem4:suffixID (7 parts)
+function Items:GetItemKey(link)
 	if not link or link == "" then
 		return ""
 	end
@@ -61,15 +63,15 @@ function Items:GetImprovedItemKey(link)
 			table.insert(parts, part)
 		end
 
-		-- Return ID, ID:enchant, ID::suffix, or ID:enchant:suffix
-		if parts[7] then
-			return table.concat({parts[1], parts[2] or "", parts[7]}, ":")
-		elseif parts[2] then
-			return parts[1] .. ":" .. parts[2]
+		-- Keep first 7 parts only (strip uniqueID and specializationID)
+		if #parts >= 7 then
+			return "item:" .. table.concat({parts[1], parts[2], parts[3], parts[4], parts[5], parts[6], parts[7]}, ":")
 		else
-			return parts[1]
+			return "item:" .. itemString
 		end
 	end
+
+	return link
 end
 
 function Items:GetItems(items, callback)
@@ -150,11 +152,9 @@ function Items:GetItems(items, callback)
 				if capturedItemLink then
 					GBankClassic_Output:Debug("ITEM", "Item %d has link, using directly", capturedItemID)
 					if not capturedItem.Info then
-						local name, _, rarity, level, _, _, _, _, _, icon, price, itemClassId, itemSubClassId = GetItemInfo(capturedItemID)
-						if name then
-							GBankClassic_Output:Debug("ITEM", "Item %d already cached", capturedItemID)
-							local equip = GetItemInventoryTypeByID(capturedItemID)
-							capturedItem.Info = { class = itemClassId, subClass = itemSubClassId, equipId = equip, rarity = rarity, name = name, level = level, price = price, icon = icon }
+						local _, _, _, _, iconID = GetItemInfoInstant(capturedItemLink)
+						if iconID then
+							capturedItem.Info = { icon = iconID, name = capturedItemLink:match("%[(.-)%]") or ("Item " .. tostring(capturedItemID))}
 						end
 					end
 					table.insert(list, capturedItem)
@@ -180,17 +180,14 @@ function Items:GetItems(items, callback)
 
 						if not success then
 							GBankClassic_Output:Debug("ITEM", "CreateFromItemID pcall failed: %s", tostring(itemData))
-							pendingAsync = pendingAsync - 1
 							processed = processed + 1
 							checkComplete()
 						elseif not itemData then
 							GBankClassic_Output:Debug("ITEM", "CreateFromItemID returned nil")
-							pendingAsync = pendingAsync - 1
 							processed = processed + 1
 							checkComplete()
 						elseif type(itemData) ~= "table" then
 							GBankClassic_Output:Debug("ITEM", "CreateFromItemID returned non-table: %s", type(itemData))
-							pendingAsync = pendingAsync - 1
 							processed = processed + 1
 							checkComplete()
 						else
@@ -206,23 +203,19 @@ function Items:GetItems(items, callback)
 
 							-- Check if itemID matches what we expect
 							if not accessSuccess then
-								GBankClassic_Output:Debug("ITEM", "Cannot access itemData.itemID")
-								pendingAsync = pendingAsync - 1
+								GBankClassic_Output:Debug("ITEM", "Cannot access itemData.itemID (protected?)")
 								processed = processed + 1
 								checkComplete()
 							elseif objectItemID == nil then
 								GBankClassic_Output:Debug("ITEM", "ERROR: itemData.itemID is nil for requested ID %d", capturedItemID)
-								pendingAsync = pendingAsync - 1
 								processed = processed + 1
 								checkComplete()
 							elseif type(objectItemID) ~= "number" then
 								GBankClassic_Output:Debug("ITEM", "itemData.itemID is not a number: %s", type(objectItemID))
-								pendingAsync = pendingAsync - 1
 								processed = processed + 1
 								checkComplete()
 							elseif objectItemID ~= capturedItemID then
 								GBankClassic_Output:Debug("ITEM", "itemData.itemID mismatch: expected %d, got %d", capturedItemID, objectItemID)
-								pendingAsync = pendingAsync - 1
 								processed = processed + 1
 								checkComplete()
 							else
@@ -295,7 +288,7 @@ local function basicSort(a, b)
     end
 end
 
-function Items:Sort(items, mode)
+function Items:Sort(items)
 	-- Ensure all items have the required fields for sorting
 	for _, item in ipairs(items) do
 		if not item.Info then
@@ -313,125 +306,89 @@ function Items:Sort(items, mode)
 		end
 	end
 
-	-- mode = "default" (grouped by rarity, item class, equipId, equip slot, subclass)
-	if not mode or mode == "default" then
-		table.sort(items, function(a, b)
-			if a.Info.rarity ~= b.Info.rarity and a.Info.rarity and b.Info.rarity then
-				return a.Info.rarity < b.Info.rarity
-			end
-			if a.Info.class ~= b.Info.class then
-				return (a.Info.class or 99) < (b.Info.class or 99)
-			end
-			if (a.Info.equipId or 0) > 0 then
-				if a.Info.equipId == b.Info.equipId then
-					return basicSort(a, b)
-				end
-				if a.Info.equip and b.Info.equip then
-					return a.Info.equip < b.Info.equip
-				end
-			end
-			if a.Info.class == b.Info.class and a.Info.subClass == b.Info.subClass then
-				return basicSort(a, b)
-			end
+    table.sort(items, function(a, b)
+        if a.Info.rarity ~= b.Info.rarity and a.Info.rarity and b.Info.rarity then
+            return a.Info.rarity < b.Info.rarity
+        end
+        if a.Info.class ~= b.Info.class then
+            return (a.Info.class or 99) < (b.Info.class or 99)
+        end
+        if (a.Info.equipId or 0) > 0 then
+            if a.Info.equipId == b.Info.equipId then
+                return basicSort(a, b)
+            end
+            if a.Info.equipId and b.Info.equipId then
+                return a.Info.equipId < b.Info.equipId
+            end
+        end
+        if a.Info.class == b.Info.class and a.Info.subClass == b.Info.subClass then
+            return basicSort(a, b)
+        end
 
-			return (a.Info.subClass or 99) < (b.Info.subClass or 99)
-		end)
-	-- mode = "alpha" (alphabetically by name)
-	elseif mode == "alpha" then
-		table.sort(items, function(a, b)
-			return (a.Info.name or "") < (b.Info.name or "")
-		end)
-	-- mode = "type" (grouped by item class, equip slot, subclass, rarity, then name)
-	elseif mode == "type" then
-		table.sort(items, function(a, b)
-			if a.Info.class ~= b.Info.class then
-				return (a.Info.class or 99) < (b.Info.class or 99)
-			end
-			local aEquip = a.Info.equip or ""
-			local bEquip = b.Info.equip or ""
-			if aEquip ~= bEquip then
-				return aEquip < bEquip
-			end
-			if a.Info.subClass ~= b.Info.subClass then
-				return (a.Info.subClass or 99) < (b.Info.subClass or 99)
-			end
-			if a.Info.rarity ~= b.Info.rarity then
-				return (a.Info.rarity or 0) < (b.Info.rarity or 0)
-			end
-			return (a.Info.name or "") < (b.Info.name or "")
-		end)
-	-- mode = "rarity" (epic before rare before uncommon and so on, then A-Z)
-	elseif mode == "rarity" then
-		table.sort(items, function(a, b)
-			local aRarity = a.Info.rarity or 0
-			local bRarity = b.Info.rarity or 0
-			if aRarity ~= bRarity then
-				return aRarity > bRarity
-			end
-			return (a.Info.name or "") < (b.Info.name or "")
-		end)
-	-- mode = "level" (highest required level first, then A-Z)
-	elseif mode == "level" then
-		table.sort(items, function(a, b)
-			local aLevel = a.Info.level or 0
-			local bLevel = b.Info.level or 0
-			if aLevel ~= bLevel then
-				return aLevel > bLevel
-			end
-			return (a.Info.name or "") < (b.Info.name or "")
-		end)
-	end
+        return (a.Info.subClass or 99) < (b.Info.subClass or 99)
+    end)
 end
 
 function Items:Aggregate(a, b)
     local items = {}
+    -- Build ID index to avoid O(n²) lookups for linkless deduplication
     local itemsByID = {}
-    local itemsByKey = {}
+    local itemsByKey = {} -- Track by full key to prevent duplicates
+	-- Track which IDs have been seen to handle hash table to array conversion
+    local seenIDs = {}
 
     local function processItem(v)
-        if type(v) ~= "table" or not v.ID then
-            -- Skip malformed entries
+        if not v or not v.ID then
+            -- Skip malformed entries (missing required ID field)
             return
         end
 
         -- Ensure Count is set
         v.Count = v.Count or 1
 
-        -- Define a key for deduplication
-		local idStr = tostring(v.ID)
-		local key = idStr
-
-		-- For weapons/armor, include enchant and suffix differences
-		if v.Link then
-			if self:NeedsLink(v.Link) then
-				local linkKey = self:GetImprovedItemKey(v.Link)
-				if linkKey and linkKey ~= "" then
-					key = linkKey
-				end
-			else
-				v.Link = nil
-			end
-		end
+        -- Use normalized key (strips unique instance ID) for deduplication
+        -- This allows identical items with different instance IDs to merge
+        local itemKey = v.Link and self:GetItemKey(v.Link) or ""
+        local key = tostring(v.ID) .. ":" .. itemKey
 
         -- Skip if we already have this exact key
         if itemsByKey[key] then
             local existingItem = itemsByKey[key]
-            existingItem.Count = existingItem.Count + v.Count
-            local existingItemLink = existingItem.Link or v.Link
-			if self:NeedsLink(existingItemLink) then
-				existingItem.Link = existingItemLink
-			end
+            existingItem.Count = (existingItem.Count or 1) + (v.Count or 1)
+            existingItem.Link = existingItem.Link or v.Link
 
             return
         end
 
+        -- If no link, also check if there's an existing entry with same ID but with link
+        -- This handles deduplication between linked (bank/bags) and linkless (mail) items
+        if not v.Link and itemKey == "" then
+            -- Use ID index for O(1) lookup instead of O(n) iteration
+            local idStr = tostring(v.ID)
+            local existingKeys = itemsByID[idStr]
+            if existingKeys and #existingKeys > 0 then
+                -- Found item(s) with same ID - merge into first entry
+                local existingKey = existingKeys[1]
+                local existingItem = items[existingKey]
+                local itemCount = existingItem.Count or 1
+                local vCount = v.Count or 1
+                existingItem.Count = itemCount + vCount
+                existingItem.Link = existingItem.Link or v.Link
+                key = existingKey
+            end
+        end
+
         if key and not itemsByKey[key] then
-            items[key] = { ID = v.ID, Count = v.Count, Link = v.Link }
+            -- Ensure stored item has count field
+            items[key] = { ID = v.ID, Count = v.Count or 1, Link = v.Link }
             itemsByKey[key] = items[key]
+            -- Add to ID index
+            local idStr = tostring(v.ID)
             if not itemsByID[idStr] then
                 itemsByID[idStr] = {}
             end
             table.insert(itemsByID[idStr], key)
+            seenIDs[v.ID] = true
         end
     end
 
