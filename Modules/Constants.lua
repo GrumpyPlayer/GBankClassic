@@ -45,15 +45,15 @@ DEBUG_CATEGORY = {
 
 -- Communication prefix descriptions for debug logging (maximum of 16 characters)
 COMM_PREFIX_DESCRIPTIONS = {
-	["gbank-dv2"] = "(Fingerprint)", -- Broadcast addon and roster version, alts: version + itemsHash
-	["gbank-d"] = "(Data)", -- Share data (type = alt, roster)
-	["gbank-r"] = "(Query)", -- Request specific missing data (type = alt-request, roster) or for legacy clients (type = alt)
-	["gbank-h"] = "(Hello)",
-	["gbank-hr"] = "(Hello reply)",
-	["gbank-s"] = "(Share)",
-	["gbank-sr"] = "(Share reply)",
-	["gbank-w"] = "(Wipe)",
-	["gbank-wr"] = "(Wipe reply)",
+	["gbc-dv2"] = "(Fingerprint)", -- Broadcast addon and roster version, alts: version + itemsHash
+	["gbc-d"] = "(Data)", -- Share data (type = alt, roster)
+	["gbc-r"] = "(Query)", -- Request specific missing data (type = alt-request, roster) or for legacy clients (type = alt)
+	["gbc-h"] = "(Hello)",
+	["gbc-hr"] = "(Hello reply)",
+	["gbc-s"] = "(Share)",
+	["gbc-sr"] = "(Share reply)",
+	["gbc-w"] = "(Wipe)",
+	["gbc-wr"] = "(Wipe reply)",
 }
 
 -- Protocol version and capabilities

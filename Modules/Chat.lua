@@ -30,60 +30,60 @@ function Chat:Init()
 	self.debounceConfig = {
 		enabled = true,
 		intervals = {
-			["gbank-dv2"] = 3.0,            -- Fingerprint broadcast (contains versions and hashes for all guild bank alts the sender has data for)
-			["gbank-d:roster"] = 2.0,       -- Full roster sync
-			["gbank-d:alt"] = 2.5,          -- Full data sync for a given guild bank alt
-            ["gbank-r"] = 1.0,         		-- Query
+			["gbc-dv2"] = 3.0,            -- Fingerprint broadcast (contains versions and hashes for all guild bank alts the sender has data for)
+			["gbc-d:roster"] = 2.0,       -- Full roster sync
+			["gbc-d:alt"] = 2.5,          -- Full data sync for a given guild bank alt
+            ["gbc-r"] = 1.0,         		-- Query
 		},
 	}
 	self.debounceQueues = {
-		multipleAlts = {},					-- For gbank-dv2: [altName] = { version, itemsHash, sender, queuedAt }
+		multipleAlts = {},					-- For gbc-dv2: [altName] = { version, itemsHash, sender, queuedAt }
 		singularAlt = {},					-- For other messages: [key] = { version, itemsHash, sender, data, message, queuedAt }
 	}
 	self.debounceTimers = {
-		multipleAlts = nil,          		-- Single timer for gbank-dv2 processing
+		multipleAlts = nil,          		-- Single timer for gbc-dv2 processing
 		singularAlt = {},       			-- Per-key timers for other messages
 	}
 
 	-- Fingerprint
-	GBankClassic_Core:RegisterComm("gbank-dv2", function(prefix, message, distribution, sender)
+	GBankClassic_Core:RegisterComm("gbc-dv2", function(prefix, message, distribution, sender)
 		self:OnCommReceived(prefix, message, distribution, sender)
 	end)
 
     -- Data (roster or guild bank alt)
-	GBankClassic_Core:RegisterComm("gbank-d", function(prefix, message, distribution, sender)
+	GBankClassic_Core:RegisterComm("gbc-d", function(prefix, message, distribution, sender)
 		self:OnCommReceived(prefix, message, distribution, sender)
 	end)
 
     -- Query
-    GBankClassic_Core:RegisterComm("gbank-r", function(prefix, message, distribution, sender)
+    GBankClassic_Core:RegisterComm("gbc-r", function(prefix, message, distribution, sender)
         self:OnCommReceived(prefix, message, distribution, sender)
     end)
 
     -- Hello
-    GBankClassic_Core:RegisterComm("gbank-h", function(prefix, message, distribution, sender)
+    GBankClassic_Core:RegisterComm("gbc-h", function(prefix, message, distribution, sender)
         self:OnCommReceived(prefix, message, distribution, sender)
     end)
     -- Hello reply
-    GBankClassic_Core:RegisterComm("gbank-hr", function(prefix, message, distribution, sender)
+    GBankClassic_Core:RegisterComm("gbc-hr", function(prefix, message, distribution, sender)
         self:OnCommReceived(prefix, message, distribution, sender)
     end)
 
     -- Share
-    GBankClassic_Core:RegisterComm("gbank-s", function(prefix, message, distribution, sender)
+    GBankClassic_Core:RegisterComm("gbc-s", function(prefix, message, distribution, sender)
         self:OnCommReceived(prefix, message, distribution, sender)
     end)
     -- Share reply
-    GBankClassic_Core:RegisterComm("gbank-sr", function(prefix, message, distribution, sender)
+    GBankClassic_Core:RegisterComm("gbc-sr", function(prefix, message, distribution, sender)
         self:OnCommReceived(prefix, message, distribution, sender)
     end)
 
     -- Wipe
-    GBankClassic_Core:RegisterComm("gbank-w", function(prefix, message, distribution, sender)
+    GBankClassic_Core:RegisterComm("gbc-w", function(prefix, message, distribution, sender)
         self:OnCommReceived(prefix, message, distribution, sender)
     end)
     -- Wipe reply
-    GBankClassic_Core:RegisterComm("gbank-wr", function(prefix, message, distribution, sender)
+    GBankClassic_Core:RegisterComm("gbc-wr", function(prefix, message, distribution, sender)
         self:OnCommReceived(prefix, message, distribution, sender)
     end)
 end
@@ -166,11 +166,11 @@ end
 
 -- Generate debounce key for messages with a singular guild bank alt
 function Chat:GetDebounceKey(prefix, data)
-    if prefix == "gbank-d" then
+    if prefix == "gbc-d" then
         if data.type == "roster" then
-            return "gbank-d:roster"
+            return "gbc-d:roster"
         elseif data.type == "alt" and data.name then
-            return "gbank-d:alt:" .. data.name
+            return "gbc-d:alt:" .. data.name
         end
     end
 
@@ -179,9 +179,9 @@ end
 
 -- Extract version/hash from the payload of messages with a singular guild bank alt
 function Chat:ExtractVersionHashFromSingularGuildBankAltPayload(prefix, data)
-    if prefix == "gbank-dv2" then
+    if prefix == "gbc-dv2" then
         return nil, nil -- Extracted in QueueDebouncedMessageWithMultipleGuildBankAlts
-	elseif prefix == "gbank-d" then
+	elseif prefix == "gbc-d" then
         if data.type == "roster" and data.roster then
             return data.roster.version, nil
         elseif data.type == "alt" and data.alt then
@@ -222,7 +222,7 @@ function Chat:ShouldReplaceQueuedData(existing, newVersion, newHash)
     return true
 end
 
--- Queue debounced message containing data for multiple guild bank alts (gbank-dv2)
+-- Queue debounced message containing data for multiple guild bank alts (gbc-dv2)
 function Chat:QueueDebouncedMessageWithMultipleGuildBankAlts(sender, data)
     if not self.debounceConfig.enabled or not data.alts then
 		self:ProcessFingerprint(data, sender)
@@ -289,7 +289,7 @@ function Chat:QueueDebouncedMessageWithMultipleGuildBankAlts(sender, data)
 
     -- Schedule processing after quiet period
 	if queued then
-		local interval = self.debounceConfig.intervals["gbank-dv2"] or 3.0
+		local interval = self.debounceConfig.intervals["gbc-dv2"] or 3.0
 		self.debounceTimers.multipleAlts = GBankClassic_Core:ScheduleTimer(function()
 			self:ProcessDebouncedMessageWithMultipleGuildBankAlts()
 		end, interval)
@@ -313,7 +313,7 @@ function Chat:ProcessDebouncedMessageWithMultipleGuildBankAlts()
     wipe(self.debounceQueues.multipleAlts)
 end
 
--- Queue debounced message containing data for a singular guild bank alt (gbank-d)
+-- Queue debounced message containing data for a singular guild bank alt (gbc-d)
 function Chat:QueueDebouncedMessageWithSingularGuildBankAlt(prefix, message, distribution, sender, data)
     if not self.debounceConfig.enabled then
         return false
@@ -371,7 +371,7 @@ function Chat:ProcessDebouncedMessageWithSingularGuildBankAlt(key)
     GBankClassic_Output:Debug("PROTOCOL", "Processing debounced queue for %s (version=%s)", key, tostring(queued.version))
 
     -- Route to appropriate handler
-    if queued.prefix == "gbank-d" then
+    if queued.prefix == "gbc-d" then
         if queued.data.type == "roster" then
             self:ProcessRosterData(queued.data, queued.sender)
         elseif queued.data.type == "alt" then
@@ -387,7 +387,7 @@ function Chat:PerformSync()
 	-- GBankClassic_Guild:QueryRequestsIndex(nil, "ALERT")
 end
 
--- Process the alt version and hash data from a fingerprint broadcast (gbank-dv2)
+-- Process the alt version and hash data from a fingerprint broadcast (gbc-dv2)
 function Chat:ProcessFingerprintAltData(fingerprintAltData, sender)
 	local queryCount = 0
     local ourPlayer = GBankClassic_Guild:GetNormalizedPlayer()
@@ -429,7 +429,7 @@ function Chat:ProcessFingerprintAltData(fingerprintAltData, sender)
 	return queryCount
 end
 
--- Process fingerprint broadcast (gbank-dv2)
+-- Process fingerprint broadcast (gbc-dv2)
 function Chat:ProcessFingerprint(data, sender)
 	local altCount = data.alts and GBankClassic_Globals:Count(data.alts)
 	GBankClassic_Output:Debug("PROTOCOL", self:ColorPlayerName(sender), SHARES_COLOR, "fingerprint", string.format("(%d guild bank alts)", altCount))
@@ -459,7 +459,7 @@ function Chat:ProcessFingerprint(data, sender)
 	end
 end
 
--- Process roster data (gbank-d type "roster")
+-- Process roster data (gbc-d type "roster")
 function Chat:ProcessRosterData(data, sender)
     local isSenderAuthority = GBankClassic_Guild.guildMembersCache and GBankClassic_Guild.guildMembersCache[sender] and GBankClassic_Guild.guildMembersCache[sender].isAuthority
     if isSenderAuthority then
@@ -469,7 +469,7 @@ function Chat:ProcessRosterData(data, sender)
     end
 end
 
--- Process guild bank alt data (gbank-d type "alt")
+-- Process guild bank alt data (gbc-d type "alt")
 function Chat:ProcessGuildBankAltData(data, sender)
     local altName = data.name
 
@@ -540,7 +540,7 @@ function Chat:OnCommReceived(prefix, message, distribution, sender)
 		GBankClassic_Output:Debug("COMMS", "<", prefix, prefixDesc, "via", string.upper(distribution), "from", self:ColorPlayerName(sender), "(" .. (#message or 0) .. " bytes" .. (data.type and ", type=" .. tostring(data and data.type) or "") ..")")
 	end
 
-	if prefix == "gbank-dv2" then
+	if prefix == "gbc-dv2" then
 		if self:QueueDebouncedMessageWithMultipleGuildBankAlts(sender, data) then
 			return
 		end
@@ -551,7 +551,7 @@ function Chat:OnCommReceived(prefix, message, distribution, sender)
 		return
 	end
 
-	if prefix == "gbank-d" then
+	if prefix == "gbc-d" then
 		if data.type == "alt" or data.type == "roster" then
 			if self:QueueDebouncedMessageWithSingularGuildBankAlt(prefix, message, distribution, sender, data) then
 				return
@@ -568,7 +568,7 @@ function Chat:OnCommReceived(prefix, message, distribution, sender)
 		end
 	end
 
-	if prefix == "gbank-r" then
+	if prefix == "gbc-r" then
 		if data.type == "alt-request" then -- See Guild:QueryForGuildBankAltData
 			local altName = data.name
 			local hasData = GBankClassic_Guild.Info and GBankClassic_Guild.Info.alts and GBankClassic_Guild.Info.alts[altName] ~= nil
@@ -600,12 +600,12 @@ function Chat:OnCommReceived(prefix, message, distribution, sender)
 		end
 	end
 
-	if prefix == "gbank-h" then
+	if prefix == "gbc-h" then
 		GBankClassic_Guild:Hello("reply")
 	end
 
-	if prefix == "gbank-hr" then
-		GBankClassic_Output:Debug("QUERIES", "gbank-hr", data)
+	if prefix == "gbc-hr" then
+		GBankClassic_Output:Debug("QUERIES", "gbc-hr", data)
 
 		local message = tostring(data)
 		local versionStr = string.match(message, "version (%d+)")
@@ -643,20 +643,20 @@ function Chat:OnCommReceived(prefix, message, distribution, sender)
 		end
 	end
 
-	if prefix == "gbank-s" then
+	if prefix == "gbc-s" then
 		GBankClassic_Guild:Share("reply")
 	end
 
-	if prefix == "gbank-sr" then
-		GBankClassic_Output:Debug("QUERIES", "gbank-sr", data)
+	if prefix == "gbc-sr" then
+		GBankClassic_Output:Debug("QUERIES", "gbc-sr", data)
 	end
 
-	if prefix == "gbank-w" then
+	if prefix == "gbc-w" then
 		GBankClassic_Guild:Wipe("reply")
 	end
 
-	if prefix == "gbank-wr" then
-		GBankClassic_Output:Debug("QUERIES",  "gbank-wr", data)
+	if prefix == "gbc-wr" then
+		GBankClassic_Output:Debug("QUERIES",  "gbc-wr", data)
 	end
 end
 

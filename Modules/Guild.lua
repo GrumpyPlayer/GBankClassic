@@ -518,17 +518,17 @@ function Guild:RebuildGuildBankAltsRoster()
 
 				-- TODO:
 				-- GBankClassic_Output:Debug("ROSTER", "Broadcasting fingerprint of our roster as authority")
-				-- gbank-roster-heartbeat to GUILD: 
+				-- gbc-roster-heartbeat to GUILD: 
 				--   senderIsAuthority: true, 
 				--   self.areOfficerNotesUsedToDefineGuildBankAlts: true,
 				--   version: unix timestamp
 				--   itemsHash: GBankClassic_Bank:ComputeItemsHash(guildBankAlts.items, true)
 
 				-- when player receives the heartbeat, and if they are not an authority:
-				--   gbank-roster-request WHISPER to sender that is an authority: send me your roster
+				--   gbc-roster-request WHISPER to sender that is an authority: send me your roster
 				-- 
-				-- when an authority receives gbank-roster-request WHISPER:
-				--   gbank-roster WHISPER to requester
+				-- when an authority receives gbc-roster-request WHISPER:
+				--   gbc-roster WHISPER to requester
 				--     roster alts: table
 				--     version:
 			end
@@ -538,8 +538,8 @@ function Guild:RebuildGuildBankAltsRoster()
 		-- We're unable to view officer notes
 		-- Our roster may be incomplete (it is complete if officer notes are irrelevant)
 		-- A possible incoming roster broadcast will make it clear if they are relevant
-		-- We whisper the sender to request their roster when we see the gbank-roster-heartbeat
-		-- If we never see gbank-roster-heartbeat then the officer notes are irrelevant
+		-- We whisper the sender to request their roster when we see the gbc-roster-heartbeat
+		-- If we never see gbc-roster-heartbeat then the officer notes are irrelevant
 
 		-- Verify if there's a change in the roster of guild bank alts
 		-- Preserve the existing roster and only add newly detected guild bank alts (preserve existing entries)
@@ -580,7 +580,7 @@ function Guild:RebuildGuildBankAltsRoster()
 			-- local _, leader = GBankClassic_Guild:CheckIfWeAreGuildBankAltSyncLeader()
 			-- -- TODO:
 			-- GBankClassic_Output:Debug("ROSTER", "Rebuilt (possibly incomplete) guild bank alt roster from guild notes with %d guild bank alts - requesting latest roster from authority", #self.Info.roster.alts)
-			-- --   gbank-roster-request WHISPER to leader: send me your roster
+			-- --   gbc-roster-request WHISPER to leader: send me your roster
 			-- GBankClassic_Output:Debug("ROSTER", "Requested %s for an updated roster", leader)
 		end
 	end
@@ -857,14 +857,14 @@ function Guild:QueryForRosterData(target, theirRosterVersion)
 
 	local payload = { type = "roster", version = theirRosterVersion }
 	local data = GBankClassic_Core:SerializePayload(payload)
-	if target and GBankClassic_Core:SendWhisper("gbank-r", data, target, "NORMAL") then
+	if target and GBankClassic_Core:SendWhisper("gbc-r", data, target, "NORMAL") then
 		self:MarkPendingSync("roster", target)
 
 		return
 	end
 
 	-- Fallback: broadcast to the guild
-	GBankClassic_Core:SendCommMessage("gbank-r", data, "Guild", nil, "NORMAL")
+	GBankClassic_Core:SendCommMessage("gbc-r", data, "Guild", nil, "NORMAL")
 	self:MarkPendingSync("roster", "guild")
 end
 
@@ -903,14 +903,14 @@ function Guild:QueryForGuildBankAltData(target, altName)
 	GBankClassic_Output:Debug("SYNC", "Querying %s for %s", target and GBankClassic_Chat:ColorPlayerName(target) or "guild", GBankClassic_Chat:ColorPlayerName(altName))
 	local payload = { type = "alt-request", name = altName, requester = self:GetNormalizedPlayer() }
 	local data = GBankClassic_Core:SerializePayload(payload)
-	if target and GBankClassic_Core:SendWhisper("gbank-r", data, target, "NORMAL") then
+	if target and GBankClassic_Core:SendWhisper("gbc-r", data, target, "NORMAL") then
 		self:MarkPendingSync("alt", target, altName)
 
 		return
 	end
 
 	-- Fallback: broadcast to the guild
-	GBankClassic_Core:SendCommMessage("gbank-r", data, "GUILD", nil, "NORMAL")
+	GBankClassic_Core:SendCommMessage("gbc-r", data, "GUILD", nil, "NORMAL")
 	self:MarkPendingSync("alt", "guild", altName)
 end
 
@@ -923,12 +923,12 @@ function Guild:SendRosterData(target)
 
 	local payload = { type = "roster", roster = self.Info.roster }
 	local data = GBankClassic_Core:SerializePayload(payload)
-	if target and GBankClassic_Core:SendWhisper("gbank-d", data, target, "BULK") then
+	if target and GBankClassic_Core:SendWhisper("gbc-d", data, target, "BULK") then
 		return
 	end
 
 	-- Fallback: broadcast to the guild
-	GBankClassic_Core:SendCommMessage("gbank-d", data, "Guild", nil, "BULK")
+	GBankClassic_Core:SendCommMessage("gbc-d", data, "Guild", nil, "BULK")
 end
 
 -- Called whenever the GUILD_ROSTER_UPDATE event fires (server pushes updates)
@@ -1323,9 +1323,9 @@ function Guild:SendAltData(name, target)
 	local payload = { type = "alt", name = norm, alt = craftedPayload }
 	local data = GBankClassic_Core:SerializePayload(payload)
 	if channel == "WHISPER" and dest then
-		GBankClassic_Core:SendWhisper("gbank-d", data, dest, "NORMAL", onChunkSent)
+		GBankClassic_Core:SendWhisper("gbc-d", data, dest, "NORMAL", onChunkSent)
 	else
-		GBankClassic_Core:SendCommMessage("gbank-d", data, "Guild", nil, "BULK", onChunkSent)
+		GBankClassic_Core:SendCommMessage("gbc-d", data, "Guild", nil, "BULK", onChunkSent)
 	end
 
 	GBankClassic_Output:Debug("SYNC", "SendAltData: sent full data for %s (%d bytes)", norm, string.len(data or ""))
@@ -1515,8 +1515,8 @@ function Guild:HasAltContent(alt, altName)
 	return result
 end
 
--- /bank hello, or upon receipt of "gbank-h" (type = "reply")
--- Broadcast "gbank-h" to guild
+-- /bank hello, or upon receipt of "gbc-h" (type = "reply")
+-- Broadcast "gbc-h" to guild
 -- Print output to ourselves
 function Guild:Hello(type)
 	local myVersionData = self:GetVersion()
@@ -1559,9 +1559,9 @@ function Guild:Hello(type)
 		local data = GBankClassic_Core:SerializePayload(hello)
 		if type ~= "reply" then
 			GBankClassic_Output:Info(hello)
-			GBankClassic_Core:SendCommMessage("gbank-h", data, "Guild", nil, "BULK")
+			GBankClassic_Core:SendCommMessage("gbc-h", data, "Guild", nil, "BULK")
 		else
-			GBankClassic_Core:SendCommMessage("gbank-hr", data, "Guild", nil, "BULK")
+			GBankClassic_Core:SendCommMessage("gbc-hr", data, "Guild", nil, "BULK")
 		end
 	end
 end
@@ -1578,9 +1578,9 @@ function Guild:Wipe(type)
 
 	local data = GBankClassic_Core:SerializePayload(wipe)
     if type ~= "reply" then
-        GBankClassic_Core:SendCommMessage("gbank-w", data, "Guild", nil, "BULK")
+        GBankClassic_Core:SendCommMessage("gbc-w", data, "Guild", nil, "BULK")
     else
-        GBankClassic_Core:SendCommMessage("gbank-wr", data, "Guild", nil, "BULK")
+        GBankClassic_Core:SendCommMessage("gbc-wr", data, "Guild", nil, "BULK")
     end
 end
 
@@ -1623,9 +1623,9 @@ function Guild:Share(type)
 
 		local data = GBankClassic_Core:SerializePayload(share)
 		if type ~= "reply" then
-			GBankClassic_Core:SendCommMessage("gbank-s", data, "Guild", nil, "NORMAL")
+			GBankClassic_Core:SendCommMessage("gbc-s", data, "Guild", nil, "NORMAL")
 		else
-			GBankClassic_Core:SendCommMessage("gbank-sr", data, "Guild", nil, "NORMAL")
+			GBankClassic_Core:SendCommMessage("gbc-sr", data, "Guild", nil, "NORMAL")
 		end
 	end
 end
@@ -1679,5 +1679,5 @@ function Guild:ShareAllGuildBankAltData(priority)
 	version.isGuildBankAlt = isGuildBankAlt
 
 	local data = GBankClassic_Core:SerializePayload(version)
-	GBankClassic_Core:SendCommMessage("gbank-dv2", data, "Guild", nil, priority or "NORMAL")
+	GBankClassic_Core:SendCommMessage("gbc-dv2", data, "Guild", nil, priority or "NORMAL")
 end
