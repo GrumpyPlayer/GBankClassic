@@ -1,37 +1,15 @@
-GBankClassic_Database = GBankClassic_Database or {}
+local addonName, GBCR = ...
 
-local Database = GBankClassic_Database
+GBCR.Database = {}
+local Database = GBCR.Database
 
-local Globals = GBankClassic_Globals
-local upvalues = Globals.GetUpvalues("LibStub", "GetServerTime")
-local LibStub = upvalues.LibStub
-local GetServerTime = upvalues.GetServerTime
+local Constants = GBCR.Constants
+local colorGold = Constants.COLORS.GOLD
 
 function Database:Init()
-    self.db = LibStub("AceDB-3.0"):New("GBankClassicDB", {
-		global = {
-			debugCategories = {
-				ROSTER = false,
-				COMMS = false,
-				SYNC = false,
-				CHUNK = false,
-				DONATION = false,
-				WHISPER = false,
-				-- REQUESTS = false,
-				UI = false,
-				PROTOCOL = false,
-				DATABASE = false,
-				EVENTS = false,
-				INVENTORY = false,
-				MAIL = false,
-				ITEM = false,
-				-- FULFILL = false,
-				SEARCH = false,
-				QUERIES = false,
-				REPLIES = false,
-			},
-		},
-	})
+	self.savedVariables = nil
+
+    self.db = GBCR.Libs.AceDB:New("GBankClassicDB", {})
 end
 
 function Database:Reset(name)
@@ -42,11 +20,11 @@ function Database:Reset(name)
     self.db.factionrealm[name] = {
         name = name,
         roster = {},
-        alts = {},
-		guildProtocolVersions = {},
+        alts = {}
     }
+	self.savedVariables = nil
 
-	GBankClassic_Output:Response("Local database for %s has been emptied.", name)
+	GBCR.Output:Response("Your local database for guild %s has been emptied.", GBCR.Globals:Colorize(colorGold, name))
 end
 
 function Database:ResetPlayer(name, player)
@@ -62,7 +40,7 @@ function Database:ResetPlayer(name, player)
 
     self.db.factionrealm[name].alts[player] = {}
 
-    GBankClassic_Core:Response("Local database for %s (guild: %s) has been emptied.", player, name)
+    GBCR.Core:Response("Local database for %s (guild: %s) has been emptied.", player, name)
 end
 
 function Database:Load(name)
@@ -89,54 +67,29 @@ function Database:Load(name)
 		end
     end
 
-	-- Data migration
+	-- Data maintenance
 	if db.alts then
 		for altName, alt in pairs(db.alts) do
 			if type(alt) == "table" then
-				-- Clear and rebuild items from bank, bags, and mail if legacy data exists
-				if (alt.bank and alt.bank.items and #alt.bank.items > 0) or (alt.bags and alt.bags.items and #alt.bags.items > 0) or (alt.mail and alt.mail.items and #alt.mail.items > 0) then
-					alt.items = nil
-					GBankClassic_Bank:RecalculateAggregatedItems(alt.bank and alt.bank.items or nil, alt.bags and alt.bags.items or nil, alt.mail and alt.mail.items or nil, alt)
-					alt.bank = nil
-					alt.bags = nil
-					alt.mail = nil
-				end
-
-				-- Ensure items is always fully aggregated and then recompute the hash and reconstruct item links
 				if alt.items then
-					local money = alt.money or 0
-
-					local aggregated = GBankClassic_Item:Aggregate(alt.items, nil)
+					local aggregated = GBCR.Inventory:Aggregate(alt.items, nil)
 					alt.items = {}
 					for _, item in pairs(aggregated) do
 						table.insert(alt.items, item)
 					end
-					GBankClassic_Output:Debug("DATABASE", "Forced deduplication for guild bank alt %s: %d items", altName, #alt.items)
-
-					-- Wipe hashes and version timestamp if there are no items
-					if #alt.items == 0 then
-						alt.itemsHash = nil
-						alt.version = nil
-					end
-
-					-- Remove the old hash
-					alt.inventoryHash = nil
+					GBCR.Output:Debug("DATABASE", "Forced deduplication for guild bank alt %s: %d items", altName, #alt.items)
 
 					-- Only recalculate the new hash if it does not already exist and if there is at least 1 item
 					local previousItemsHash = alt.itemsHash
 					if not previousItemsHash and #alt.items > 0 then
-						alt.itemsHash = GBankClassic_Bank:ComputeItemsHash(alt.items, money)
-						GBankClassic_Output:Debug("DATABASE", "Recomputed improved inventory hash after recalculation for %s: %d", altName, alt.itemsHash)
+						alt.itemsHash = GBCR.Inventory:ComputeItemsHash(alt.items, alt.money or 0)
+						GBCR.Output:Debug("DATABASE", "Recomputed items hash after recalculation for %s: %d", altName, alt.itemsHash)
 					end
 
-					GBankClassic_Guild:ReconstructItemLinks(alt.items)
+					GBCR.Protocol:ReconstructItemLinks(alt.items)
 				end
 			end
 		end
-	end
-
-	if not db.guildProtocolVersions then
-		db.guildProtocolVersions = {}
 	end
 
 	-- Empty unused legacy delta tables
@@ -144,39 +97,7 @@ function Database:Load(name)
 	db.deltaHistory = nil
 	db.deltaMetrics = nil
 	db.deltaErrors = nil
+	db.guildProtocolVersions = nil
 
     return db
-end
-
--- Deep copy function for snapshot creation
-function Database:DeepCopy(obj)
-	if type(obj) ~= "table" then
-		return obj
-	end
-
-	local copy = {}
-	for k, v in pairs(obj) do
-		copy[k] = self:DeepCopy(v)
-	end
-
-	return copy
-end
-
--- Update protocol version for a guild member
-function Database:UpdatePeerProtocol(name, sender, protocolVersionNumber)
-	if not name or not sender then
-		return false
-	end
-
-	local db = self.db.factionrealm[name]
-	if not db or not db.guildProtocolVersions then
-		return false
-	end
-
-	db.guildProtocolVersions[sender] = {
-		protocolVersionNumber = protocolVersionNumber,
-		lastSeen = GetServerTime(),
-	}
-
-	return true
 end

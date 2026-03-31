@@ -1,41 +1,36 @@
-local Globals = GBankClassic_Globals
-local upvalues = Globals.GetUpvalues("debugprofilestop")
-local debugprofilestop = upvalues.debugprofilestop
-local upvalues = Globals.GetUpvalues("LibStub")
-local LibStub = upvalues.LibStub
-local upvalues = Globals.GetUpvalues("CreateFrame", "IsShiftKeyDown", "ChatEdit_InsertLink", "IsControlKeyDown", "DressUpItemLink", "PickupItem", "GetItemQualityColor", "GameTooltip_SetDefaultAnchor", "After")
-local CreateFrame = upvalues.CreateFrame
-local IsShiftKeyDown = upvalues.IsShiftKeyDown
-local ChatEdit_InsertLink = upvalues.ChatEdit_InsertLink
-local IsControlKeyDown = upvalues.IsControlKeyDown
-local DressUpItemLink = upvalues.DressUpItemLink
-local PickupItem = upvalues.PickupItem
-local GetItemQualityColor = upvalues.GetItemQualityColor
-local GameTooltip_SetDefaultAnchor = upvalues.GameTooltip_SetDefaultAnchor
-local After = upvalues.After
-local upvalues = Globals.GetUpvalues("UIParent", "UISpecialFrames", "WorldFrame", "GameTooltip")
-local UIParent = upvalues.UIParent
-local UISpecialFrames = upvalues.UISpecialFrames
-local WorldFrame = upvalues.WorldFrame
-local GameTooltip = upvalues.GameTooltip
+local addonName, GBCR = ...
 
-GBankClassic_UI = LibStub("AceGUI-3.0")
+GBCR.UI = {}
+local UI = GBCR.UI
 
-local UI = GBankClassic_UI
+local Globals = GBCR.Globals
+local debugprofilestop = Globals.debugprofilestop
+local CreateFrame = Globals.CreateFrame
+local IsShiftKeyDown = Globals.IsShiftKeyDown
+local ChatEdit_InsertLink = Globals.ChatEdit_InsertLink
+local IsControlKeyDown = Globals.IsControlKeyDown
+local DressUpItemLink = Globals.DressUpItemLink
+local PickupItem = Globals.PickupItem
+local GetItemQualityColor = Globals.GetItemQualityColor
+local GameTooltip_SetDefaultAnchor = Globals.GameTooltip_SetDefaultAnchor
+local After = Globals.After
+local UIParent = Globals.UIParent
+local UISpecialFrames = Globals.UISpecialFrames
+local WorldFrame = Globals.WorldFrame
+local GameTooltip = Globals.GameTooltip
 
-UI.tooltipThrottle = 0
-UI.TOOLTIP_THROTTLE_MS = 50 -- 50ms between tooltip updates
-UI.currentTooltipLink = nil
-UI.isRefreshPending = false
+local Constants = GBCR.Constants
 
 function UI:Init()
-    GBankClassic_UI_Minimap:Init()
-    GBankClassic_UI_Inventory:Init()
-    GBankClassic_UI_Search:Init()
-    GBankClassic_UI_Donations:Init()
+    GBCR.UI.Minimap:Init()
+    GBCR.UI.Inventory:Init()
+    GBCR.UI.Search:Init()
+    GBCR.UI.Donations:Init()
 end
 
-function UI:RequestRefresh()
+function UI:QueueUIRefresh()
+    -- GBCR.Output:Debug("UI", "UI:QueueUIRefresh called (callstack=%s)", debugstack()) --TODO
+    GBCR.Output:Debug("UI", "UI:QueueUIRefresh called")
     if self.isRefreshPending then
         return
     end
@@ -43,25 +38,26 @@ function UI:RequestRefresh()
     self.isRefreshPending = true
 
     After(2.5, function()
+        -- TODO: can we avoid always refreshing the current tab any time any data changes and instead detect if the changed data is for the currently displayed guild bank alt (GBCR.UI.Inventory.currentTab)?
         self.isRefreshPending = false
+        -- GBCR.Output:Debug("UI", "Refreshing open UI windows (GBCR.UI.Inventory.isOpen=%s, GBCR.UI.Search.isOpen=%s, GBCR.UI.Search.searchText=%s, GBCR.UI.Donations.isOpen=%s, callstack=%s).", tostring(GBCR.UI.Inventory.isOpen), tostring(GBCR.UI.Search.isOpen), GBCR.UI.Search.searchText or "", tostring(GBCR.UI.Donations.isOpen), debugstack()) --TODO
+        GBCR.Output:Debug("UI", "Refreshing open UI windows (GBCR.UI.Inventory.isOpen=%s, GBCR.UI.Search.isOpen=%s, GBCR.UI.Search.searchText=%s, GBCR.UI.Donations.isOpen=%s).", tostring(GBCR.UI.Inventory.isOpen), tostring(GBCR.UI.Search.isOpen), GBCR.UI.Search.searchText or "", tostring(GBCR.UI.Donations.isOpen))
 
-        if GBankClassic_UI_Inventory and GBankClassic_UI_Inventory.isOpen then
-            GBankClassic_UI_Inventory:DrawContent()
-            -- TODO: can we avoid always refreshing the current tab any time any data changes and instead detect if the changed data is for the currently displayed guild bank alt (GBankClassic_UI_Inventory.currentTab)?
-            GBankClassic_UI_Inventory:RefreshCurrentTab()
+        if GBCR.UI.Inventory.isOpen then
+            GBCR.UI.Inventory:DrawContent()
         end
-        if GBankClassic_UI_Search and GBankClassic_UI_Search.isOpen then
-            GBankClassic_UI_Search:BuildSearchData()
-            GBankClassic_UI_Search:DrawContent()
-            if GBankClassic_UI_Search.searchField then
-                local onEnterPressed = GBankClassic_UI_Search.searchField:GetScript("OnEnterPressed")
+        if GBCR.UI.Search.isOpen then
+            GBCR.UI.Search:BuildSearchData()
+            GBCR.UI.Search:DrawContent()
+            if GBCR.UI.Search.searchField then
+                local onEnterPressed = GBCR.UI.Search.searchField:GetScript("OnEnterPressed")
                 if onEnterPressed then
-                    onEnterPressed(GBankClassic_UI_Search.searchField)
+                    onEnterPressed(GBCR.UI.Search.searchField)
                 end
             end
         end
-        if GBankClassic_UI_Donations and GBankClassic_UI_Donations.isOpen then
-            GBankClassic_UI_Donations:DrawContent()
+        if GBCR.UI.Donations.isOpen then
+            GBCR.UI.Donations:DrawContent()
         end
     end)
 end
@@ -69,28 +65,28 @@ end
 function UI:Controller()
     local controller = CreateFrame("Frame", "GBankClassic", UIParent)
     controller:SetScript("OnHide", function()
-        GBankClassic_UI_Inventory:Close()
+        GBCR.UI.Inventory:Close()
     end)
     table.insert(UISpecialFrames, "GBankClassic")
 end
 
-function UI:EventHandler(self, event, ...)
+function UI:EventHandler(self, event)
     if event == "OnClick" then
         if IsShiftKeyDown() then
-            ChatEdit_InsertLink(self.link)
+            ChatEdit_InsertLink(self.itemLink)
         elseif IsControlKeyDown() then
-			if self.link then
-				DressUpItemLink(self.link)
+			if self.itemLink then
+				DressUpItemLink(self.itemLink)
 			end
         else
-			if self.link then
-				PickupItem(self.link)
+			if self.itemLink then
+				PickupItem(self.itemLink)
 			end
         end
     end
     if event == "OnDragStart" then
-		if self.link then
-			PickupItem(self.link)
+		if self.itemLink then
+			PickupItem(self.itemLink)
 		end
     end
 end
@@ -115,14 +111,14 @@ function UI:DrawItem(item, parent, size, height, imageSize, imageHeight, labelXO
         labelYOffset = 0
     end
 
-    local slot = self:Create("Icon")
+    local slot = GBCR.Libs.AceGUI:Create("Icon")
     local label = slot.label
     local image = slot.image
     local frame = slot.frame
 
     image:SetPoint("TOP", image:GetParent(), "TOP", 0, 0)
-    if item.Count > 1 then
-        slot:SetLabel(item.Count)
+    if item.itemCount > 1 then
+        slot:SetLabel(item.itemCount)
         local fontName, fontHeight = label:GetFont()
         label:SetFont(fontName, fontHeight, "OUTLINE")
         label:ClearAllPoints()
@@ -133,13 +129,13 @@ function UI:DrawItem(item, parent, size, height, imageSize, imageHeight, labelXO
         slot:SetLabel(" ")
     end
 
-	-- Generate link on-demand if needed (synchronous from cache if available)
-	if item.ID and not item.Link then
-		GBankClassic_Guild:ReconstructItemLink(item)
+	-- Generate itemLink on-demand if needed (synchronous from cache if available)
+	if item.itemId and not item.itemLink then
+		GBCR.Protocol:ReconstructItemLink(item)
 	end
 
     -- Icon already loaded by GetItems
-    local icon = item.Info and item.Info.icon
+    local icon = item.itemInfo and item.itemInfo.icon
 	if icon then
 		slot:SetImage(icon)
 	end
@@ -147,31 +143,31 @@ function UI:DrawItem(item, parent, size, height, imageSize, imageHeight, labelXO
     slot:SetWidth(size)
     slot:SetHeight(height)
 
-    if item.Link then
+    if item.itemLink then
         slot:SetCallback("OnEnter", function()
-            self:ShowItemTooltip(item.Link) 
+            self:ShowItemTooltip(item.itemLink)
         end)
         slot:SetCallback("OnLeave", function()
             self:HideTooltip()
         end)
-        slot:SetCallback("OnClick", function(self, event)
-            UI:EventHandler(self, event)
+        slot:SetCallback("OnClick", function(event)
+            self:EventHandler(event)
         end)
         frame:RegisterForDrag("LeftButton")
-        frame:SetScript("OnDragStart", function(_)
+        frame:SetScript("OnDragStart", function()
             self:EventHandler(slot, "OnDragStart")
         end)
     end
-    slot.info = item.Info
-    slot.link = item.Link
+    slot.info = item.itemInfo
+    slot.itemLink = item.itemLink
 
     local border = frame:CreateTexture(nil, "OVERLAY")
     border:SetAllPoints(image)
     border:SetTexCoord(0, 0, 0, 1, 1, 0, 1, 1)
     border:SetBlendMode("BLEND")
     border:SetTexture("Interface\\Common\\WhiteIconFrame")
-    if item.Info.rarity then
-        local r, g, b = GetItemQualityColor(item.Info.rarity)
+    if item.itemInfo.rarity then
+        local r, g, b = GetItemQualityColor(item.itemInfo.rarity)
         border:SetVertexColor(r, g, b)
     end
     slot.border = border
@@ -181,21 +177,21 @@ function UI:DrawItem(item, parent, size, height, imageSize, imageHeight, labelXO
 	return slot
 end
 
-function UI:ShowItemTooltip(link)
-    if not link then
+function UI:ShowItemTooltip(itemLink)
+    if not itemLink then
         return
     end
 
     local now = debugprofilestop()
-    if self.currentTooltipLink == link and (now - self.tooltipThrottle) < self.TOOLTIP_THROTTLE_MS then
+    if self.currentTooltipLink == itemLink and (now - (self.tooltipThrottle or 0)) < Constants.TIMER_INTERVALS.TOOLTIP_THROTTLE_MS then
         return
     end
 
     self.tooltipThrottle = now
-    self.currentTooltipLink = link
+    self.currentTooltipLink = itemLink
 
     GameTooltip:SetOwner(WorldFrame, "ANCHOR_CURSOR")
-    GameTooltip:SetHyperlink(link)
+    GameTooltip:SetHyperlink(itemLink)
     GameTooltip:Show()
 end
 
@@ -206,15 +202,14 @@ function UI:HideTooltip()
     GameTooltip_SetDefaultAnchor(GameTooltip, UIParent)
 end
 
-function UI:OnInsertLink(link)
-    if GBankClassic_UI_Search.searchField and GBankClassic_UI_Search.searchField:HasFocus() then
-        GBankClassic_UI_Search.SearchText = link
-        GBankClassic_UI_Search:DrawContent()
+function UI:OnInsertLink(itemLink)
+    if GBCR.UI.Search.searchField and GBCR.UI.Search.searchField:HasFocus() then
+        GBCR.UI.Search.searchText = itemLink
+        GBCR.UI.Search:DrawContent()
     end
 end
 
--- Clamp a frame to stay within screen boundaries
-function GBankClassic_UI:ClampFrameToScreen(frame)
+function UI:ClampFrameToScreen(frame)
 	if not frame then
 		return
 	end

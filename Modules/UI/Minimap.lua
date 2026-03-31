@@ -1,60 +1,49 @@
-GBankClassic_UI_Minimap = GBankClassic_UI_Minimap or {}
+local addonName, GBCR = ...
 
-local UI_Minimap = GBankClassic_UI_Minimap
+GBCR.UI.Minimap = {}
+local UI_Minimap = GBCR.UI.Minimap
 
-local Globals = GBankClassic_Globals
-local upvalues = Globals.GetUpvalues("LibStub")
-local LibStub = upvalues.LibStub
-local upvalues = Globals.GetUpvalues("IsShiftKeyDown", "IsControlKeyDown")
-local IsShiftKeyDown = upvalues.IsShiftKeyDown
-local IsControlKeyDown = upvalues.IsControlKeyDown
-local upvalues = Globals.GetUpvalues("GameTooltip", "WorldFrame")
-local GameTooltip = upvalues.GameTooltip
-local WorldFrame = upvalues.WorldFrame
+local Globals = GBCR.Globals
+local IsShiftKeyDown = Globals.IsShiftKeyDown
+local IsControlKeyDown = Globals.IsControlKeyDown
+local GameTooltip = Globals.GameTooltip
+local WorldFrame = Globals.WorldFrame
 
 function UI_Minimap:Init()
-    self.icon = LibStub("LibDBIcon-1.0")
-    local iconDB = LibStub("LibDataBroker-1.1"):NewDataObject("GBankClassicIcon", {
+    local iconDB = GBCR.Libs.LibDataBroker:NewDataObject("GBankClassicIcon", {
         type = "data source",
-        text = GBankClassic_Core.addonHeader,
+        text = GBCR.Core.addonHeader,
         icon = "Interface/ICONS/INV_Box_04",
         OnEnter = function()
-            self:ShowTooltip()
+            UI_Minimap:ShowTooltip()
         end,
         OnLeave = function()
-            GBankClassic_UI:HideTooltip()
+            GBCR.UI:HideTooltip()
         end,
         OnClick = function(_, b)
             if IsShiftKeyDown() then
-                GBankClassic_Options:Open()
+                GBCR.Options:Open()
             elseif IsControlKeyDown() then
-                GBankClassic_Chat:RestoreUI()
+                GBCR.Chat:RestoreUI()
             else
-                GBankClassic_UI_Inventory:Toggle()
+                GBCR.UI.Inventory:Toggle()
             end
         end,
     })
-    self.db = LibStub("AceDB-3.0"):New("GBankClassicIconDB", {
-        profile = {
-            minimap = {
-                hide = not GBankClassic_Options.db.char.minimap["enabled"],
-            },
-        },
-    })
-    self.icon:Register("GBankClassic", iconDB, self.db.profile.minimap)
+    GBCR.Libs.LibDBIcon:Register("GBankClassic", iconDB, GBCR.Options.db.profile.minimap)
 end
 
 function UI_Minimap:Toggle()
-    if not GBankClassic_Options:GetMinimapEnabled() then
-        self.icon:Hide("GBankClassic")
+    if not GBCR.Options:GetMinimapEnabled() then
+        GBCR.Libs.LibDBIcon:Hide("GBankClassic")
     else
-        self.icon:Show("GBankClassic")
+        GBCR.Libs.LibDBIcon:Show("GBankClassic")
     end
 end
 
 function UI_Minimap:ShowTooltip()
     GameTooltip:SetOwner(WorldFrame, "ANCHOR_CURSOR")
-    GameTooltip:AddLine(GBankClassic_Core.addonHeader)
+    GameTooltip:AddLine(GBCR.Core.addonHeader)
     GameTooltip:AddDoubleLine("Click", "Show guild bank items", 1, 1, 1)
     GameTooltip:AddDoubleLine("Shift-Click", "Configure options", 1, 1, 1)
     GameTooltip:AddDoubleLine("Ctrl-Click", "Restore default UI", 1, 1, 1)

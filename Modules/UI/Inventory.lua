@@ -1,39 +1,28 @@
-GBankClassic_UI_Inventory = GBankClassic_UI_Inventory or {}
+local addonName, GBCR = ...
 
-local UI_Inventory = GBankClassic_UI_Inventory
+GBCR.UI.Inventory = {}
+local UI_Inventory = GBCR.UI.Inventory
 
-local Globals = GBankClassic_Globals
-local upvalues = Globals.GetUpvalues("date")
-local date = upvalues.date
-local upvalues = Globals.GetUpvalues("GetServerTime", "GetCoinTextureString", "IsShiftKeyDown", "IsControlKeyDown", "CreateFrame", "GameTooltip")
-local GetServerTime = upvalues.GetServerTime
-local GetCoinTextureString = upvalues.GetCoinTextureString
-local IsShiftKeyDown = upvalues.IsShiftKeyDown
-local IsControlKeyDown = upvalues.IsControlKeyDown
-local CreateFrame = upvalues.CreateFrame
-local GameTooltip = upvalues.GameTooltip
+local Globals = GBCR.Globals
+local date = Globals.date
+local GetCoinTextureString = Globals.GetCoinTextureString
+local IsShiftKeyDown = Globals.IsShiftKeyDown
+local IsControlKeyDown = Globals.IsControlKeyDown
+local CreateFrame = Globals.CreateFrame
+local GameTooltip = Globals.GameTooltip
+
+local Constants = GBCR.Constants
+local colorYellow = Constants.COLORS.YELLOW
+local colorBlue = Constants.COLORS.BLUE
+local colorGray = Constants.COLORS.GRAY
+local colorOrange = Constants.COLORS.ORANGE
+local colorGreen = Constants.COLORS.GREEN
 
 function UI_Inventory:Init()
     self.filterType = "any"
     self.filterSlot = "any"
     self.filterRarity = "any"
     self:DrawWindow()
-end
-
-local function queryEmpty()
-	local now = GetServerTime()
-	local last = UI_Inventory.lastEmptySync or 0
-	if now - last > 30 then
-		UI_Inventory.lastEmptySync = now
-		GBankClassic_Guild:Share()
-	end
-end
-
-local function onClose(_)
-    UI_Inventory.isOpen = false
-    UI_Inventory.Window:Hide()
-    GBankClassic_UI_Donations:Close()
-    GBankClassic_UI_Search:Close()
 end
 
 function UI_Inventory:Toggle()
@@ -56,19 +45,11 @@ function UI_Inventory:Open()
     end
     self.Window:Show()
 
-	-- Ensure window stays within screen bounds
-	GBankClassic_UI:ClampFrameToScreen(self.Window)
+	GBCR.UI:ClampFrameToScreen(self.Window)
 
     self:DrawContent()
 
-	-- Perform full sync (same as /bank sync command)
-    GBankClassic_Chat:PerformSync()
-
-    if _G["GBankClassic"] then
-        _G["GBankClassic"]:Show()
-    else
-        GBankClassic_UI:Controller()
-    end
+    GBCR.Protocol:PerformSync()
 end
 
 function UI_Inventory:Close()
@@ -76,23 +57,33 @@ function UI_Inventory:Close()
 		return
 	end
 
-    onClose(self.Window)
+    self:OnClose()
+end
+
+function UI_Inventory:OnClose()
+    self.isOpen = false
+    GBCR.UI.Donations:Close()
+    GBCR.UI.Search:Close()
+    if self.Window then
+        self.Window:Hide()
+    end
 end
 
 function UI_Inventory:DrawWindow()
-    local window = GBankClassic_UI:Create("Frame")
+    local window = GBCR.Libs.AceGUI:Create("Frame")
     window:Hide()
-    window:SetCallback("OnClose", onClose)
-    window:SetTitle(GBankClassic_Core.addonHeader)
+    window:SetCallback("OnClose", function()
+        self:OnClose()
+    end)
+    window:SetTitle(GBCR.Core.addonHeader)
     window:SetLayout("Flow")
-	if GBankClassic_Options.db then
-		window:SetStatusTable(GBankClassic_Options.db.char.framePositions or { width = 550, height = 500 })
-	end
+    local optionsDB = GBCR.Options:GetOptionsDB()
+    window:SetStatusTable(optionsDB.profile.framePositions or optionsDB.default.profile.framePositions)
     window.frame:SetResizeBounds(500, 500)
     window.frame:EnableKeyboard(true)
     window.frame:SetPropagateKeyboardInput(true)
     window.frame:SetScript("OnKeyDown", function(self, event)
-        GBankClassic_UI:EventHandler(self, event)
+        GBCR.UI:EventHandler(self, event)
     end)
     self.Window = window
 
@@ -113,32 +104,32 @@ function UI_Inventory:DrawWindow()
 	helpIcon:SetScript("OnEnter", function(self)
 		GameTooltip:SetOwner(self, "ANCHOR_TOP")
 		GameTooltip:ClearLines()
-		GameTooltip:AddLine(GBankClassic_Core.addonHeader)
+		GameTooltip:AddLine(GBCR.Core.addonHeader)
 		GameTooltip:AddLine(" ")
-		GameTooltip:AddLine("|cffffd100How it works:|r", 1, 1, 1, false)
+		GameTooltip:AddLine(GBCR.Globals:Colorize(colorYellow, "How it works:"), 1, 1, 1, false)
 		GameTooltip:AddLine("Each tab shows one bank character.", 0.9, 0.9, 0.9, true)
 		GameTooltip:AddLine("You only see items from the selected tab.", 0.9, 0.9, 0.9, true)
 		GameTooltip:AddLine(" ")
-		GameTooltip:AddLine("|cffffd100Search items:|r", 1, 1, 1, false)
+		GameTooltip:AddLine(GBCR.Globals:Colorize(colorYellow, "Search items:"), 1, 1, 1, false)
 		GameTooltip:AddLine("Search for items across all bank characters.", 0.9, 0.9, 0.9, true)
 		GameTooltip:AddLine("Type at least 3 letters.", 0.9, 0.9, 0.9, true)
 		GameTooltip:AddLine("Or drag an item into the search box.", 0.9, 0.9, 0.9, true)
 		GameTooltip:AddLine(" ")
-		GameTooltip:AddLine("|cffffd100Sort and filter:|r", 1, 1, 1, false)
+		GameTooltip:AddLine(GBCR.Globals:Colorize(colorYellow, "Sort and filter:"), 1, 1, 1, false)
 		GameTooltip:AddLine("Use sort and filters to find items faster.", 0.9, 0.9, 0.9, true)
 		GameTooltip:AddLine("Reset filters when done.", 0.9, 0.9, 0.9, true)
 		GameTooltip:AddLine(" ")
-		GameTooltip:AddLine("|cffffd100Donate:|r", 1, 1, 1, false)
+		GameTooltip:AddLine(GBCR.Globals:Colorize(colorYellow, "Donate:"), 1, 1, 1, false)
 		GameTooltip:AddLine("Send items or gold by mail to the character in the tab.", 0.9, 0.9, 0.9, true)
 		GameTooltip:AddLine("View top 30 donors based on total vendor value of items and gold.", 0.9, 0.9, 0.9, true)
 		GameTooltip:Show()
 	end)
 	helpIcon:SetScript("OnLeave", function()
-		GBankClassic_UI:HideTooltip()
+		GBCR.UI:HideTooltip()
 	end)
 
     -- Button container (3 columns)
-    local buttonContainer = GBankClassic_UI:Create("SimpleGroup")
+    local buttonContainer = GBCR.Libs.AceGUI:Create("SimpleGroup")
     buttonContainer:SetLayout("Table")
     buttonContainer:SetUserData("table", {
         columns = {
@@ -152,10 +143,10 @@ function UI_Inventory:DrawWindow()
     window:AddChild(buttonContainer)
 
     -- Search button (opens a separate search pane on the left)
-    local searchButton = GBankClassic_UI:Create("Button")
+    local searchButton = GBCR.Libs.AceGUI:Create("Button")
     searchButton:SetText("Search")
-    searchButton:SetCallback("OnClick", function(_)
-        GBankClassic_UI_Search:Toggle()
+    searchButton:SetCallback("OnClick", function()
+        GBCR.UI.Search:Toggle()
     end)
 	searchButton:SetCallback("OnEnter", function()
 		GameTooltip:SetOwner(searchButton.frame, "ANCHOR_BOTTOM")
@@ -167,7 +158,7 @@ function UI_Inventory:DrawWindow()
 		GameTooltip:Show()
 	end)
 	searchButton:SetCallback("OnLeave", function()
-		GBankClassic_UI:HideTooltip()
+		GBCR.UI:HideTooltip()
 	end)
     searchButton:SetWidth(160)
     searchButton:SetHeight(24)
@@ -179,29 +170,24 @@ function UI_Inventory:DrawWindow()
         ["alpha"]   = "Alphabetical",
         ["type"]    = "By type (class/slot)",
         ["rarity"]  = "By rarity",
-        ["level"]   = "By required level"
+        ["level"]   = "By item level"
     }
     local sortOrder = { "default", "alpha", "type", "rarity", "level" }
-    local sortDropdown = GBankClassic_UI:Create("Dropdown")
+    local sortDropdown = GBCR.Libs.AceGUI:Create("Dropdown")
     sortDropdown:SetLabel("Sort")
     sortDropdown:SetList(sortList, sortOrder)
     sortDropdown:SetWidth(160)
     sortDropdown:SetFullWidth(false)
-    local initMode = (GBankClassic_Options.db and GBankClassic_Options.db.char.sortMode) or "default"
-    sortDropdown:SetValue(initMode)
-    sortDropdown:SetCallback("OnValueChanged", function(widget, _, value)
-        local db = GBankClassic_Options.db and GBankClassic_Options.db.char
-        if not db then
-            return
-        end
-        db.sortMode = value
+    sortDropdown:SetValue(GBCR.Options:GetSortMode())
+    sortDropdown:SetCallback("OnValueChanged", function(_, _, value)
+        GBCR.Options:SetSortMode(value)
         self:RefreshCurrentTab()
     end)
     self.SortDropdown = sortDropdown
     buttonContainer:AddChild(sortDropdown)
 
     -- Requests button
-	local requestsButton = GBankClassic_UI:Create("Button")
+	local requestsButton = GBCR.Libs.AceGUI:Create("Button")
 	requestsButton:SetText("Requests")
     requestsButton:SetDisabled(true)
 	requestsButton:SetCallback("OnEnter", function()
@@ -212,17 +198,17 @@ function UI_Inventory:DrawWindow()
 		GameTooltip:Show()
 	end)
 	requestsButton:SetCallback("OnLeave", function()
-		GBankClassic_UI:HideTooltip()
+		GBCR.UI:HideTooltip()
 	end)
 	requestsButton:SetWidth(160)
 	requestsButton:SetHeight(24)
 	buttonContainer:AddChild(requestsButton)
 
     -- Donations button (opens a donations pane on the right)
-    local donationsButton = GBankClassic_UI:Create("Button")
+    local donationsButton = GBCR.Libs.AceGUI:Create("Button")
     donationsButton:SetText("Donations")
-    donationsButton:SetCallback("OnClick", function(_)
-        GBankClassic_UI_Donations:Toggle()
+    donationsButton:SetCallback("OnClick", function()
+        GBCR.UI.Donations:Toggle()
     end)
 	donationsButton:SetCallback("OnEnter", function()
 		GameTooltip:SetOwner(donationsButton.frame, "ANCHOR_BOTTOM")
@@ -232,14 +218,14 @@ function UI_Inventory:DrawWindow()
 		GameTooltip:Show()
 	end)
 	donationsButton:SetCallback("OnLeave", function()
-		GBankClassic_UI:HideTooltip()
+		GBCR.UI:HideTooltip()
 	end)
     donationsButton:SetWidth(160)
     donationsButton:SetHeight(24)
     buttonContainer:AddChild(donationsButton)
 
     -- Filter row (below buttons)
-    local filterContainer = GBankClassic_UI:Create("SimpleGroup")
+    local filterContainer = GBCR.Libs.AceGUI:Create("SimpleGroup")
     filterContainer:SetLayout("Table")
     filterContainer:SetUserData("table", {
         columns = {
@@ -265,7 +251,7 @@ function UI_Inventory:DrawWindow()
         ["misc"]      = "Everything else"
     }
     local filterTypeOrder = { "any", "armor", "weapon", "consumable", "trade", "container", "recipe", "quest", "misc" }
-    local filterTypeDropdown = GBankClassic_UI:Create("Dropdown")
+    local filterTypeDropdown = GBCR.Libs.AceGUI:Create("Dropdown")
     filterTypeDropdown:SetLabel("Type")
     filterTypeDropdown:SetList(filterTypeList, filterTypeOrder)
     filterTypeDropdown:SetWidth(160)
@@ -305,7 +291,7 @@ function UI_Inventory:DrawWindow()
         ["robe"]      = "Robe"
     }
     local filterSlotOrder = { "any", "head", "neck", "shoulder", "shirt", "chest", "wrist", "hands", "waist", "legs", "feet", "finger", "trinket", "back", "onehand", "mainhand", "offhand", "twohand", "ranged", "shield", "holdable", "tabard", "bag" }
-    local filterSlotDropdown = GBankClassic_UI:Create("Dropdown")
+    local filterSlotDropdown = GBCR.Libs.AceGUI:Create("Dropdown")
     filterSlotDropdown:SetLabel("Slot")
     filterSlotDropdown:SetList(filterSlotList, filterSlotOrder)
     filterSlotDropdown:SetWidth(160)
@@ -328,7 +314,7 @@ function UI_Inventory:DrawWindow()
         ["legendary"] = "Legendary (orange)"
     }
     local filterRarityOrder = { "any", "poor", "common", "uncommon", "rare", "epic", "legendary" }
-    local filterRarityDropdown = GBankClassic_UI:Create("Dropdown")
+    local filterRarityDropdown = GBCR.Libs.AceGUI:Create("Dropdown")
     filterRarityDropdown:SetLabel("Quality")
     filterRarityDropdown:SetList(filterRarityList, filterRarityOrder)
     filterRarityDropdown:SetWidth(160)
@@ -341,11 +327,11 @@ function UI_Inventory:DrawWindow()
     filterContainer:AddChild(filterRarityDropdown)
 
     -- Reset filters button
-    local resetButton = GBankClassic_UI:Create("Button")
+    local resetButton = GBCR.Libs.AceGUI:Create("Button")
     resetButton:SetText("Reset filters")
     resetButton:SetWidth(160)
     resetButton:SetHeight(24)
-    resetButton:SetCallback("OnClick", function(_)
+    resetButton:SetCallback("OnClick", function()
         self:ResetFilters()
     end)
 	resetButton:SetCallback("OnEnter", function()
@@ -356,13 +342,13 @@ function UI_Inventory:DrawWindow()
 		GameTooltip:Show()
 	end)
 	resetButton:SetCallback("OnLeave", function()
-		GBankClassic_UI:HideTooltip()
+		GBCR.UI:HideTooltip()
 	end)
     resetButton:SetDisabled(true)
     self.ResetFiltersButton = resetButton
     filterContainer:AddChild(resetButton)
 
-    local tabGroup = GBankClassic_UI:Create("TabGroup")
+    local tabGroup = GBCR.Libs.AceGUI:Create("TabGroup")
     tabGroup:SetLayout("Flow")
     tabGroup:SetFullWidth(true)
     tabGroup:SetFullHeight(true)
@@ -373,49 +359,29 @@ function UI_Inventory:DrawWindow()
     self:ResetFilters()
 end
 
-function UI_Inventory:UpdateStatusText(filteredCount, totalCount, goldAmount, versionTimestamp)
-    filteredCount = filteredCount or 0
-    totalCount = totalCount or 0
-
-    local activeFilters = self:GetActiveFilterCount()
-    local pluralFilters = (activeFilters ~= 1 and "s" or "")
-    local filterText = activeFilters > 0 and string.format(" |cff87ceeb(%d filter%s active)|r", activeFilters, pluralFilters) or ""
-    local pluralItems = (totalCount ~= 1 and "s" or "")
-
-    if activeFilters > 0 then
-        local statusText = string.format("Showing %d of %d item%s%s", filteredCount, totalCount, pluralItems, filterText)
-        self.Window:SetStatusText(statusText)
-        self.filteredCount = filteredCount
-        self.totalCount = totalCount
-    else
-        local defaultStatus
-        if goldAmount > 0 or versionTimestamp ~= "" then
-            local updatedAt = ""
-            if versionTimestamp ~= "" then
-                local versionDate = date("%b %d, %Y %H:%M", versionTimestamp)
-                updatedAt = string.format(" as of %s", versionDate)
-            end
-            defaultStatus = string.format("%s%s", GetCoinTextureString(goldAmount), updatedAt)
-        else
-            defaultStatus = "No available data"
-        end
-        self.Window:SetStatusText(defaultStatus)
-    end
-end
-
 function UI_Inventory:DrawContent()
-    local info = GBankClassic_Guild.Info
-	local roster_alts = GBankClassic_Guild:GetRosterGuildBankAlts()
+    GBCR.Output:Debug("UI", "UI_Inventory:DrawContent called")
+    local info = GBCR.Database.savedVariables
+	local roster_alts = GBCR.Guild:GetRosterGuildBankAlts()
 	if not info or not roster_alts then
-		queryEmpty()
-		onClose()
-		GBankClassic_Output:Response("Database is empty; wait for sync.")
+		self:OnClose()
+		GBCR.Protocol:PerformSync()
+		GBCR.Output:Response("Database is empty; wait for sync.")
 
 		return
 	end
 
+    -- Validate currentTab against fresh data
+    if self.currentTab then
+        local norm = GBCR.Guild:NormalizeName(self.currentTab)
+        if not (info.alts and info.alts[norm]) then
+            self.currentTab = nil
+            self.tabLoaded = false
+        end
+    end
+
     -- Rebuild search on next open
-	GBankClassic_UI_Search.searchDataBuilt = false
+	GBCR.UI.Search.searchDataBuilt = false
 
     local tabs = {}
     local firstTab = nil
@@ -423,26 +389,28 @@ function UI_Inventory:DrawContent()
     local firstTabVersion = nil
     for i = 1, #roster_alts do
         local guildBankAltName = roster_alts[i]
-		local norm = GBankClassic_Guild:NormalizeName(guildBankAltName) or guildBankAltName
+		local norm = GBCR.Guild:NormalizeName(guildBankAltName) or guildBankAltName
 		local alt = info.alts[norm]
         if alt and type(alt) == "table" then
             if not firstTab then
                 firstTab = guildBankAltName
                 firstTabMoney = alt.money or 0
-                firstTabVersion = alt.version or ""
+                firstTabVersion = alt.version or 0
             end
             tabs[i] = { value = guildBankAltName, text = guildBankAltName }
         end
     end
 
 	if #tabs == 0 then
-		queryEmpty()
-		onClose()
-		GBankClassic_Output:Response("Database is empty; wait for sync.")
+		self:OnClose()
+		GBCR.Protocol:PerformSync()
+		GBCR.Output:Response("Database is empty; wait for sync.")
 
 		return
 	end
 
+    self.TabGroup:ReleaseChildren()
+    self.TabGroup.localstatus = {}
     self.TabGroup:SetTabs(tabs)
     self:UpdateStatusText(self.filteredCount or "", self.totalCount or "", firstTabMoney, firstTabVersion)
 
@@ -451,26 +419,26 @@ function UI_Inventory:DrawContent()
 
         -- -- Prevent processing the same tab multiple times
         -- if self.currentTab == tab and self.tabLoaded then
-        --     GBankClassic_Output:Debug("INVENTORY", "Blocked duplicate OnGroupSelected for tab %s.", tab)
+        --     GBCR.Output:Debug("INVENTORY", "Blocked duplicate OnGroupSelected for tab %s.", tab)
 
         --     return
         -- end
 
         self.currentTab = tab
         self.tabLoaded = false
-        GBankClassic_Output:Debug("ITEM", "Loading tab %s", tab)
+        GBCR.Output:Debug("ITEM", "Loading tab %s", tab)
 
         self.TabGroup:ReleaseChildren()
 
-        local g = GBankClassic_UI:Create("SimpleGroup")
+        local g = GBCR.Libs.AceGUI:Create("SimpleGroup")
         g:SetFullWidth(true)
         g:SetFullHeight(true)
         g:SetLayout("Flow")
         self.TabGroup:AddChild(g)
 
-        local normTab = GBankClassic_Guild:NormalizeName(tab) or tab
+        local normTab = GBCR.Guild:NormalizeName(tab) or tab
         local alt = info.alts[normTab]
-        local scroll = GBankClassic_UI:Create("ScrollFrame")
+        local scroll = GBCR.Libs.AceGUI:Create("ScrollFrame")
         scroll:SetLayout("Flow")
         scroll:SetFullHeight(true)
         scroll:SetFullWidth(true)
@@ -485,72 +453,54 @@ function UI_Inventory:DrawContent()
             for _, item in pairs(alt.items) do
                 table.insert(items, item)
             end
-            GBankClassic_Output:Debug("ITEM", "Inventory tab %s: using alt.items (%d items)", tab, #items)
+            GBCR.Output:Debug("ITEM", "Inventory tab %s: using alt.items (%d items)", tab, #items)
         end
-        GBankClassic_Output:Debug("ITEM", "Inventory tab %s: aggregated to %d unique items", tab, #items)
+        GBCR.Output:Debug("ITEM", "Inventory tab %s: aggregated to %d unique items", tab, #items)
 
         -- Show loading indicator immediately
-        local loadingLabel = GBankClassic_UI:Create("Label")
-        local isLocal = (GBankClassic_Guild:GetNormalizedPlayer() == tab)
+        local loadingLabel = GBCR.Libs.AceGUI:Create("Label")
+        local isLocal = (GBCR.Guild:GetNormalizedPlayer() == tab)
         if isLocal then
-            local msg = "|cffaad372This is you!|r\n\nNo data has been scanned yet.\n\n|cffFFd100To populate your guild bank data:|r\n1. |cff33ff99Enable reporting and scanning|r of your data via the addon options.\n2. Visit the |cff33ff99Bank|r to scan your bank and bag.\n3. Close your bank.\n4. Open and close your mailbox.\n5. If other guild members are online, |cff33ff99wait|r for the share to complete.\n"
+            local msg = string.format("%s\n\nNo data has been scanned yet, or no items found.\n\nTo populate your guild bank data:\n1. %s of your data via the addon options.\n2. Visit the %s to scan your bank and bags.\n3. Close your bank.\n4. Open and close your %s.\n5. If other guild members are online, %s for the share to complete.\n", GBCR.Globals:Colorize(colorOrange, "This is you!"), GBCR.Globals:Colorize(colorGreen, "Enable reporting and scanning"), GBCR.Globals:Colorize(colorGreen, "bank"), GBCR.Globals:Colorize(colorGreen, "mailbox"), GBCR.Globals:Colorize(colorGreen, "wait"))
             loadingLabel:SetText(msg)
         else
-            loadingLabel:SetText("|cff808080No available data for this guild bank alt.|r")
+            local notFound = GBCR.Globals:Colorize(colorGray, "No items found for this guild bank alt.")
+            loadingLabel:SetText(notFound)
         end
-        self:UpdateStatusText("", "", 0, "")
+        UI_Inventory:UpdateStatusText("", "", alt.money or 0, alt.version or 0)
         loadingLabel:SetFullWidth(true)
         scroll:AddChild(loadingLabel)
 
         -- Filter reset button
-        if self:GetActiveFilterCount() > 0 then
+        if UI_Inventory:GetActiveFilterCount() > 0 then
             UI_Inventory.ResetFiltersButton:SetDisabled(false)
         else
             UI_Inventory.ResetFiltersButton:SetDisabled(true)
         end
 
         if items and #items > 0 then
-            -- Check for duplicate item IDs with different links
-            local itemsByID = {}
-            for _, item in pairs(items) do
-                if item and item.ID then
-                    if not itemsByID[item.ID] then
-                        itemsByID[item.ID] = {}
-                    end
-                    table.insert(itemsByID[item.ID], { Count = item.Count, Link = item.Link })
-                end
-            end
-            for itemID, entries in pairs(itemsByID) do
-                if #entries > 1 then
-                    GBankClassic_Output:Debug("ITEM", "Duplicate item ID %d found with %d different entries:", itemID, #entries)
-                    for i, entry in ipairs(entries) do
-                        GBankClassic_Output:Debug("ITEM", "  Entry %d: count=%d, link=%s", i, entry.Count, entry.Link or "nil")
-                    end
-                end
-            end
-
             -- Validate and filter items before passing to GetItems
             local validItems = {}
             for i, item in ipairs(items) do
-                if item and item.ID and item.ID > 0 then
+                if item and item.itemId and item.itemId > 0 then
                     table.insert(validItems, item)
                 else
-                    GBankClassic_Output:Debug("ITEM", "WARNING: Tab %s skipping invalid item at index %d (ID: %s, link: %s)", tab, i, tostring(item and item.ID or "nil item"), tostring(item and item.Link or "nil"))
+                    GBCR.Output:Debug("ITEM", "WARNING: Tab %s skipping invalid item at index %d (itemId: %s, itemLink: %s)", tab, i, tostring(item and item.itemId or "nil item"), tostring(item and item.itemLink or "nil"))
                 end
             end
 
             local selectedTab = tab
-            GBankClassic_Item:GetItems(validItems, function(list)
+            GBCR.Inventory:GetItems(validItems, function(list)
                 -- Prevent callback from running twice on same scroll container
                 if scroll.callbackProcessed then
-                    GBankClassic_Output:Debug("ITEM", "Ignoring duplicate callback for tab %s", tab)
+                    GBCR.Output:Debug("ITEM", "Ignoring duplicate callback for tab %s", tab)
 
                     return
                 end
 
                 -- Verify we're still on the same tab (user may have switched)
                 if self.currentTab ~= selectedTab then
-                    GBankClassic_Output:Debug("ITEM", "Ignoring callback for old tab %s (now on %s)", selectedTab, self.currentTab)
+                    GBCR.Output:Debug("ITEM", "Ignoring callback for old tab %s (now on %s)", selectedTab, self.currentTab)
 
                     return
                 end
@@ -558,44 +508,44 @@ function UI_Inventory:DrawContent()
                 scroll.callbackProcessed = true
                 self.tabLoaded = true
 
-                GBankClassic_Output:Debug("ITEM", "Inventory tab %s: GetItems callback received %d items", tab, list and #list or 0)
+                GBCR.Output:Debug("ITEM", "Inventory tab %s: GetItems callback received %d items", tab, list and #list or 0)
                 scroll:ReleaseChildren()
 
                 -- Apply filters
                 local filteredList = {}
                 local filteredCount = 0
                 for _, item in ipairs(list) do
-                    if self:PassesFilters(item) then
+                    if UI_Inventory:PassesFilters(item) then
                         table.insert(filteredList, item)
                         filteredCount = filteredCount + 1
                     end
                 end
-                GBankClassic_Item:Sort(filteredList, GBankClassic_Options.db and GBankClassic_Options.db.char.sortMode)
+                GBCR.Inventory:Sort(filteredList, GBCR.Options:GetSortMode())
 
                 -- Update status text to show filter results
-                self:UpdateStatusText(filteredCount, #list, alt.money or 0, alt.version)
+                UI_Inventory:UpdateStatusText(filteredCount, #list, alt.money or 0, alt.version or 0)
 
                 -- Release loading label and display filtered items
                 scroll:ReleaseChildren()
                 for _, item in pairs(filteredList) do
-                    if item and item.Info and item.Info.name then
-                        GBankClassic_Output:Debug("ITEM", "Inventory tab %s: displaying %s with count %d (ID: %d)", tab, item.Info.name, item.Count or 0, item.ID)
+                    if item and item.itemInfo and item.itemInfo.name then
+                        GBCR.Output:Debug("ITEM", "Inventory tab %s: displaying %s with count %d (itemId: %d)", tab, item.itemInfo.name, item.itemCount or 0, item.itemId)
                     end
-                    local itemWidget = GBankClassic_UI:DrawItem(item, scroll)
+                    local itemWidget = GBCR.UI:DrawItem(item, scroll)
                     if itemWidget then
-                        itemWidget:SetCallback("OnEnter", function(widget)
-                            if item and item.Info then
-                                GameTooltip:SetOwner(widget.frame, "ANCHOR_RIGHT")
-                                GameTooltip:SetHyperlink(item.Link or ("item:"..item.ID))
+                        itemWidget:SetCallback("OnEnter", function(self)
+                            if item and item.itemInfo then
+                                GameTooltip:SetOwner(self.frame, "ANCHOR_RIGHT")
+                                GameTooltip:SetHyperlink(item.itemLink or ("item:"..item.itemId))
                                 GameTooltip:Show()
                             end
                         end)
                         itemWidget:SetCallback("OnLeave", function()
-                            GBankClassic_UI:HideTooltip()
+                            GBCR.UI:HideTooltip()
                         end)
-                        itemWidget:SetCallback("OnClick", function(widget, event)
+                        itemWidget:SetCallback("OnClick", function(self, event)
                             if IsShiftKeyDown() or IsControlKeyDown() then
-                                GBankClassic_UI:EventHandler(widget, event)
+                                GBCR.UI:EventHandler(self, event)
 
                                 return
                             end
@@ -605,8 +555,8 @@ function UI_Inventory:DrawContent()
 
                 -- Show "no results" message if all items filtered out
                 if filteredCount == 0 and #list > 0 then
-                    local noResultsLabel = GBankClassic_UI:Create("Label")
-                    noResultsLabel:SetText("|cff808080No items match current filters.|r")
+                    local noResultsLabel = GBCR.Libs.AceGUI:Create("Label")
+                    noResultsLabel:SetText(GBCR.Globals:Colorize(colorGray, "No items match current filters."))
                     noResultsLabel:SetFullWidth(true)
                     scroll:AddChild(noResultsLabel)
                 end
@@ -622,15 +572,46 @@ function UI_Inventory:DrawContent()
         -- Don't call SelectTab if it's already the current tab (prevents reload on sync)
         -- The tab is already displayed, no need to trigger OnGroupSelected again
         if self.currentTab ~= currentTab then
+            self.currentTab = nil
             self.TabGroup:SelectTab(currentTab)
         end
 	else
 		-- No current selection or invalid tab, select first tab
+        self.currentTab = nil
 		self.TabGroup:SelectTab(firstTab)
 	end
 end
 
+function UI_Inventory:UpdateStatusText(filteredCount, totalCount, goldAmount, versionTimestamp)
+    filteredCount = filteredCount or 0
+    totalCount = totalCount or 0
+
+    local activeFilters = self:GetActiveFilterCount()
+    local pluralFilters = (activeFilters ~= 1 and "s" or "")
+    local filterText = activeFilters > 0 and GBCR.Globals:Colorize(colorBlue, string.format(" (%d filter%s active)", activeFilters, pluralFilters)) or ""
+    local pluralItems = (totalCount ~= 1 and "s" or "")
+
+    if activeFilters > 0 then
+        local statusText = string.format("Showing %d of %d item%s%s", filteredCount, totalCount, pluralItems, filterText)
+        self.Window:SetStatusText(statusText)
+        self.filteredCount = filteredCount
+        self.totalCount = totalCount
+    else
+        local defaultStatus
+        if type(versionTimestamp) == "number" and versionTimestamp > 0 then
+            local updatedAt = ""
+            local versionDate = date("%b %d, %Y %H:%M", versionTimestamp)
+            updatedAt = string.format(" as of %s", versionDate)
+            defaultStatus = string.format("%s%s", GetCoinTextureString(goldAmount), updatedAt)
+        else
+            defaultStatus = "No available data"
+        end
+        self.Window:SetStatusText(defaultStatus)
+    end
+end
+
 function UI_Inventory:RefreshCurrentTab()
+    GBCR.Output:Debug("UI", "UI_Inventory:RefreshCurrentTab called")
     local group = self.TabGroup
     if not group then
         return
@@ -670,11 +651,11 @@ function UI_Inventory:ResetFilters()
 end
 
 function UI_Inventory:PassesFilters(item)
-    if not item or not item.Info then
+    if not item or not item.itemInfo then
         return true
     end
 
-    local info = item.Info
+    local info = item.itemInfo
 
     -- Type filter
     if self.filterType and self.filterType ~= "any" then

@@ -1,43 +1,77 @@
-GBankClassic_Options = GBankClassic_Options or {}
+local addonName, GBCR = ...
 
-local Options = GBankClassic_Options
+GBCR.Options = {}
+local Options = GBCR.Options
 
-local Globals = GBankClassic_Globals
-local upvalues = Globals.GetUpvalues("LibStub")
-local LibStub = upvalues.LibStub
-local upvalues = Globals.GetUpvalues("Settings")
-local Settings = upvalues.Settings
+local Globals = GBCR.Globals
+local Settings = Globals.Settings
+
+local Constants = GBCR.Constants
+local colorGold = Constants.COLORS.GOLD
+local logLevels = Constants.LOG_LEVEL
+local logLevelDescriptions = Constants.LOG_LEVEL_BY_VALUE
 
 function Options:Init()
-    self.db = LibStub("AceDB-3.0"):New("GBankClassicOptionDB")
-    self.db.char = self.db.char or {}
-    self.db.char.minimap = self.db.char.minimap or { enabled = true }
-    self.db.char.combat = self.db.char.combat or { hide = true }
-    self.db.char.bank = self.db.char.bank or { donations = true }
-    self.db.char.bank['donations'] = (self.db.char.bank['donations'] == nil) and true or self.db.char.bank['donations']
-    self.db.char.framePositions = self.db.char.framePositions or {}
-    self.db.global = self.db.global or {}
-    self.db.global.bank = self.db.global.bank or { report = true, logLevel = LOG_LEVEL.INFO, commDebug = false }
-	self.db.global.bank["report"] = self.db.global.bank["report"] or true
-	self.db.global.bank["logLevel"] = self.db.global.bank["logLevel"] or LOG_LEVEL.INFO
-	self.db.global.bank["commDebug"] = self.db.global.bank["commDebug"] or false
+    self.db = GBCR.Libs.AceDB:New("GBCR_Options_DB", {
+		char = {
+			bank = {
+				inventoryTracking = true,
+				donationsTracking = true,
+				reportReceivedDonations = true,
+			},
+		},
+		profile = {
+			combat = {
+				hide = true,
+			},
+			minimap = {
+				hide = false,
+			},
+            framePositions = {
+				width = 700,
+				height = 500,
+            },
+			logLevel = logLevels.INFO.level,
+			debugCategories = {
+				ROSTER = false,
+				COMMS = false,
+				SYNC = false,
+				CHUNK = false,
+				DONATION = false,
+				WHISPER = false,
+				-- REQUESTS = false,
+				UI = false,
+				PROTOCOL = false,
+				DATABASE = false,
+				EVENTS = false,
+				INVENTORY = false,
+				MAIL = false,
+				ITEM = false,
+				-- FULFILL = false,
+				SEARCH = false,
+				-- QUERIES = false,
+				REPLIES = false,
+			},
+			sortMode = "default"
+		},
+	}, true)
 
-	-- Migrate from old shutup toggle to new logLevel
-	if self.db.global.bank["shutup"] ~= nil then
-		if self.db.global.bank["shutup"] == true then
-			self.db.global.bank["logLevel"] = LOG_LEVEL.RESPONSE
-		end
-		self.db.global.bank["shutup"] = nil
+	-- Log level configuration
+	local values = {}
+	local sorting = {}
+	for _, info in pairs(logLevels) do
+		values[info.level] = info.description
+		table.insert(sorting, info.level)
 	end
+	table.sort(sorting, function(a, b)
+		return a > b
+	end)
 
-    -- Initialize
-	GBankClassic_Output:SetLevel(self.db.global.bank["logLevel"])
-	GBankClassic_Output:SetCommDebug(self.db.global.bank["commDebug"])
-
+	-- Configuration options
     local options = {
         type = "group",
         name = function()
-    		return GBankClassic_Core.addonHeader
+    		return GBCR.Core.addonHeader
 		end,
 		childGroups = "tab",
         args = {
@@ -53,11 +87,11 @@ function Options:Init()
                         name = "Show minimap button",
                         desc = "Toggles visibility of the minimap button",
                         set = function(_, v)
-                            self.db.char.minimap["enabled"] = v
-                            GBankClassic_UI_Minimap:Toggle()
+                            self.db.profile.minimap.hide = not v
+                            GBCR.UI.Minimap:Toggle()
                         end,
                         get = function()
-                            return self.db.char.minimap["enabled"]
+                            return self:GetMinimapEnabled()
                         end,
                     },
                     ["combat"] = {
@@ -67,10 +101,10 @@ function Options:Init()
                         name = "Hide during combat",
                         desc = "Toggles visibility of the window during combat",
                         set = function(_, v)
-                            self.db.char.combat["hide"] = v
+                            self.db.profile.combat.hide = v
                         end,
                         get = function()
-                            return self.db.char.combat["hide"]
+                            return self:GetCombatHide()
                         end,
                     },
                     ["logLevel"] = {
@@ -80,20 +114,13 @@ function Options:Init()
 						width = "full",
 						name = "Log level",
 						desc = "Controls which messages are shown in chat",
-						values = {
-							[LOG_LEVEL.RESPONSE] = "Quiet (only respond to /bank commands)",
-							[LOG_LEVEL.ERROR] = "Errors and above",
-							[LOG_LEVEL.WARN] = "Warnings and above",
-							[LOG_LEVEL.INFO] = "Info and above (default)",
-							[LOG_LEVEL.DEBUG] = "Debug (show everything)",
-						},
-						sorting = { LOG_LEVEL.RESPONSE, LOG_LEVEL.ERROR, LOG_LEVEL.WARN, LOG_LEVEL.INFO, LOG_LEVEL.DEBUG },
+						values = values,
+						sorting = sorting,
 						set = function(_, v)
-							self.db.global.bank["logLevel"] = v
-							GBankClassic_Output:SetLevel(v)
+							self:SetLogLevel(v)
 						end,
 						get = function()
-							return self.db.global.bank["logLevel"]
+							return self:GetLogLevel()
 						end,
                     },
                     ["reset"] = {
@@ -101,12 +128,12 @@ function Options:Init()
                         name = "Reset database",
                         type = "execute",
                         func = function()
-                            local guild = GBankClassic_Guild:GetGuildName()
+                            local guild = GBCR.Guild:GetGuildName()
                             if not guild then
                                 return
 							end
 
-                            GBankClassic_Guild:Reset(guild)
+                            GBCR.Guild:Reset(guild)
                         end,
                     },
                 },
@@ -115,6 +142,9 @@ function Options:Init()
 				order = 2,
 				type = "group",
 				name = "Debug",
+				disabled = function()
+					return not self:IsDebugEnabled()
+				end,
 				args = {
 					["debugHeader"] = {
 						order = 0,
@@ -132,10 +162,10 @@ function Options:Init()
 						width = "full",
 						name = "CHUNK - Data synchronization operations specific to chunk sending",
 						set = function(_, v)
-							GBankClassic_Output:SetCategoryEnabled("CHUNK", v)
+							self:SetCategoryEnabled("CHUNK", v)
 						end,
 						get = function()
-							return GBankClassic_Output:IsCategoryEnabled("CHUNK")
+							return self:IsCategoryEnabled("CHUNK")
 						end,
 					},
 					["comms"] = {
@@ -144,10 +174,10 @@ function Options:Init()
 						width = "full",
 						name = "COMMS - All addon communication traffic (high volume)",
 						set = function(_, v)
-							GBankClassic_Output:SetCategoryEnabled("COMMS", v)
+							self:SetCategoryEnabled("COMMS", v)
 						end,
 						get = function()
-							return GBankClassic_Output:IsCategoryEnabled("COMMS")
+							return self:IsCategoryEnabled("COMMS")
 						end,
 					},
 					["database"] = {
@@ -156,10 +186,10 @@ function Options:Init()
 						width = "full",
 						name = "DATABASE - Database and SavedVariables operations",
 						set = function(_, v)
-							GBankClassic_Output:SetCategoryEnabled("DATABASE", v)
+							self:SetCategoryEnabled("DATABASE", v)
 						end,
 						get = function()
-							return GBankClassic_Output:IsCategoryEnabled("DATABASE")
+							return self:IsCategoryEnabled("DATABASE")
 						end,
 					},
 					["donation"] = {
@@ -168,10 +198,10 @@ function Options:Init()
 						width = "full",
 						name = "DONATION - Donation ledger operations",
 						set = function(_, v)
-							GBankClassic_Output:SetCategoryEnabled("DONATION", v)
+							self:SetCategoryEnabled("DONATION", v)
 						end,
 						get = function()
-							return GBankClassic_Output:IsCategoryEnabled("DONATION")
+							return self:IsCategoryEnabled("DONATION")
 						end,
 					},
 					["events"] = {
@@ -180,10 +210,10 @@ function Options:Init()
 						width = "full",
 						name = "EVENTS - WoW event handling (GUILD_ROSTER_UPDATE, etc.)",
 						set = function(_, v)
-							GBankClassic_Output:SetCategoryEnabled("EVENTS", v)
+							self:SetCategoryEnabled("EVENTS", v)
 						end,
 						get = function()
-							return GBankClassic_Output:IsCategoryEnabled("EVENTS")
+							return self:IsCategoryEnabled("EVENTS")
 						end,
 					},
 					-- ["fulfill"] = {
@@ -192,10 +222,10 @@ function Options:Init()
 					-- 	width = "full",
 					-- 	name = "FULFILL - Fulfilling requests",
 					-- 	set = function(_, v)
-					-- 		GBankClassic_Output:SetCategoryEnabled("FULFILL", v)
+					-- 		self:SetCategoryEnabled("FULFILL", v)
 					-- 	end,
 					-- 	get = function()
-					-- 		return GBankClassic_Output:IsCategoryEnabled("FULFILL")
+					-- 		return self:IsCategoryEnabled("FULFILL")
 					-- 	end,
 					-- },
 					["inventory"] = {
@@ -204,10 +234,10 @@ function Options:Init()
 						width = "full",
 						name = "INVENTORY - Inventory (bank/bag/mail) scanning and tracking",
 						set = function(_, v)
-							GBankClassic_Output:SetCategoryEnabled("INVENTORY", v)
+							self:SetCategoryEnabled("INVENTORY", v)
 						end,
 						get = function()
-							return GBankClassic_Output:IsCategoryEnabled("INVENTORY")
+							return self:IsCategoryEnabled("INVENTORY")
 						end,
 					},
 					["item"] = {
@@ -216,58 +246,58 @@ function Options:Init()
 						width = "full",
 						name = "ITEM - Item loading, validation, and processing",
 						set = function(_, v)
-							GBankClassic_Output:SetCategoryEnabled("ITEM", v)
+							self:SetCategoryEnabled("ITEM", v)
 						end,
 						get = function()
-							return GBankClassic_Output:IsCategoryEnabled("ITEM")
+							return self:IsCategoryEnabled("ITEM")
 						end,
 					},
-					["mail"] = {
-						order = 18,
-						type = "toggle",
-						width = "full",
-						name = "MAIL - Mail inventory scanning and tracking",
-						set = function(_, v)
-							GBankClassic_Output:SetCategoryEnabled("MAIL", v)
-						end,
-						get = function()
-							return GBankClassic_Output:IsCategoryEnabled("MAIL")
-						end,
-					},
+					-- ["mail"] = {
+					-- 	order = 18,
+					-- 	type = "toggle",
+					-- 	width = "full",
+					-- 	name = "MAIL - Mail inventory scanning and tracking",
+					-- 	set = function(_, v)
+					-- 		self:SetCategoryEnabled("MAIL", v)
+					-- 	end,
+					-- 	get = function()
+					-- 		return self:IsCategoryEnabled("MAIL")
+					-- 	end,
+					-- },
 					["protocol"] = {
 						order = 19,
 						type = "toggle",
 						width = "full",
 						name = "PROTOCOL - Protocol version negotiation and debouncing",
 						set = function(_, v)
-							GBankClassic_Output:SetCategoryEnabled("PROTOCOL", v)
+							self:SetCategoryEnabled("PROTOCOL", v)
 						end,
 						get = function()
-							return GBankClassic_Output:IsCategoryEnabled("PROTOCOL")
+							return self:IsCategoryEnabled("PROTOCOL")
 						end,
 					},
-					["queries"] = {
-						order = 20,
-						type = "toggle",
-						width = "full",
-						name = "QUERIES - Peer query/response decisions and hash matching",
-						set = function(_, v)
-							GBankClassic_Output:SetCategoryEnabled("QUERIES", v)
-						end,
-						get = function()
-							return GBankClassic_Output:IsCategoryEnabled("QUERIES")
-						end,
-					},
+					-- ["queries"] = {
+					-- 	order = 20,
+					-- 	type = "toggle",
+					-- 	width = "full",
+					-- 	name = "QUERIES - Peer query/response decisions and hash matching",
+					-- 	set = function(_, v)
+					-- 		self:SetCategoryEnabled("QUERIES", v)
+					-- 	end,
+					-- 	get = function()
+					-- 		return self:IsCategoryEnabled("QUERIES")
+					-- 	end,
+					-- },
 					["replies"] = {
 						order = 21,
 						type = "toggle",
 						width = "full",
 						name = "REPLIES - Output from addon communication replies (such as /bank hello)",
 						set = function(_, v)
-							GBankClassic_Output:SetCategoryEnabled("REPLIES", v)
+							self:SetCategoryEnabled("REPLIES", v)
 						end,
 						get = function()
-							return GBankClassic_Output:IsCategoryEnabled("REPLIES")
+							return self:IsCategoryEnabled("REPLIES")
 						end,
 					},
 					-- ["requests"] = {
@@ -276,10 +306,10 @@ function Options:Init()
 					-- 	width = "full",
 					-- 	name = "REQUESTS - Request system activity and updates",
 					-- 	set = function(_, v)
-					-- 		GBankClassic_Output:SetCategoryEnabled("REQUESTS", v)
+					-- 		self:SetCategoryEnabled("REQUESTS", v)
 					-- 	end,
 					-- 	get = function()
-					-- 		return GBankClassic_Output:IsCategoryEnabled("REQUESTS")
+					-- 		return self:IsCategoryEnabled("REQUESTS")
 					-- 	end,
 					-- },
 					["roster"] = {
@@ -288,10 +318,10 @@ function Options:Init()
 						width = "full",
 						name = "ROSTER - Guild roster updates, online/offline tracking",
 						set = function(_, v)
-							GBankClassic_Output:SetCategoryEnabled("ROSTER", v)
+							self:SetCategoryEnabled("ROSTER", v)
 						end,
 						get = function()
-							return GBankClassic_Output:IsCategoryEnabled("ROSTER")
+							return self:IsCategoryEnabled("ROSTER")
 						end,
 					},
 					["search"] = {
@@ -300,10 +330,10 @@ function Options:Init()
 						width = "full",
 						name = "SEARCH - Search operations",
 						set = function(_, v)
-							GBankClassic_Output:SetCategoryEnabled("SEARCH", v)
+							self:SetCategoryEnabled("SEARCH", v)
 						end,
 						get = function()
-							return GBankClassic_Output:IsCategoryEnabled("SEARCH")
+							return self:IsCategoryEnabled("SEARCH")
 						end,
 					},
 					["sync"] = {
@@ -312,10 +342,10 @@ function Options:Init()
 						width = "full",
 						name = "SYNC - Data synchronization operations",
 						set = function(_, v)
-							GBankClassic_Output:SetCategoryEnabled("SYNC", v)
+							self:SetCategoryEnabled("SYNC", v)
 						end,
 						get = function()
-							return GBankClassic_Output:IsCategoryEnabled("SYNC")
+							return self:IsCategoryEnabled("SYNC")
 						end,
 					},
 					["ui"] = {
@@ -324,10 +354,10 @@ function Options:Init()
 						width = "full",
 						name = "UI - Interface operations (window opens/closes)",
 						set = function(_, v)
-							GBankClassic_Output:SetCategoryEnabled("UI", v)
+							self:SetCategoryEnabled("UI", v)
 						end,
 						get = function()
-							return GBankClassic_Output:IsCategoryEnabled("UI")
+							return self:IsCategoryEnabled("UI")
 						end,
 					},
 					["whisper"] = {
@@ -336,10 +366,10 @@ function Options:Init()
 						width = "full",
 						name = "WHISPER - Whisper sends, skips, and online checks",
 						set = function(_, v)
-							GBankClassic_Output:SetCategoryEnabled("WHISPER", v)
+							self:SetCategoryEnabled("WHISPER", v)
 						end,
 						get = function()
-							return GBankClassic_Output:IsCategoryEnabled("WHISPER")
+							return self:IsCategoryEnabled("WHISPER")
 						end,
 					},
 					["spacer"] = {
@@ -352,8 +382,8 @@ function Options:Init()
 						type = "execute",
 						name = "Enable all categories",
 						func = function()
-							GBankClassic_Output:EnableAllCategories()
-							GBankClassic_Output:Response("All debug categories enabled.")
+							self:EnableAllCategories()
+							GBCR.Output:Response("All debug categories enabled.")
 						end,
 					},
 					["disableAll"] = {
@@ -361,8 +391,8 @@ function Options:Init()
 						type = "execute",
 						name = "Disable all categories",
 						func = function()
-							GBankClassic_Output:DisableAllCategories()
-							GBankClassic_Output:Response("All debug categories disabled.")
+							self:DisableAllCategories()
+							GBCR.Output:Response("All debug categories disabled.")
 						end,
 					},
 					["spacer2"] = {
@@ -372,74 +402,83 @@ function Options:Init()
 					},
 				},
 			},
+			profiles = GBCR.Libs.AceDBOptions:GetOptionsTable(self.db),
         },
     }
 
-    LibStub("AceConfig-3.0"):RegisterOptionsTable("GBankClassic - Revived", options)
-    LibStub("AceConfigDialog-3.0"):AddToBlizOptions("GBankClassic - Revived", "GBankClassic - Revived")
+	-- Register configuration options with AceConfig
+    GBCR.Libs.AceConfig:RegisterOptionsTable("GBankClassic - Revived", options)
+    GBCR.Libs.AceConfigDialog:AddToBlizOptions("GBankClassic - Revived", "GBankClassic - Revived")
+
+	-- Register callbacks for configuration profiles
+	self.db.RegisterCallback(GBCR, "OnProfileChanged", function(event, db, newProfileName)
+		GBCR.Output:Response("Switched to profile %s.", GBCR.Globals:Colorize(colorGold, newProfileName))
+	end)
+	self.db.RegisterCallback(GBCR, "OnProfileCopied", function(event, db, sourceProfileName)
+		GBCR.Output:Response("Copied profile from %s.", GBCR.Globals:Colorize(colorGold, sourceProfileName))
+	end)
+	self.db.RegisterCallback(GBCR, "OnProfileReset", function(event, db)
+		GBCR.Output:Response("Profile reset to defaults.")
+	end)
+	self.db.RegisterCallback(GBCR, "OnProfileDeleted", function(event, db, deletedProfile)
+		GBCR.Output:Response("Profile %s deleted.", GBCR.Globals:Colorize(colorGold, deletedProfile))
+	end)
 end
 
-function Options:InitGuild()
-    local player = GBankClassic_Guild:GetNormalizedPlayer()
-    if not GBankClassic_Guild:IsGuildBankAlt(player) then 
+function Options:InitGuildBankAltOptions()
+    local player = GBCR.Guild:GetNormalizedPlayer()
+    if not GBCR.Guild:IsGuildBankAlt(player) then
         return
     end
 
-    if self.db and self.db.char and self.db.char.bank and self.db.char.bank["enabled"] == nil then
-        self.db.char.bank["enabled"] = true
-
-		-- Send an update version of the roster after enabling a new guild bank alt
-        GBankClassic_Guild:AuthorRosterData()
-    end
-
-    local bankOptions = {
+	-- Configuration options for guild bank alts
+    local guildBankAltOptions = {
         type = "group",
 		name = "Bank",
         hidden = function()
-            return not GBankClassic_Guild:IsGuildBankAlt(player)
+            return not GBCR.Guild:IsGuildBankAlt(player)
         end,
         args = {
-            ["enabled"] = {
+            ["inventoryTracking"] = {
                 order = 0,
                 type = "toggle",
 				width = "full",
                 name = "Enable for " .. player,
-                desc = "Enables reporting and scanning for this player",
-                set = function(_, v) 
-                    self.db.char.bank["enabled"] = v 
+                desc = "Enables inventory (bank, bags, and mailbox) scanning and sharing for this player",
+                set = function(_, v)
+                    self.db.char.bank.inventoryTracking = v
                     if v == true then
-						-- Send an update version of the roster after enabling a new guild bank alt
-                        GBankClassic_Guild:AuthorRosterData()
+                        GBCR.Protocol:AuthorRosterData()
                     end
                 end,
                 get = function()
-                    return self.db.char.bank["enabled"]
+                    return self:GetInventoryTrackingEnabled()
                 end,
             },
-            ["report"] = {
+            ["donationsTracking"] = {
                 order = 1,
                 type = "toggle",
 				width = "full",
-                name = "Report contributions",
-                desc = "Enables contribution reports",
+                name = "Enable donation tracking",
+                desc = "Enables tracking and sharing of donations by other guild members sent to you via the mailbox",
                 set = function(_, v)
-                    self.db.global.bank["report"] = v
-				end,
+                    self.db.char.bank.donationsTracking = v
+                end,
                 get = function()
-                    return self.db.global.bank["report"]
+                    return self:GetDonationsTrackingEnabled()
                 end,
             },
-            ["donations"] = {
+            ["reportReceivedDonations"] = {
                 order = 2,
                 type = "toggle",
 				width = "full",
-                name = "Enable donations",
-                desc = "Displays donation window at mailbox",
+                name = "Report received donations",
+                desc = "Display a message when donations by other guild members are processed (by taking items and money sent via mail)",
                 set = function(_, v)
-                    self.db.char.bank["donations"] = v
-                end,
+                    self.db.char.bank.reportReceivedDonations = v
+				end,
                 get = function()
-                    return self.db.char.bank["donations"]
+                    return self:GetDonationReportingEnabled()
                 end,
             },
             ["reset"] = {
@@ -447,57 +486,105 @@ function Options:InitGuild()
                 name = "Reset player database",
                 type = "execute",
                 func = function()
-                    local guild = GBankClassic_Guild:GetGuildName()
+                    local guild = GBCR.Guild:GetGuildName()
                     if not guild then
                         return
                     end
 
-                    GBankClassic_Database:ResetPlayer(guild, player)
+                    GBCR.Database:ResetPlayer(guild, player)
                 end,
             },
             ["error"] = {
                 order = 4,
                 type = "description",
-                name = "This panel is only available to bank alts.",
-                desc = "This panel is only available to bank alts.",
+                name = string.format("This panel is only available to guild bank alts (guild members with %s in either their public or officer note that they themselves can read).", GBCR.Globals:Colorize(colorGold, "gbank")),
                 hidden = function()
-                    return GBankClassic_Guild:IsGuildBankAlt(player)
+                    return GBCR.Guild:IsGuildBankAlt(player)
                 end,
             },
         },
     }
-    LibStub("AceConfig-3.0"):RegisterOptionsTable("GBankClassic - Revived/Bank", bankOptions)
 
-    if self.optionsAdded then
+	-- Register configuration options for guild bank alts with AceConfig
+    GBCR.Libs.AceConfig:RegisterOptionsTable("GBankClassic - Revived/Bank", guildBankAltOptions)
+	if self.optionsAdded then
 		return
 	end
+    GBCR.Libs.AceConfigDialog:AddToBlizOptions("GBankClassic - Revived/Bank", "Bank", "GBankClassic - Revived")
+	self.optionsAdded = true
 
-    LibStub("AceConfigDialog-3.0"):AddToBlizOptions("GBankClassic - Revived/Bank", "Bank", "GBankClassic - Revived")
-    self.optionsAdded = true
+	-- Send an update version of the roster after enabling a new guild bank alt
+	GBCR.Protocol:AuthorRosterData()
 end
 
-function Options:GetBankEnabled()
-    return self.db.char.bank["enabled"]
+function Options:GetOptionsDB()
+	return self.db
 end
 
-function Options:GetDonationEnabled()
-    return self.db.char.bank["donations"]
+function Options:GetInventoryTrackingEnabled()
+    return self.db.char.bank.inventoryTracking
 end
 
-function Options:GetBankReporting()
-    return self.db.global.bank["report"]
+function Options:GetDonationsTrackingEnabled()
+    return self.db.char.bank.donationsTracking
 end
 
-function Options:GetLogLevel()
-	return self.db.global.bank["logLevel"] or LOG_LEVEL.INFO
-end
-
-function Options:GetMinimapEnabled()
-    return self.db.char.minimap["enabled"]
+function Options:GetDonationReportingEnabled()
+    return self.db.char.bank.reportReceivedDonations
 end
 
 function Options:GetCombatHide()
-    return self.db.char.combat["hide"]
+    return self.db.profile.combat.hide
+end
+
+function Options:GetMinimapEnabled()
+    return not self.db.profile.minimap.hide
+end
+
+function Options:GetFramePositions()
+	return self.db.profile.framePositions
+end
+
+function Options:GetLogLevel()
+	return self.db.profile.logLevel or logLevels.INFO.level
+end
+
+function Options:IsDebugEnabled()
+    return self:GetLogLevel() == logLevels.DEBUG.level
+end
+
+function Options:SetLogLevel(level)
+	self.db.profile.logLevel = level
+	GBCR.Output:Response("Log level set to: " .. string.lower(logLevelDescriptions[level].description))
+    GBCR.Libs.AceConfig:NotifyChange("GBankClassic")
+end
+
+function Options:IsCategoryEnabled(category)
+	return self.db.profile.debugCategories[category] == true
+end
+
+function Options:SetCategoryEnabled(category, enabled)
+	self.db.profile.debugCategories[category] = enabled
+end
+
+function Options:EnableAllCategories()
+	for category, _ in pairs(Constants.DEBUG_CATEGORY) do
+		self.db.profile.debugCategories[category] = true
+	end
+end
+
+function Options:DisableAllCategories()
+	for category, _ in pairs(Constants.DEBUG_CATEGORY) do
+		self.db.profile.debugCategories[category] = false
+	end
+end
+
+function Options:GetSortMode()
+	return self.db.profile.sortMode or self.db.default.profile.sortMode
+end
+
+function Options:SetSortMode(mode)
+	self.db.profile.sortMode = mode
 end
 
 function Options:Open()

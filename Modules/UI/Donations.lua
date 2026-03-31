@@ -1,21 +1,18 @@
-GBankClassic_UI_Donations = GBankClassic_UI_Donations or {}
+local addonName, GBCR = ...
 
-local UI_Donations = GBankClassic_UI_Donations
+GBCR.UI.Donations = {}
+local UI_Donations = GBCR.UI.Donations
 
-local Globals = GBankClassic_Globals
-local upvalues = Globals.GetUpvalues("GetClassColor", "GetCoinTextureString")
-local GetClassColor = upvalues.GetClassColor
-local GetCoinTextureString = upvalues.GetCoinTextureString
-local upvalues = Globals.GetUpvalues("GameTooltip")
-local GameTooltip = upvalues.GameTooltip
+local Globals = GBCR.Globals
+local GetClassColor = Globals.GetClassColor
+local GetCoinTextureString = Globals.GetCoinTextureString
+local GameTooltip = Globals.GameTooltip
+
+local Constants = GBCR.Constants
+local colorGray = Constants.COLORS.GRAY
 
 function UI_Donations:Init()
     self:DrawWindow()
-end
-
-local function onClose(_)
-    UI_Donations.isOpen = false
-    UI_Donations.Window:Hide()
 end
 
 function UI_Donations:Toggle()
@@ -38,21 +35,14 @@ function UI_Donations:Open()
     end
 
     self.Window:Show()
-    if GBankClassic_UI_Inventory.isOpen and GBankClassic_UI_Inventory.Window then
+    if GBCR.UI.Inventory.isOpen and GBCR.UI.Inventory.Window then
         self.Window:ClearAllPoints()
-        self.Window:SetPoint("TOPLEFT", GBankClassic_UI_Inventory.Window.frame, "TOPRIGHT", 0, 0)
+        self.Window:SetPoint("TOPLEFT", GBCR.UI.Inventory.Window.frame, "TOPRIGHT", 0, 0)
     end
 
-	-- Ensure window stays within screen bounds
-	GBankClassic_UI:ClampFrameToScreen(self.Window)
+	GBCR.UI:ClampFrameToScreen(self.Window)
 
     self:DrawContent()
-
-    if _G["GBankClassic"] then
-        _G["GBankClassic"]:Show()
-    else
-        GBankClassic_UI:Controller()
-    end
 end
 
 function UI_Donations:Close()
@@ -63,30 +53,32 @@ function UI_Donations:Close()
 		return
 	end
 
-    onClose(self.Window)
+    self:OnClose()
+end
 
-    if GBankClassic_UI_Inventory.isOpen == false then
-        _G["GBankClassic"]:Hide()
+function UI_Donations:OnClose()
+    self.isOpen = false
+    if self.Window then
+        self.Window:Hide()
     end
 end
 
 function UI_Donations:DrawWindow()
-    local donations = GBankClassic_UI:Create("Frame")
+    local donations = GBCR.Libs.AceGUI:Create("Frame")
     donations:Hide()
-    donations:SetCallback("OnClose", onClose)
+    donations:SetCallback("OnClose", function()
+        self:OnClose()
+    end)
     donations:SetTitle("Donations")
     donations:SetLayout("Flow")
     donations:EnableResize(false)
     donations.frame:SetSize(350, 500)
     donations.frame:EnableKeyboard(true)
     donations.frame:SetPropagateKeyboardInput(true)
-    donations.frame:SetScript("OnKeyDown", function(self, event)
-        GBankClassic_UI:EventHandler(self, event)
-    end)
 
     self.Window = donations
 
-    local content = GBankClassic_UI:Create("SimpleGroup")
+    local content = GBCR.Libs.AceGUI:Create("SimpleGroup")
     content:SetLayout("Table")
     content:SetUserData("table", {
         columns = {
@@ -118,11 +110,12 @@ function UI_Donations:DrawWindow()
 end
 
 function UI_Donations:DrawContent()
+    GBCR.Output:Debug("UI", "UI_Donations:DrawContent called")
     self.Window:SetStatusText("")
     self.Content:ReleaseChildren()
 
-    local info = GBankClassic_Guild.Info
-	local roster_alts = GBankClassic_Guild:GetRosterGuildBankAlts()
+    local info = GBCR.Database.savedVariables
+	local roster_alts = GBCR.Guild:GetRosterGuildBankAlts()
 	if not info or not roster_alts then
 		return
 	end
@@ -131,37 +124,36 @@ function UI_Donations:DrawContent()
     local alts = info.alts
     for i = 1, #roster_alts do
         local guildBankAltName = roster_alts[i]
-		local norm = GBankClassic_Guild:NormalizeName(guildBankAltName) or guildBankAltName
+		local norm = GBCR.Guild:NormalizeName(guildBankAltName) or guildBankAltName
 		local alt = alts[norm]
 		if alt and alt.ledger then
-            for p, s in pairs(alt.ledger) do
-                if not players[p] then
-                    players[p] = s
+            for donatedBy, donationValue in pairs(alt.ledger) do
+                if not players[donatedBy] then
+                    players[donatedBy] = donationValue
                 else
-                    players[p] = players[p] + s
+                    players[donatedBy] = players[donatedBy] + donationValue
                 end
             end
         end
     end
 
-    local scoreboard = {}
-    for k, v in pairs(players) do
-        table.insert(scoreboard, { player = k, score = v })
+    local donations = {}
+    for donatedBy, donationValue in pairs(players) do
+        table.insert(donations, { donatedBy = donatedBy, donationValue = donationValue })
     end
-
-    table.sort(scoreboard, function(a, b)
-        return a.score > b.score
+    table.sort(donations, function(a, b)
+        return a.donationValue > b.donationValue
     end)
 
-    local header = GBankClassic_UI:Create("Label")
+    local header = GBCR.Libs.AceGUI:Create("Label")
     header:SetText("")
     self.Content:AddChild(header)
 
-    header = GBankClassic_UI:Create("Label")
+    header = GBCR.Libs.AceGUI:Create("Label")
     header:SetText("Top 30 donors")
     self.Content:AddChild(header)
 
-    header = GBankClassic_UI:Create("Label")
+    header = GBCR.Libs.AceGUI:Create("Label")
     header:SetText("Vendor value")
     self.Content:AddChild(header)
     header.frame:SetScript("OnEnter", function(self)
@@ -170,36 +162,34 @@ function UI_Donations:DrawContent()
         GameTooltip:AddLine("Items with no sell price are valued at 1 copper for the donation ledger", 1, 1, 1, true)
         GameTooltip:Show()
     end)
-    header.frame:SetScript("OnLeave", function(self)
+    header.frame:SetScript("OnLeave", function()
         GameTooltip:Hide()
     end)
 
-    local count = 0
-    for _, v in pairs(scoreboard) do
-        count = count + 1
-
+    local count = #donations
+    for index, ledgerEntry in ipairs(donations) do
         if count <= 30 then
-            local rank = GBankClassic_UI:Create("Label")
+            local rank = GBCR.Libs.AceGUI:Create("Label")
             local formatString = " %d)"
             if count < 10 then
                 formatString = "  " .. formatString
             end
-            rank:SetText(string.format(formatString, count))
+            rank:SetText(string.format(formatString, index))
             self.Content:AddChild(rank)
 
-            local color = "ff888888"
-            local class = GBankClassic_Guild:GetGuildMemberInfo(v.player)
-            if class then
-                _, _, _, color = GetClassColor(class)
+            local color = colorGray
+            local playerClass = GBCR.Guild:GetGuildMemberInfo(ledgerEntry.donatedBy)
+            if playerClass then
+                color = select(4, GetClassColor(playerClass))
             end
-            local contributor = GBankClassic_UI:Create("Label")
-            contributor:SetText(string.format("|c%s %s|r", color, v.player))
-            self.Content:AddChild(contributor)
+            local donatedBy = GBCR.Libs.AceGUI:Create("Label")
+            donatedBy:SetText(GBCR.Globals:Colorize(color, ledgerEntry.donatedBy))
+            self.Content:AddChild(donatedBy)
 
-            local score = GBankClassic_UI:Create("Label")
-            local totalCopper = math.floor(v.score * 10000 + 0.5)
-            score:SetText(string.format("|c%s %s|r", color, GetCoinTextureString(totalCopper)))
-            self.Content:AddChild(score)
+            local donationValue = GBCR.Libs.AceGUI:Create("Label")
+            local totalCopper = math.floor(ledgerEntry.donationValue * 10000 + 0.5)
+            donationValue:SetText(GBCR.Globals:Colorize(color, GetCoinTextureString(totalCopper)))
+            self.Content:AddChild(donationValue)
         end
     end
 
