@@ -4,74 +4,51 @@ GBCR.Guild = {}
 local Guild = GBCR.Guild
 
 local Globals = GBCR.Globals
-local wipe = Globals.wipe
 local debugprofilestop = Globals.debugprofilestop
-local GetNormalizedRealmName = Globals.GetNormalizedRealmName
-local UnitName = Globals.UnitName
-local NewTicker = Globals.NewTicker
-local IsInGuild = Globals.IsInGuild
-local GetGuildInfo = Globals.GetGuildInfo
-local GetNumGuildMembers = Globals.GetNumGuildMembers
-local GetGuildRosterInfo = Globals.GetGuildRosterInfo
-local GetServerTime = Globals.GetServerTime
+local ipairs = Globals.ipairs
+local select = Globals.select
+local tostring = Globals.tostring
+local wipe = Globals.wipe
+
+local After = Globals.After
 local CanViewOfficerNote = Globals.CanViewOfficerNote
+local GetClassColor = Globals.GetClassColor
+local GetGuildInfo = Globals.GetGuildInfo
+local GetGuildRosterInfo = Globals.GetGuildRosterInfo
+local GetNormalizedRealmName = Globals.GetNormalizedRealmName
+local GetNumGuildMembers = Globals.GetNumGuildMembers
+local GetServerTime = Globals.GetServerTime
 local GuildControlGetNumRanks = Globals.GuildControlGetNumRanks
 local GuildControlGetRankFlags = Globals.GuildControlGetRankFlags
+local IsInGuild = Globals.IsInGuild
+local NewTicker = Globals.NewTicker
+local UnitName = Globals.UnitName
 
--- Resets if the data does not already exist, only runs on GUILD_RANKS_UPDATE
-function Guild:Init(name)
-	if not name then
-		return false
-	end
-
-	if GBCR.Database.savedVariables and GBCR.Database.savedVariables.name == name then
-		return false
-	end
-
-	self.player = nil
-	self.banksCache = {}
-	self.guildMembersCache = {}
-	self.guildRankAuthorityCache = {}
-	self.guildRankOfficerCache = {}
-	self.isAnyoneAuthority = false
-	self.canWeEditOfficerNotes = false
-	self.canWeViewOfficerNotes = false
-
-    self.requestCount = 0
-    self.hasRequested = false
-	self.rosterRefreshNeeded = false
-
-	GBCR.Database.savedVariables = GBCR.Database:Load(name)
-	if GBCR.Database.savedVariables then
-		self:RebuildGuildBankAltsRoster()
-
-		return true
-	end
-
-	self:Reset(name)
-
-	return true
+-- Returns the guild info (guildName, guildRankName, guildRankIndex, realm) for the current player if they are in a guild
+-- Returns guildName, guildRankName, guildRankIndex, realm from GetGuildInfo("player")
+local function getGuildInfo(self)
+    return IsInGuild("player") and GetGuildInfo("player") or nil
 end
 
--- AddOn config "Reset database", /bank reset, /bank wipe, /bank wipeall, GUILD_RANKS_UPDATE event via Guild:Init(name)
-function Guild:Reset(name)
-	if not name then
-		return
-	end
+-- Helper to cache the normalized realm name
+local function getCachedNormalizedRealm(self)
+    if not self.cachedNormalizedRealm then
+        self.cachedNormalizedRealm = GetNormalizedRealmName()
+    end
 
-    GBCR.UI.Inventory:Close()
-    GBCR.Database:Reset(name)
-	self.lastRosterRebuildTime = nil
-    GBCR.Database.savedVariables = GBCR.Database:Load(name)
-	self:RebuildGuildBankAltsRoster()
-	GBCR.UI:QueueUIRefresh()
+    return self.cachedNormalizedRealm
 end
 
 -- Returns the normalized name (including the realm name) of a given name for database purposes
--- Remove the realm name for players on the same realm if the purpose is to whisper or mail that player (noRealm=true)
-function Guild:NormalizeName(name, noRealm)
-	if not name or type(name) ~= "string" then
+-- Removes the realm name for players on the same realm if the purpose is to whisper or mail that player (noRealm=true)
+local function normalizeName(self, name, noRealm)
+	if not name then
         return nil
+    end
+
+	-- Check cache first (only for standard requests without noRealm flag)
+    if not noRealm and self.normalizedNameCache[name] then
+        return self.normalizedNameCache[name]
     end
 
     -- Trim whitespace
@@ -87,7 +64,7 @@ function Guild:NormalizeName(name, noRealm)
 
     -- Split name from realm
     local playerName, playerRealm = trimmed:match("^(.+)%-(.+)$")
-    local currentRealm = self:GetCachedNormalizedRealm()
+    local currentRealm = getCachedNormalizedRealm(self)
 
     -- If no realm provided, assume current realm
     if not playerRealm then
@@ -105,20 +82,23 @@ function Guild:NormalizeName(name, noRealm)
         end
     end
 
-    -- For database storage, always return with realm suffix
-    return playerName .. "-" .. playerRealm
+    -- For database storage, always return with realm suffix and save to cache
+	local result = playerName .. "-" .. playerRealm
+    self.normalizedNameCache[name] = result
+
+    return result
 end
 
 -- Returns the normalized name (including the realm name) of the current player
-function Guild:GetNormalizedPlayer()
+local function getNormalizedPlayer(self)
     -- Return cached player if available
     if self.player then
         return self.player
     end
 
     -- Try to get player info immediately
-    local name, realm = UnitName("player"), self:GetCachedNormalizedRealm()
-    if name and realm then
+    local name, realm = UnitName("player"), getCachedNormalizedRealm(self)
+    if name and realm and name ~= "Unknown" then
         self.player = name .. "-" .. realm
 
         return self.player
@@ -127,14 +107,17 @@ function Guild:GetNormalizedPlayer()
     -- If player info not yet available, set up background retry (happens once)
     if not self._playerRetryScheduled then
         self._playerRetryScheduled = true
+
         local retryCount = 0
         local maxRetries = 20
         local timer
-        timer = NewTicker(0.5, function()
+
+        timer = NewTicker(0, function()
+            local retryName, retryRealm = UnitName("player"), getCachedNormalizedRealm(self)
             retryCount = retryCount + 1
-            local name, realm = UnitName("player"), Guild:GetCachedNormalizedRealm()
-            if name and realm then
-                Guild.player = name .. "-" .. realm
+
+            if retryName and retryRealm and retryName ~= "Unknown" then
+                Guild.player = retryName .. "-" .. retryRealm
                 timer:Cancel()
                 Guild._playerRetryScheduled = false
             elseif retryCount >= maxRetries then
@@ -148,408 +131,168 @@ function Guild:GetNormalizedPlayer()
     return self.player or "Unknown-Unknown"
 end
 
--- Cache the normalized realm name
-function Guild:GetCachedNormalizedRealm()
-    if not self.cachedNormalizedRealm then
-        self.cachedNormalizedRealm = GetNormalizedRealmName()
+---
+
+-- Retrieve the list of guild bank alts from GBCR.Database.savedVariables.roster.alts
+-- This returns an array (ordered iteration)
+-- for i = 1, #list do print(list[i]) end
+local function getRosterGuildBankAlts(self)
+	if not GBCR.Database.savedVariables then
+		return nil
+	end
+
+	local roster = GBCR.Database.savedVariables.roster
+    if roster and roster.alts and #roster.alts > 0 then
+        return roster.alts
     end
 
-    return self.cachedNormalizedRealm
+	return nil
 end
 
--- Returns the guild info for the current player if they are in a guild
--- guildName, guildRankName, guildRankIndex, realm = GetGuildInfo(unit)
-function Guild:GetGuildName()
-    return IsInGuild("player") and GetGuildInfo("player") or nil
+-- Request online members to share their guild bank alt data if we're missing it
+local function requestMissingGuildBankAltData(self)
+	local rosterAlts = getRosterGuildBankAlts(self)
+	if not rosterAlts or #rosterAlts == 0 then
+		return
+	end
+
+	local missing = {}
+	local missingPosition = 1
+
+	GBCR.Output:Debug("SYNC", "RequestMissingGuildBankAltData: starting check of %d guild bank alts on the roster", #rosterAlts)
+
+	local altsSavedVars = GBCR.Database.savedVariables.alts
+	local protocol = GBCR.Protocol
+	local output = GBCR.Output
+
+	for i = 1, #rosterAlts do
+        local guildBankAltName = rosterAlts[i]
+		local norm = normalizeName(self, guildBankAltName) or guildBankAltName
+		local localAlt = altsSavedVars and norm and altsSavedVars[norm]
+		local hasEntry = localAlt ~= nil
+		local hasContent = hasEntry and protocol:HasAltContent(localAlt, norm)
+		local isSelf = norm == getNormalizedPlayer(self)
+
+		output:Debug("SYNC", "RequestMissingGuildBankAltData: checking %s (hasEntry=%s, hasContent=%s, self=%s)", tostring(norm), tostring(hasEntry), tostring(hasContent), tostring(isSelf))
+
+		if (not hasEntry or not hasContent) and not isSelf then
+			missing[missingPosition] = norm
+            missingPosition = missingPosition + 1
+		end
+	end
+
+    if #missing == 0 then
+        GBCR.Output:Debug("SYNC", "RequestMissingGuildBankAltData: no missing data")
+        return
+    end
+
+	GBCR.Output:Info("Requesting missing data for %d guild bank alts (have data for %d/%d).", #missing, #rosterAlts - #missing, #rosterAlts)
+
+	for _, norm in ipairs(missing) do
+		protocol:QueryForGuildBankAltData(nil, norm)
+	end
 end
 
--- Return the player's class, and whether or not they are the are able to view officer notes (consider an authority), based on the cached guild member data
-function Guild:GetGuildMemberInfo(player)
-	if not player then
+-- Returns whether or not the provided player exists in the roster of guild bank alts
+-- Uses the roster instead of the cache to consider guild bank alts defined in officer notes we may be unable to view
+local function isGuildBankAlt(self, playerName)
+	if not playerName then
 		return false
 	end
 
-	local guildMemberFromCache = self.guildMembersCache[self:NormalizeName(player) or player]
+    local rosterAlts = getRosterGuildBankAlts(self)
+	if not rosterAlts then
+		return false
+	end
+
+	local normName = normalizeName(self, playerName) or playerName
+
+    for i = 1, #rosterAlts do
+        if rosterAlts[i] == normName then
+            return true
+        end
+    end
+
+    return false
+end
+
+---
+
+-- Find the name of a guild member by their uid which is used in addon communication to minimize the payload
+local function findGuildMemberByUid(self, uid)
+    if not uid then
+        return nil, nil
+    end
+
+    local playerName = self.uidToNameCache[uid]
+    if playerName then
+        return playerName, self.guildMembersCache[playerName]
+    end
+
+    return nil, nil
+end
+
+-- Return the player's class, and whether or not they are the are able to view officer notes (consider an authority), based on the cached guild member data
+local function getGuildMemberInfo(self, playerName)
+	if not playerName then
+		return false
+	end
+
+	local guildMemberFromCache = self.guildMembersCache[normalizeName(self, playerName) or playerName]
 	local playerClass = guildMemberFromCache and guildMemberFromCache.playerClass or nil
 	local isAuthority = guildMemberFromCache and guildMemberFromCache.isAuthority or false
 
 	return playerClass, isAuthority
 end
 
-function Guild:FindGuildMemberByUid(uid)
-	if not uid then
-		return nil, nil
-	end
-
-	for playerName, playerData in pairs(self.guildMembersCache) do
-		if playerData.playerUid == uid then
-			return playerName, playerData
-		end
-	end
-
-	return nil, nil
-end
-
--- Return a cached list of guild bank alts or rebuild the cache
--- This returns a hash table or set for fast O(1) lookups
--- for v in pairs(list) do print(v) end
-function Guild:GetCachedGuildBankAlts()
-	-- Return cached banks list if available
-	if next(self.banksCache) then
-		return self.banksCache
-	end
-
-	-- Build banks list
-	self.banksCache = Guild:RebuildGuildBankAltsRoster()
-
-	return self.banksCache
-end
-
--- If all ranks can view officer notes, then all players are consider the authority on the roster
--- Also build a local cache of guild members that can edit officer notes (considered guild officer)
-function Guild:IsAnyoneAuthority()
-	local isAnyoneAuthority = true
-	for i = 1, GuildControlGetNumRanks() do
-		local viewOfficerNote = GuildControlGetRankFlags(i)[11]
-		local editOfficerNote = GuildControlGetRankFlags(i)[12]
-		self.guildRankAuthorityCache[i - 1] = viewOfficerNote
-		self.guildRankOfficerCache[i - 1] = editOfficerNote
-		isAnyoneAuthority = isAnyoneAuthority and viewOfficerNote
-	end
-	self.isAnyoneAuthority = isAnyoneAuthority
-
-	return isAnyoneAuthority
-end
-
--- If this rank can view officer notes, then it is considered the authority on the roster
-function Guild:IsAuthority(rankIndex)
-	if not rankIndex then
+-- Check if a player is currently online in the guild
+local function isPlayerOnlineMember(self, playerName)
+	if not playerName then
 		return false
 	end
 
-	return Guild.guildRankAuthorityCache[rankIndex] == true
+	return self.onlineMembers[normalizeName(self, playerName) or playerName] == true
 end
 
--- If this rank can edit officer notes, then it is considered a guild officer (able to wipe everyone's database)
-function Guild:IsOfficer(rankIndex)
-	if not rankIndex then
+-- TODO: CURRENTLY UNUSED ** 
+-- Get list of all online members (for broadcasts)
+local function getOnlineMemberList(self)
+    return self.onlineMembers
+end
+
+-- TODO: CURRENTLY UNUSED ** 
+-- Check if a player is currently online in the guild and a guild bank alt
+local function isPlayerOnlineGuildBankAlt(self, playerName)
+	if not playerName then
 		return false
 	end
 
-	return self.guildRankOfficerCache[rankIndex] == true
+	return self.onlineMembersThatAreGuildBankAlts[normalizeName(self, playerName) or playerName] == true
 end
 
--- Check if we can view officer notes
-function Guild:VerifyOfficerNotePermissions()
-	if not self.guildRankOfficerCache then
-		self.guildRankOfficerCache = {}
-	end
-	self.canWeViewOfficerNotes = CanViewOfficerNote()
-	self.canWeEditOfficerNotes = self:IsOfficer(select(3, GetGuildInfo("player")))
+-- Get list of all online guild bank alts
+local function getOnlineGuildBankAlts(self)
+    return self.onlineMembersThatAreGuildBankAlts
 end
 
--- If we can view officer notes, we are certain of the guild bank alt roster
-function Guild:CanWeViewOfficerNotes()
-	return self.canWeViewOfficerNotes
-end
-
--- Rebuild roster of guild bank alts based on guild notes we can view
--- Officer notes may be used for this purpose and we may be unable to view those
--- Request authoritative sources when unable to view the officer notes ourselves
--- Performed after initial login, /reload, guild join, important GUILD_ROSTER_UPDATE events, or when roster is empty (init/wipe)
-function Guild:RebuildGuildBankAltsRoster()
-	if not GBCR.Database.savedVariables then
-		return
-	end
-
-	-- TODO
-	-- local time = GetServerTime()
-	-- if self.lastRosterRebuildTime == nil or time - self.lastRosterRebuildTime > 30 then
-	-- 	self.lastRosterRebuildTime = time
-	-- else
-	-- 	GBCR.Output:Debug("ROSTER", "Skipping excessive roster rebuild (last rebuild was %.2f seconds ago)", time - self.lastRosterRebuildTime)
-
-	-- 	return
-	-- end
-
-	local guildBankAlts = {}
-	local startTime = debugprofilestop()
-	if self.banksCache then wipe(self.banksCache) end
-	if self.guildMembersCache then wipe(self.guildMembersCache) end
-	if self.guildRankAuthorityCache then wipe(self.guildRankAuthorityCache) end
-	self.areOfficerNotesUsedToDefineGuildBankAlts = nil
-	local isAnyoneAuthority = self:IsAnyoneAuthority()
-	local canWeViewOfficerNotes = self:CanWeViewOfficerNotes()
-	local player = self:GetNormalizedPlayer()
-
-	local function noteContainsGbank(note)
-		return note and note ~= "" and note:lower():find("gbank", 1, true)
-	end
-
-	-- Scan the guild roster
-	local numTotal = select(1, GetNumGuildMembers())
-	for i = 1, numTotal do
-		local name, _, rankIndex, _, _, _, publicNote, officerNote, _, _, class, _, _, _, _, _, guid = GetGuildRosterInfo(i)
-		if name and name ~= "" then
-			local normName = self:NormalizeName(name) or name
-			local playerUid = guid:sub(8)
-			if rankIndex and class then
-				self.guildMembersCache[normName] = { isAuthority = self:IsAuthority(rankIndex), playerClass = class, playerUid = playerUid }
-			end
-
-			local isGuildBankAlt
-			if publicNote and noteContainsGbank(publicNote) then
-				isGuildBankAlt = true
-			elseif canWeViewOfficerNotes and officerNote and noteContainsGbank(officerNote) then
-				isGuildBankAlt = true
-				self.areOfficerNotesUsedToDefineGuildBankAlts = true
-			end
-
-			if isGuildBankAlt then
-				table.insert(guildBankAlts, normName)
-				self.banksCache[normName] = true
-
-				-- Register additional events if we're this guild bank alt
-				if player == normName then
-					GBCR.Events:RegisterGuildBankAltEvents()
-				end
-			end
-		end
-	end
-	if canWeViewOfficerNotes and not self.areOfficerNotesUsedToDefineGuildBankAlts then
-		self.areOfficerNotesUsedToDefineGuildBankAlts = false
-	end
-
-    GBCR.Output:Debug("ROSTER", "Scanned %d members (%d guild bank alts, areOfficerNotesUsedToDefineGuildBankAlts=%s) in %.2fms", numTotal, Globals:Count(self.banksCache), tostring(self.areOfficerNotesUsedToDefineGuildBankAlts), debugprofilestop() - startTime)
-
-	-- Determine what to do with the roster (copy/merge/broadcast)
-	local selfIsAuthority = self.guildMembersCache[player] and self.guildMembersCache[player].isAuthority
-	if isAnyoneAuthority or selfIsAuthority then
-		-- Our local roster is always complete
-		GBCR.Database.savedVariables.roster.alts = guildBankAlts
-		-- Determine if we need to broadcast our roster
-		if isAnyoneAuthority then
-			-- If all ranks can view officer notes, then everyone is authority and rosters do not need to be synced
-			GBCR.Database.savedVariables.roster.version = nil
-		elseif selfIsAuthority then
-			-- Only some ranks can view officer notes, and we're an authority
-			GBCR.Database.savedVariables.roster.version = GetServerTime()
-			-- Determine if officer notes are relevant (does at least one officer note contain 'gbank'?)
-			if self.areOfficerNotesUsedToDefineGuildBankAlts then
-				-- Officer notes are used to define guild bank alts
-				-- Broadcast our roster fingerprint as an authority to the guild to allow pull requests via whisper for non-authorities
-				-- The hash is to identify if content changed
-
-				-- TODO:
-				-- GBCR.Output:Debug("ROSTER", "Broadcasting fingerprint of our roster as authority")
-				-- gbc-roster-share-heartbeat to GUILD: 
-				--   senderIsAuthority: true, 
-				--   self.areOfficerNotesUsedToDefineGuildBankAlts: true,
-				--   version: unix timestamp
-
-				-- when player receives the heartbeat, and if they are not an authority:
-				--   gbc-roster-share-request WHISPER to sender that is an authority: send me your roster
-				-- 
-				-- when an authority receives gbc-roster-share-request WHISPER:
-				--   gbc-roster-share WHISPER to requester
-				--     roster alts: table
-				--     version:
-			end
-		end
-		GBCR.Output:Debug("ROSTER", "Rebuilt guild bank alt roster from guild notes with %d guild bank alts (version=%s, isAnyoneAuthority=%s, selfIsAuthority=%s)", #guildBankAlts, tostring(GBCR.Database.savedVariables.roster.version), tostring(isAnyoneAuthority), tostring(selfIsAuthority))
-	else
-		-- We're unable to view officer notes
-		-- Our roster may be incomplete (it is complete if officer notes are irrelevant)
-		-- A possible incoming roster broadcast will make it clear if they are relevant
-		-- We whisper the sender to request their roster when we see the gbc-roster-share-heartbeat
-		-- If we never see gbc-roster-share-heartbeat then the officer notes are irrelevant
-
-		-- Verify if there's a change in the roster of guild bank alts
-		-- Preserve the existing roster and only add newly detected guild bank alts (preserve existing entries)
-		local function updateRosterWithNewBankAlts(currentRosterList, scannedBankAltsList)
-			-- Initialize if missing
-			currentRosterList = currentRosterList or {}
-			scannedBankAltsList = scannedBankAltsList or {}
-
-			-- Build lookup of current roster
-			local currentLookup = {}
-			for _, name in ipairs(currentRosterList) do
-				currentLookup[name] = true
-			end
-
-			-- Add only entries missing from current roster
-			local addedCount = 0
-			for _, normName in ipairs(scannedBankAltsList) do
-				if not currentLookup[normName] then
-					table.insert(currentRosterList, normName)
-					addedCount = addedCount + 1
-				end
-			end
-
-			-- Return boolean and the table
-			return addedCount > 0, currentRosterList
-		end
-
-		-- If we identified a new guild bank, add it to our local roster
-		local hasNewEntries, roster = updateRosterWithNewBankAlts(GBCR.Database.savedVariables.roster.alts, guildBankAlts)
-		GBCR.Database.savedVariables.roster.alts = roster
-		if hasNewEntries then
-			-- Ensure our version is set to nil to avoid broadcasting this to others
-			-- We do not know if officer notes are used to define guild bank alts
-			-- We may have an incomplete roster
-			GBCR.Database.savedVariables.roster.version = nil
-
-			-- -- Ask the guild bank alt sync leader for their roster
-			-- local _, leader = self:CheckIfWeAreGuildBankAltSyncLeader()
-			-- -- TODO:
-			-- GBCR.Output:Debug("ROSTER", "Rebuilt (possibly incomplete) guild bank alt roster from guild notes with %d guild bank alts - requesting latest roster from authority", #GBCR.Database.savedVariables.roster.alts)
-			-- --   gbc-roster-share-request WHISPER to leader: send me your roster
-			-- GBCR.Output:Debug("ROSTER", "Requested %s for an updated roster", leader)
-		end
-	end
-
-	-- Ensure local alt data exists for all roster guild bank alts
-	if not GBCR.Database.savedVariables.alts then
-		GBCR.Database.savedVariables.alts = {}
-	end
-	for _, normName in ipairs(GBCR.Database.savedVariables.roster.alts) do
-		if normName and not GBCR.Database.savedVariables.alts[normName] then
-			GBCR.Database.savedVariables.alts[normName] = {
-				name = normName,
-				version = 0,
-				money = 0,
-				items = {},
-				ledger = {}
-			}
-			GBCR.Output:Debug("ROSTER", "Added missing guild bank alt stub data for %s", normName)
-		end
-	end
-
-	-- Update lookup tables and variables after the roster rebuild
-	self.rosterRefreshNeeded = false
-	GBCR.Output:Debug("ROSTER", "Done with roster operations after %.2fms", debugprofilestop() - startTime)
-
-	-- Update online status
-	self:RefreshOnlineMembersCache(true)
-
-	-- Notify others that we're ready
-	GBCR.Protocol:Hello()
-
-	-- Return the guildBankAlts table so it can be cached
-	return guildBankAlts
-end
-
--- Retrieve the list of guild bank alts from GBCR.Database.savedVariables.roster.alts
--- This returns an array (ordered iteration)
--- for i = 1, #list do print(list[i]) end
-function Guild:GetRosterGuildBankAlts()
-	if not GBCR.Database.savedVariables then
-		return nil
-	end
-
-	local roster = GBCR.Database.savedVariables.roster
-	local list = {}
-	if roster and roster.alts then
-		for _, v in pairs(roster.alts) do
-			if type(v) == "string" and v ~= "" then
-				table.insert(list, v)
-			end
-		end
-	end
-
-	if #list > 0 then
-		return list
-	end
-
-	return nil
-end
-
--- Request online members to share their guild bank alt data if we're missing it
-function Guild:RequestMissingGuildBankAltData()
-	-- Retrieve the cached roster
-	local rosterAlts = self:GetRosterGuildBankAlts()
-	if not rosterAlts or #rosterAlts == 0 then
-		return
-	end
-
-	local missing = {}
-	GBCR.Output:Debug("SYNC", "RequestMissingGuildBankAltData: starting check of %d guild bank alts on the roster", #rosterAlts)
-
-	for i = 1, #rosterAlts do
-        local guildBankAltName = rosterAlts[i]
-		local norm = self:NormalizeName(guildBankAltName) or guildBankAltName
-		local localAlt = GBCR.Database.savedVariables.alts and norm and GBCR.Database.savedVariables.alts[norm]
-		local hasEntry = localAlt ~= nil
-		local hasContent = hasEntry and GBCR.Protocol:HasAltContent(localAlt, norm)
-		local isSelf = norm == self:GetNormalizedPlayer()
-
-		GBCR.Output:Debug("SYNC", "RequestMissingGuildBankAltData: checking %s (hasEntry=%s, hasContent=%s, self=%s)", tostring(norm), tostring(hasEntry), tostring(hasContent), tostring(isSelf))
-		if (not hasEntry or not hasContent) and not isSelf then
-			table.insert(missing, norm)
-		end
-	end
-
-	if #missing == 0 then
-		GBCR.Output:Debug("SYNC", "RequestMissingGuildBankAltData: no missing data", #rosterAlts)
-
-		return
-	end
-
-	GBCR.Output:Info("Requesting missing data for %d guild bank alts (have data for %d/%d).", #missing, #rosterAlts - #missing, #rosterAlts)
-	for _, norm in ipairs(missing) do
-		GBCR.Protocol:QueryForGuildBankAltData(nil, norm)
-	end
-end
-
--- Returns whether or not the provided player exists in the roster of guild bank alts
--- Uses the roster instead of the cache to consider guild bank alts defined in officer notes we may be unable to view
-function Guild:IsGuildBankAlt(player)
-	if not player then
-		return false
-	end
-
-    local rosterAlts = self:GetRosterGuildBankAlts()
-	if not rosterAlts or #rosterAlts == 0 then
-		return false
-	end
-
-	local normPlayer = self:NormalizeName(player) or player
-    local isBank = false
-    for i = 1, #rosterAlts do
-		local normBank = rosterAlts[i]
-        if normBank == normPlayer then
-            isBank = true
-        end
-    end
-
-    return isBank
-end
-
-function Guild:IsQueryAllowed()
-	if self.onlineMembersCount <= 1 then
-		return false
-	end
-
-    self.hasRequested = true
-    self.requestCount = (self.requestCount or 0) + 1
-
-	return true
+local function getOnlineMembersCount(self)
+	return self.onlineMembersCount
 end
 
 -- Called whenever the GUILD_ROSTER_UPDATE event fires (server pushes updates)
 -- This rebuild the local cache of online member from the current guild roster
-function Guild:RefreshOnlineMembersCache(force)
+local function refreshOnlineMembersCache(self, force)
     local numTotal, numOnline = GetNumGuildMembers()
 	local startTime = debugprofilestop()
 
     -- Skip if online count unchanged
-    if not force and numOnline == self.onlineMembersCount then
+    if not force and numOnline == getOnlineMembersCount(self) then
         return
     end
 
 	-- Empty roster edge case (briefly during loading)
     if numOnline == 0 then
-        if self.onlineMembersCount ~= 0 then
+        if getOnlineMembersCount(self) ~= 0 then
 			if self.onlineMembers then
 				wipe(self.onlineMembers)
 				wipe(self.onlineMembersThatAreGuildBankAlts)
@@ -572,10 +315,13 @@ function Guild:RefreshOnlineMembersCache(force)
 		self.onlineMembers = {}
 		self.onlineMembersThatAreGuildBankAlts = {}
 	end
+
     for i = 1, math.min(numTotal, numOnline) do
-        local name = select(1, GetGuildRosterInfo(i))
+        local name = GetGuildRosterInfo(i)
+
         if name and name ~= "" then
-			local normName = self:NormalizeName(name) or name
+			local normName = normalizeName(self, name) or name
+
             self.onlineMembers[normName] = true
 			if self.banksCache and self.banksCache[normName] then
 				self.onlineMembersThatAreGuildBankAlts[normName] = true
@@ -584,43 +330,391 @@ function Guild:RefreshOnlineMembersCache(force)
     end
 
 	self.onlineMembersCount = numOnline
+
     GBCR.Output:Debug("ROSTER", "Refreshed online status (%d online, %d bank alts) in %.2fms", numOnline, Globals:Count(self.onlineMembersThatAreGuildBankAlts), debugprofilestop() - startTime)
 end
 
--- Check if a player is currently online in the guild
-function Guild:IsPlayerOnlineMember(playerName)
-	if not playerName then
+-- Helper to determine if a rank can edit officer notes, then it is considered a guild officer (able to wipe everyone's database)
+local function isOfficer(self, rankIndex)
+	if not rankIndex then
 		return false
 	end
 
-	return self.onlineMembers[self:NormalizeName(playerName) or playerName] == true
+	return self.guildRankOfficerCache[rankIndex] == true
 end
 
--- Get list of all online members (for broadcasts)
-function Guild:GetOnlineMemberList()
-    return self.onlineMembers
+-- Helper to check if we can view officer notes
+local function verifyOfficerNotePermissions(self)
+	if not self.guildRankOfficerCache then
+		self.guildRankOfficerCache = {}
+	end
+
+	self.canWeViewOfficerNotes = CanViewOfficerNote()
+	self.canWeEditOfficerNotes = isOfficer(self, select(3, getGuildInfo(self)))
 end
 
--- Check if a player is currently online in the guild and a guild bank alt
-function Guild:IsPlayerOnlineGuildBankAlt(playerName)
-	if not playerName then
+-- If we can view officer notes, we are certain of the guild bank alt roster
+local function canWeViewOfficerNotes(self)
+	return self.canWeViewOfficerNotes
+end
+
+-- If this rank can view officer notes, then it is considered the authority on the roster
+local function isAuthority(self, rankIndex)
+	if not rankIndex then
 		return false
 	end
 
-	return self.onlineMembersThatAreGuildBankAlts[self:NormalizeName(playerName) or playerName] == true
+	return self.guildRankAuthorityCache[rankIndex] == true
 end
 
--- Get list of all online guild bank alts
-function Guild:GetOnlineGuildBankAlts()
-    return self.onlineMembersThatAreGuildBankAlts
+-- If all ranks can view officer notes, then all players are consider the authority on the roster
+-- Also build a local cache of guild members that can edit officer notes (considered guild officer)
+local function isAnyoneAuthority(self)
+    local isAnyoneAuthority = true
+
+    for i = 1, GuildControlGetNumRanks() do
+        local flags = GuildControlGetRankFlags(i)
+        local viewOfficerNote = flags[11]
+        local editOfficerNote = flags[12]
+
+        self.guildRankAuthorityCache[i - 1] = viewOfficerNote
+        self.guildRankOfficerCache[i - 1] = editOfficerNote
+
+        isAnyoneAuthority = isAnyoneAuthority and viewOfficerNote
+    end
+
+    self.isAnyoneAuthority = isAnyoneAuthority
+
+    return isAnyoneAuthority
 end
 
--- Wipe your own data: /bank wipe --
-function Guild:WipeMine()
-    local guild = self:GetGuildName()
-	if not guild then
+-- Rebuild roster of guild bank alts based on guild notes we can view
+-- Officer notes may be used for this purpose and we may be unable to view those
+-- Request authoritative sources when unable to view the officer notes ourselves
+-- Performed after initial login, /reload, guild join, important GUILD_ROSTER_UPDATE events, or when roster is empty (init/wipe)
+local function rebuildGuildBankAltsRoster(self)
+    GBCR.Output:Debug("ROSTER", "rebuildGuildBankAltsRoster called")
+
+	if not GBCR.Database.savedVariables then
 		return
 	end
 
-    self:Reset(guild)
+	if self.rebuildTimer then
+        self.rebuildTimer:Cancel()
+    end
+
+    self.rebuildTimer = After(GBCR.Constants.TIMER_INTERVALS.REBUILD_ROSTER, function()
+        GBCR.Output:Debug("ROSTER", "Executing throttled rebuildGuildBankAltsRoster")
+
+		self.guildBankAltsBuffer = self.guildBankAltsBuffer or {}
+        local guildBankAlts = self.guildBankAltsBuffer
+        wipe(guildBankAlts)
+        local position = 1
+
+        local startTime = debugprofilestop()
+
+        if self.banksCache then
+			wipe(self.banksCache)
+		end
+        if self.guildMembersCache then
+			wipe(self.guildMembersCache)
+		end
+        if self.uidToNameCache then
+			wipe(self.uidToNameCache)
+		end
+        if self.guildRankAuthorityCache then
+			wipe(self.guildRankAuthorityCache)
+		end
+
+        self.areOfficerNotesUsedToDefineGuildBankAlts = nil
+
+        local isAnyoneAuthority = isAnyoneAuthority(self)
+        local canWeViewOfficerNotes = canWeViewOfficerNotes(self)
+        local player = getNormalizedPlayer(self)
+
+		local function noteContainsGbank(note)
+			return note and note ~= "" and note:find("[Gg][Bb][Aa][Nn][Kk]")
+		end
+
+		-- Scan the guild roster
+		local numTotal = GetNumGuildMembers()
+
+		for i = 1, numTotal do
+			local name, _, rankIndex, _, _, _, publicNote, officerNote, _, _, class, _, _, _, _, _, guid = GetGuildRosterInfo(i)
+
+            if name and name ~= "" then
+                local normName = self:NormalizeName(name) or name
+                local playerUid = guid:sub(8)
+
+                if rankIndex and class then
+                    self.guildMembersCache[normName] = { isAuthority = self:IsAuthority(rankIndex), playerClass = class, playerUid = playerUid }
+                    if playerUid then
+                        self.uidToNameCache[playerUid] = normName
+                    end
+                end
+
+                local isGuildBankAlt = false
+                if publicNote and noteContainsGbank(publicNote) then
+                    isGuildBankAlt = true
+                elseif canWeViewOfficerNotes and officerNote and noteContainsGbank(officerNote) then
+                    isGuildBankAlt = true
+                    self.areOfficerNotesUsedToDefineGuildBankAlts = true
+                end
+
+				if isGuildBankAlt then
+					guildBankAlts[position] = normName
+                    position = position + 1
+					self.banksCache[normName] = true
+
+					-- Register additional events and enable additional configuration options if we're a guild bank alt
+					if player == normName then
+						GBCR.Events:RegisterGuildBankAltEvents()
+						GBCR.Options:InitGuildBankAltOptions()
+						verifyOfficerNotePermissions(self)
+					end
+				end
+			end
+		end
+
+		if canWeViewOfficerNotes and not self.areOfficerNotesUsedToDefineGuildBankAlts then
+			self.areOfficerNotesUsedToDefineGuildBankAlts = false
+		end
+
+		GBCR.Output:Debug("ROSTER", "Scanned %d members (%d guild bank alts, areOfficerNotesUsedToDefineGuildBankAlts=%s) in %.2fms", numTotal, Globals:Count(self.banksCache), tostring(self.areOfficerNotesUsedToDefineGuildBankAlts), debugprofilestop() - startTime)
+
+		-- Determine what to do with the roster (copy/merge/broadcast)
+		local selfIsAuthority = self.guildMembersCache[player] and self.guildMembersCache[player].isAuthority
+		if isAnyoneAuthority or selfIsAuthority then
+			-- Our local roster is always complete
+			GBCR.Database.savedVariables.roster.alts = GBCR.Database.savedVariables.roster.alts or {}
+            wipe(GBCR.Database.savedVariables.roster.alts)
+            for i = 1, #guildBankAlts do
+                GBCR.Database.savedVariables.roster.alts[i] = guildBankAlts[i]
+            end
+			-- Determine if we need to broadcast our roster
+			if isAnyoneAuthority then
+				-- If all ranks can view officer notes, then everyone is authority and rosters do not need to be synced
+				GBCR.Database.savedVariables.roster.version = nil
+			elseif selfIsAuthority then
+				-- Only some ranks can view officer notes, and we're an authority
+				GBCR.Database.savedVariables.roster.version = GetServerTime()
+				-- Determine if officer notes are relevant (does at least one officer note contain 'gbank'?)
+				if self.areOfficerNotesUsedToDefineGuildBankAlts then
+					-- Officer notes are used to define guild bank alts
+					-- Broadcast our roster fingerprint as an authority to the guild to allow pull requests via whisper for non-authorities
+					-- The hash is to identify if content changed
+
+					-- TODO:
+					-- GBCR.Output:Debug("ROSTER", "Broadcasting fingerprint of our roster as authority")
+					-- gbc-roster-share-heartbeat to GUILD: 
+					--   senderIsAuthority: true, 
+					--   self.areOfficerNotesUsedToDefineGuildBankAlts: true,
+					--   version: unix timestamp
+
+					-- when player receives the heartbeat, and if they are not an authority:
+					--   gbc-roster-share-request WHISPER to sender that is an authority: send me your roster
+					-- 
+					-- when an authority receives gbc-roster-share-request WHISPER:
+					--   gbc-roster-share WHISPER to requester
+					--     roster alts: table
+					--     version:
+				end
+			end
+			GBCR.Output:Debug("ROSTER", "Rebuilt guild bank alt roster from guild notes with %d guild bank alts (version=%s, isAnyoneAuthority=%s, selfIsAuthority=%s)", #guildBankAlts, tostring(GBCR.Database.savedVariables.roster.version), tostring(isAnyoneAuthority), tostring(selfIsAuthority))
+		else
+			-- We're unable to view officer notes
+			-- Our roster may be incomplete (it is complete if officer notes are irrelevant)
+			-- A possible incoming roster broadcast will make it clear if they are relevant
+			-- We whisper the sender to request their roster when we see the gbc-roster-share-heartbeat
+			-- If we never see gbc-roster-share-heartbeat then the officer notes are irrelevant
+
+			-- Verify if there's a change in the roster of guild bank alts
+			-- Preserve the existing roster and only add newly detected guild bank alts (preserve existing entries)
+			local rosterAlts = GBCR.Database.savedVariables.roster.alts or {}
+			local existingSet = {}
+			local addedCount = 0
+			local rosterPosition = #rosterAlts + 1
+
+			for i = 1, #rosterAlts do
+				existingSet[rosterAlts[i]] = true
+			end
+
+			for i = 1, #guildBankAlts do
+				local normName = guildBankAlts[i]
+
+				if not existingSet[normName] then
+					rosterAlts[rosterPosition] = normName
+                    rosterPosition = rosterPosition + 1
+					existingSet[normName] = true
+					addedCount = addedCount + 1
+				end
+			end
+
+			-- If we identified a new guild bank, add it to our local roster
+			local hasNewEntries = addedCount > 0
+			GBCR.Database.savedVariables.roster.alts = rosterAlts
+
+			if hasNewEntries then
+				-- Ensure our version is set to nil to avoid broadcasting this to others
+				-- We do not know if officer notes are used to define guild bank alts
+				-- We may have an incomplete roster
+				GBCR.Database.savedVariables.roster.version = nil
+
+				-- -- Ask the guild bank alt sync leader for their roster
+				-- local _, leader = self:CheckIfWeAreGuildBankAltSyncLeader()
+				-- -- TODO:
+				-- GBCR.Output:Debug("ROSTER", "Rebuilt (possibly incomplete) guild bank alt roster from guild notes with %d guild bank alts - requesting latest roster from authority", #GBCR.Database.savedVariables.roster.alts)
+				-- --   gbc-roster-share-request WHISPER to leader: send me your roster
+				-- GBCR.Output:Debug("ROSTER", "Requested %s for an updated roster", leader)
+			end
+		end
+
+		-- Ensure local alt data exists for all roster guild bank alts
+		if not GBCR.Database.savedVariables.alts then
+			GBCR.Database.savedVariables.alts = {}
+		end
+
+		for _, normName in ipairs(GBCR.Database.savedVariables.roster.alts) do
+			if normName and not GBCR.Database.savedVariables.alts[normName] then
+				GBCR.Database.savedVariables.alts[normName] = { name = normName, version = 0, money = 0, items = {}, ledger = {} }
+				GBCR.Output:Debug("ROSTER", "Added missing guild bank alt stub data for %s", normName)
+			end
+		end
+
+		-- Update lookup tables and variables after the roster rebuild
+		self.rosterRefreshNeeded = false
+		self.rebuildTimer = nil
+		GBCR.Output:Debug("ROSTER", "Done with roster operations after %.2fms", debugprofilestop() - startTime)
+
+		-- Update online status
+		refreshOnlineMembersCache(self, true)
+
+		-- Notify others that we're ready
+		GBCR.Protocol:Hello()
+    end)
 end
+
+---
+
+-- Color player names in messages
+local function colorPlayerName(self, name)
+	if not name or name == "" then
+		return ""
+	end
+
+	local normalized = normalizeName(self, name) or name
+	local playerClass = getGuildMemberInfo(self, normalized)
+
+	if playerClass then
+		local classColor = select(4, GetClassColor(playerClass))
+
+		if classColor then
+			return Globals:Colorize(classColor, name)
+		end
+	end
+
+	return Globals:Colorize(GBCR.Constants.COLORS.RED, name)
+end
+
+-- Wipe your guild data via AddOn config "Reset database", /bank reset, /bank wipe, /bank wipeall, GUILD_RANKS_UPDATE event via Guild:Init(guildName)
+local function resetGuild(self)
+	local guildName = getGuildInfo(self)
+	if not guildName then
+		return
+	end
+
+    GBCR.UI.Inventory:Close()
+    GBCR.Database:ResetGuildDatabase(guildName)
+
+    GBCR.Database.savedVariables = GBCR.Database:Load(guildName)
+
+	self.lastRosterRebuildTime = nil
+	rebuildGuildBankAltsRoster(self)
+
+	GBCR.Search:MarkAllDirty()
+
+	GBCR.UI:QueueUIRefresh()
+end
+
+-- Wipe guild-specific data when no longer in a guild
+local function clearGuildCaches(self)
+    wipe(self.onlineMembers)
+    wipe(self.onlineMembersThatAreGuildBankAlts)
+    wipe(self.banksCache)
+    wipe(self.guildMembersCache)
+    wipe(self.uidToNameCache)
+    wipe(self.guildRankAuthorityCache)
+    wipe(self.guildRankOfficerCache)
+
+    self.onlineMembersCount = 0
+    self.rosterRefreshNeeded = nil
+    self.canWeViewOfficerNotes = nil
+	self.isAnyoneAuthority = nil
+	self.canWeEditOfficerNotes = nil
+end
+
+-- Resets if the data does not already exist, only runs on GUILD_RANKS_UPDATE
+local function init(self, guildName)
+	self.player = nil
+
+    self.normalizedNameCache = {}
+    self.uidToNameCache = {}
+    self.onlineMembers = {}
+    self.onlineMembersThatAreGuildBankAlts = {}
+    self.banksCache = {}
+    self.guildMembersCache = {}
+    self.guildRankAuthorityCache = {}
+    self.guildRankOfficerCache = {}
+
+    self.onlineMembersCount = 0
+	self.rosterRefreshNeeded = nil
+	self.canWeViewOfficerNotes = nil
+	self.isAnyoneAuthority = nil
+	self.canWeEditOfficerNotes = nil
+
+	if not guildName then
+		return false
+	end
+
+	if GBCR.Database.savedVariables and GBCR.Database.savedVariables.guildName == guildName then
+		return false
+	end
+
+	GBCR.Database.savedVariables = GBCR.Database:Load(guildName)
+	if GBCR.Database.savedVariables then
+		rebuildGuildBankAltsRoster(self)
+
+		return true
+	end
+
+	resetGuild(self)
+
+	return true
+end
+
+-- Export functions for other modules
+Guild.GetGuildInfo = getGuildInfo
+Guild.NormalizeName = normalizeName
+Guild.GetNormalizedPlayer = getNormalizedPlayer
+
+Guild.GetRosterGuildBankAlts = getRosterGuildBankAlts
+Guild.RequestMissingGuildBankAltData = requestMissingGuildBankAltData
+Guild.IsGuildBankAlt = isGuildBankAlt
+
+Guild.FindGuildMemberByUid = findGuildMemberByUid
+Guild.GetGuildMemberInfo = getGuildMemberInfo
+Guild.IsPlayerOnlineMember = isPlayerOnlineMember
+-- Guild.GetOnlineMemberList = getOnlineMemberList
+-- Guild.IsPlayerOnlineGuildBankAlt = isPlayerOnlineGuildBankAlt
+Guild.GetOnlineGuildBankAlts = getOnlineGuildBankAlts
+Guild.GetOnlineMembersCount = getOnlineMembersCount
+Guild.RefreshOnlineMembersCache = refreshOnlineMembersCache
+Guild.CanWeViewOfficerNotes = canWeViewOfficerNotes
+Guild.IsAuthority = isAuthority
+Guild.IsAnyoneAuthority = isAnyoneAuthority
+Guild.RebuildGuildBankAltsRoster = rebuildGuildBankAltsRoster
+
+Guild.ColorPlayerName = colorPlayerName
+Guild.ResetGuild = resetGuild
+Guild.ClearGuildCaches = clearGuildCaches
+Guild.Init = init

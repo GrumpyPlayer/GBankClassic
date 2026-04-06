@@ -4,68 +4,225 @@ GBCR.Options = {}
 local Options = GBCR.Options
 
 local Globals = GBCR.Globals
-local Settings = Globals.Settings
+local pairs = Globals.pairs
+local string_format = Globals.string_format
+local string_lower = Globals.string_lower
+local table_sort = Globals.table_sort
 
 local Constants = GBCR.Constants
 local colorGold = Constants.COLORS.GOLD
-local logLevels = Constants.LOG_LEVEL
+local colorOrange = Constants.COLORS.ORANGE
 local logLevelDescriptions = Constants.LOG_LEVEL_BY_VALUE
+local logLevels = Constants.LOG_LEVEL
 
-function Options:Init()
-    self.db = GBCR.Libs.AceDB:New("GBCR_Options_DB", {
-		char = {
-			bank = {
-				inventoryTracking = true,
-				donationsTracking = true,
-				reportReceivedDonations = true,
-			},
-		},
-		profile = {
-			combat = {
-				hide = true,
-			},
-			minimap = {
-				hide = false,
-			},
-            framePositions = {
-				width = 700,
-				height = 500,
+local Settings = Globals.Settings
+
+-- Retrieve the log level from saved variables or default to INFO
+local function getLogLevel(self)
+	return self.db.profile.logLevel or logLevels.INFO.level
+end
+
+-- Update and save the log level to saved variables
+local function setLogLevel(self, level)
+	self.db.profile.logLevel = level
+
+	GBCR.Output:Response("Log level set to: " .. string_lower(logLevelDescriptions[level].description))
+end
+
+-- Return whether debug logging is enabled or disabled
+local function isDebugEnabled(self)
+    return getLogLevel(self) == logLevels.DEBUG.level
+end
+
+-- Disable debug category output for one specific category
+local function isCategoryEnabled(self, category)
+	return self.db.profile.debugCategories[category] == true
+end
+
+-- Enable debug category output for one specific category
+local function setCategoryEnabled(self, category, enabled)
+	self.db.profile.debugCategories[category] = enabled
+end
+
+-- Disable all debug category output
+local function enableAllCategories(self)
+	for category in pairs(Constants.DEBUG_CATEGORY) do
+		self.db.profile.debugCategories[category] = true
+	end
+end
+
+-- Enable all debug category output
+local function disableAllCategories(self)
+	for category in pairs(Constants.DEBUG_CATEGORY) do
+		self.db.profile.debugCategories[category] = false
+	end
+end
+
+-- Retrieve the sort mode from saved variables or defaults
+local function getSortMode(self)
+	return self.db.profile.sortMode or self.db.default.profile.sortMode
+end
+
+-- Update and save the sort mode to saved variables
+local function setSortMode(self, mode)
+	self.db.profile.sortMode = mode
+end
+
+-- Retrieve the inventory tracking setting from saved variables
+local function getInventoryTrackingEnabled(self)
+    return self.db.char.bank.inventoryTracking
+end
+
+-- Retrieve the donation tracking setting from saved variables
+local function getDonationsTrackingEnabled(self)
+    return self.db.char.bank.donationsTracking
+end
+
+-- Retrieve the donation reporting setting from saved variables
+local function getDonationReportingEnabled(self)
+    return self.db.char.bank.reportReceivedDonations
+end
+
+-- Retrieve the combat hide setting from saved variables
+local function getCombatHide(self)
+    return self.db.profile.combat.hide
+end
+
+-- Retrieve the status of the minimap visibility from saved variables
+local function getMinimapEnabled(self)
+    return not self.db.profile.minimap.hide
+end
+
+-- Helper to toggle the display of the minimap icon
+local function toggleMinimapIcon(self)
+    if not getMinimapEnabled(self) then
+        GBCR.Libs.LibDBIcon:Hide(addonName)
+    else
+        GBCR.Libs.LibDBIcon:Show(addonName)
+    end
+end
+
+-- Open the addon configuration options
+local function open(self)
+    Settings.OpenToCategory(addonName)
+end
+
+-- Access the options saved variables
+local function getOptionsDB(self)
+	return self.db
+end
+
+-- Initialize configuration defaults and configuration options specifically for guild bank alts
+local function initGuildBankAltOptions(self)
+    local player = GBCR.Guild:GetNormalizedPlayer()
+    if not GBCR.Guild:IsGuildBankAlt(player) then
+        return
+    end
+
+	-- Configuration options for guild bank alts
+    local guildBankAltOptions = {
+        type = "group",
+		name = "Bank",
+        hidden = function()
+            return not GBCR.Guild:IsGuildBankAlt(player)
+        end,
+        args = {
+            ["inventoryTracking"] = {
+                order = 0,
+                type = "toggle",
+				width = "full",
+                name = "Enable for " .. player,
+                desc = "Enables inventory (bank, bags, and mailbox) scanning and sharing for this player",
+                set = function(_, v)
+                    self.db.char.bank.inventoryTracking = v
+                    if v == true then
+                        GBCR.Protocol:AuthorRosterData()
+                    end
+                end,
+                get = function()
+                    return self:GetInventoryTrackingEnabled()
+                end,
             },
-			logLevel = logLevels.INFO.level,
-			debugCategories = {
-				ROSTER = false,
-				COMMS = false,
-				SYNC = false,
-				CHUNK = false,
-				DONATION = false,
-				WHISPER = false,
-				-- REQUESTS = false,
-				UI = false,
-				PROTOCOL = false,
-				DATABASE = false,
-				EVENTS = false,
-				INVENTORY = false,
-				MAIL = false,
-				ITEM = false,
-				-- FULFILL = false,
-				SEARCH = false,
-				-- QUERIES = false,
-				REPLIES = false,
-			},
-			sortMode = "default"
-		},
-	}, true)
+            ["donationsTracking"] = {
+                order = 1,
+                type = "toggle",
+				width = "full",
+                name = "Enable donation tracking",
+                desc = "Enables tracking and sharing of donations by other guild members sent to you via the mailbox",
+                set = function(_, v)
+                    self.db.char.bank.donationsTracking = v
+                end,
+                get = function()
+                    return self:GetDonationsTrackingEnabled()
+                end,
+            },
+            ["reportReceivedDonations"] = {
+                order = 2,
+                type = "toggle",
+				width = "full",
+                name = "Report received donations",
+                desc = "Display a message when donations by other guild members are processed (by taking items and money sent via mail)",
+                set = function(_, v)
+                    self.db.char.bank.reportReceivedDonations = v
+				end,
+                get = function()
+                    return self:GetDonationReportingEnabled()
+                end,
+            },
+            ["reset"] = {
+                order = 3,
+                name = "Reset player database",
+                type = "execute",
+                func = function()
+                    local guildName = GBCR.Guild:GetGuildInfo()
+                    if guildName then
+                        GBCR.Database:ResetGuildBankAlt(guildName, player)
+                    end
+
+                end,
+            },
+            ["error"] = {
+                order = 4,
+                type = "description",
+                name = string_format("This panel is only available to guild bank alts (guild members with %s in either their public or officer note that they themselves can read).", Globals:Colorize(colorGold, "gbank")),
+                hidden = function()
+                    return GBCR.Guild:IsGuildBankAlt(player)
+                end,
+            },
+        },
+    }
+
+	-- Register configuration options for guild bank alts with AceConfig
+    GBCR.Libs.AceConfig:RegisterOptionsTable(addonName .. "/Bank", guildBankAltOptions)
+
+	if self.optionsAdded then
+		return
+	end
+
+    GBCR.Libs.AceConfigDialog:AddToBlizOptions(addonName .. "/Bank", "Bank", addonName)
+	self.optionsAdded = true
+
+	-- Send an update version of the roster after enabling a new guild bank alt
+	GBCR.Protocol:AuthorRosterData()
+end
+
+-- Initialize configuration defaults and configuration options
+local function init(self)
+	self.db = GBCR.db
 
 	-- Log level configuration
 	local values = {}
-	local sorting = {}
-	for _, info in pairs(logLevels) do
-		values[info.level] = info.description
-		table.insert(sorting, info.level)
-	end
-	table.sort(sorting, function(a, b)
-		return a > b
-	end)
+    local sorting = {}
+    local position = 1
+
+    for _, info in pairs(logLevels) do
+        values[info.level] = info.description
+        sorting[position] = info.level
+        position = position + 1
+    end
+    table_sort(sorting, function(a, b)
+        return a > b
+    end)
 
 	-- Configuration options
     local options = {
@@ -88,7 +245,7 @@ function Options:Init()
                         desc = "Toggles visibility of the minimap button",
                         set = function(_, v)
                             self.db.profile.minimap.hide = not v
-                            GBCR.UI.Minimap:Toggle()
+                            toggleMinimapIcon()
                         end,
                         get = function()
                             return self:GetMinimapEnabled()
@@ -128,12 +285,7 @@ function Options:Init()
                         name = "Reset database",
                         type = "execute",
                         func = function()
-                            local guild = GBCR.Guild:GetGuildName()
-                            if not guild then
-                                return
-							end
-
-                            GBCR.Guild:Reset(guild)
+                            GBCR.Guild:ResetGuild()
                         end,
                     },
                 },
@@ -196,12 +348,12 @@ function Options:Init()
 						order = 13,
 						type = "toggle",
 						width = "full",
-						name = "DONATION - Donation ledger operations",
+						name = "DONATIONS - Donation ledger operations",
 						set = function(_, v)
-							self:SetCategoryEnabled("DONATION", v)
+							self:SetCategoryEnabled("DONATIONS", v)
 						end,
 						get = function()
-							return self:IsCategoryEnabled("DONATION")
+							return self:IsCategoryEnabled("DONATIONS")
 						end,
 					},
 					["events"] = {
@@ -244,7 +396,7 @@ function Options:Init()
 						order = 17,
 						type = "toggle",
 						width = "full",
-						name = "ITEM - Item loading, validation, and processing",
+						name = string_format("ITEM - Item loading, validation, and processing (%s)", Globals:Colorize(colorOrange, "use with caution: causes frame stutter")),
 						set = function(_, v)
 							self:SetCategoryEnabled("ITEM", v)
 						end,
@@ -288,18 +440,18 @@ function Options:Init()
 					-- 		return self:IsCategoryEnabled("QUERIES")
 					-- 	end,
 					-- },
-					["replies"] = {
-						order = 21,
-						type = "toggle",
-						width = "full",
-						name = "REPLIES - Output from addon communication replies (such as /bank hello)",
-						set = function(_, v)
-							self:SetCategoryEnabled("REPLIES", v)
-						end,
-						get = function()
-							return self:IsCategoryEnabled("REPLIES")
-						end,
-					},
+					-- ["replies"] = {
+					-- 	order = 21,
+					-- 	type = "toggle",
+					-- 	width = "full",
+					-- 	name = "REPLIES - Output from addon communication replies (such as /bank hello)",
+					-- 	set = function(_, v)
+					-- 		self:SetCategoryEnabled("REPLIES", v)
+					-- 	end,
+					-- 	get = function()
+					-- 		return self:IsCategoryEnabled("REPLIES")
+					-- 	end,
+					-- },
 					-- ["requests"] = {
 					-- 	order = 22,
 					-- 	type = "toggle",
@@ -328,7 +480,7 @@ function Options:Init()
 						order = 24,
 						type = "toggle",
 						width = "full",
-						name = "SEARCH - Search operations",
+						name = string_format("SEARCH - Search operations (%s)", Globals:Colorize(colorOrange, "use with caution: causes frame stutter")),
 						set = function(_, v)
 							self:SetCategoryEnabled("SEARCH", v)
 						end,
@@ -407,186 +559,40 @@ function Options:Init()
     }
 
 	-- Register configuration options with AceConfig
-    GBCR.Libs.AceConfig:RegisterOptionsTable("GBankClassic - Revived", options)
-    GBCR.Libs.AceConfigDialog:AddToBlizOptions("GBankClassic - Revived", "GBankClassic - Revived")
+    GBCR.Libs.AceConfig:RegisterOptionsTable(addonName, options)
+    GBCR.Libs.AceConfigDialog:AddToBlizOptions(addonName, addonName)
 
 	-- Register callbacks for configuration profiles
-	self.db.RegisterCallback(GBCR, "OnProfileChanged", function(event, db, newProfileName)
-		GBCR.Output:Response("Switched to profile %s.", GBCR.Globals:Colorize(colorGold, newProfileName))
+	self.db.RegisterCallback(GBCR, "OnProfileChanged", function(_, _, newProfileName)
+		GBCR.Output:Response("Switched to profile %s.", Globals:Colorize(colorGold, newProfileName))
 	end)
-	self.db.RegisterCallback(GBCR, "OnProfileCopied", function(event, db, sourceProfileName)
-		GBCR.Output:Response("Copied profile from %s.", GBCR.Globals:Colorize(colorGold, sourceProfileName))
+	self.db.RegisterCallback(GBCR, "OnProfileCopied", function(_, _, sourceProfileName)
+		GBCR.Output:Response("Copied profile from %s.", Globals:Colorize(colorGold, sourceProfileName))
 	end)
-	self.db.RegisterCallback(GBCR, "OnProfileReset", function(event, db)
+	self.db.RegisterCallback(GBCR, "OnProfileReset", function()
 		GBCR.Output:Response("Profile reset to defaults.")
 	end)
-	self.db.RegisterCallback(GBCR, "OnProfileDeleted", function(event, db, deletedProfile)
-		GBCR.Output:Response("Profile %s deleted.", GBCR.Globals:Colorize(colorGold, deletedProfile))
+	self.db.RegisterCallback(GBCR, "OnProfileDeleted", function(_, _, deletedProfile)
+		GBCR.Output:Response("Profile %s deleted.", Globals:Colorize(colorGold, deletedProfile))
 	end)
 end
 
-function Options:InitGuildBankAltOptions()
-    local player = GBCR.Guild:GetNormalizedPlayer()
-    if not GBCR.Guild:IsGuildBankAlt(player) then
-        return
-    end
-
-	-- Configuration options for guild bank alts
-    local guildBankAltOptions = {
-        type = "group",
-		name = "Bank",
-        hidden = function()
-            return not GBCR.Guild:IsGuildBankAlt(player)
-        end,
-        args = {
-            ["inventoryTracking"] = {
-                order = 0,
-                type = "toggle",
-				width = "full",
-                name = "Enable for " .. player,
-                desc = "Enables inventory (bank, bags, and mailbox) scanning and sharing for this player",
-                set = function(_, v)
-                    self.db.char.bank.inventoryTracking = v
-                    if v == true then
-                        GBCR.Protocol:AuthorRosterData()
-                    end
-                end,
-                get = function()
-                    return self:GetInventoryTrackingEnabled()
-                end,
-            },
-            ["donationsTracking"] = {
-                order = 1,
-                type = "toggle",
-				width = "full",
-                name = "Enable donation tracking",
-                desc = "Enables tracking and sharing of donations by other guild members sent to you via the mailbox",
-                set = function(_, v)
-                    self.db.char.bank.donationsTracking = v
-                end,
-                get = function()
-                    return self:GetDonationsTrackingEnabled()
-                end,
-            },
-            ["reportReceivedDonations"] = {
-                order = 2,
-                type = "toggle",
-				width = "full",
-                name = "Report received donations",
-                desc = "Display a message when donations by other guild members are processed (by taking items and money sent via mail)",
-                set = function(_, v)
-                    self.db.char.bank.reportReceivedDonations = v
-				end,
-                get = function()
-                    return self:GetDonationReportingEnabled()
-                end,
-            },
-            ["reset"] = {
-                order = 3,
-                name = "Reset player database",
-                type = "execute",
-                func = function()
-                    local guild = GBCR.Guild:GetGuildName()
-                    if not guild then
-                        return
-                    end
-
-                    GBCR.Database:ResetPlayer(guild, player)
-                end,
-            },
-            ["error"] = {
-                order = 4,
-                type = "description",
-                name = string.format("This panel is only available to guild bank alts (guild members with %s in either their public or officer note that they themselves can read).", GBCR.Globals:Colorize(colorGold, "gbank")),
-                hidden = function()
-                    return GBCR.Guild:IsGuildBankAlt(player)
-                end,
-            },
-        },
-    }
-
-	-- Register configuration options for guild bank alts with AceConfig
-    GBCR.Libs.AceConfig:RegisterOptionsTable("GBankClassic - Revived/Bank", guildBankAltOptions)
-	if self.optionsAdded then
-		return
-	end
-    GBCR.Libs.AceConfigDialog:AddToBlizOptions("GBankClassic - Revived/Bank", "Bank", "GBankClassic - Revived")
-	self.optionsAdded = true
-
-	-- Send an update version of the roster after enabling a new guild bank alt
-	GBCR.Protocol:AuthorRosterData()
-end
-
-function Options:GetOptionsDB()
-	return self.db
-end
-
-function Options:GetInventoryTrackingEnabled()
-    return self.db.char.bank.inventoryTracking
-end
-
-function Options:GetDonationsTrackingEnabled()
-    return self.db.char.bank.donationsTracking
-end
-
-function Options:GetDonationReportingEnabled()
-    return self.db.char.bank.reportReceivedDonations
-end
-
-function Options:GetCombatHide()
-    return self.db.profile.combat.hide
-end
-
-function Options:GetMinimapEnabled()
-    return not self.db.profile.minimap.hide
-end
-
-function Options:GetFramePositions()
-	return self.db.profile.framePositions
-end
-
-function Options:GetLogLevel()
-	return self.db.profile.logLevel or logLevels.INFO.level
-end
-
-function Options:IsDebugEnabled()
-    return self:GetLogLevel() == logLevels.DEBUG.level
-end
-
-function Options:SetLogLevel(level)
-	self.db.profile.logLevel = level
-	GBCR.Output:Response("Log level set to: " .. string.lower(logLevelDescriptions[level].description))
-    GBCR.Libs.AceConfig:NotifyChange("GBankClassic")
-end
-
-function Options:IsCategoryEnabled(category)
-	return self.db.profile.debugCategories[category] == true
-end
-
-function Options:SetCategoryEnabled(category, enabled)
-	self.db.profile.debugCategories[category] = enabled
-end
-
-function Options:EnableAllCategories()
-	for category, _ in pairs(Constants.DEBUG_CATEGORY) do
-		self.db.profile.debugCategories[category] = true
-	end
-end
-
-function Options:DisableAllCategories()
-	for category, _ in pairs(Constants.DEBUG_CATEGORY) do
-		self.db.profile.debugCategories[category] = false
-	end
-end
-
-function Options:GetSortMode()
-	return self.db.profile.sortMode or self.db.default.profile.sortMode
-end
-
-function Options:SetSortMode(mode)
-	self.db.profile.sortMode = mode
-end
-
-function Options:Open()
-    Settings.OpenToCategory("GBankClassic - Revived")
-end
+-- Export functions for other modules
+Options.GetLogLevel = getLogLevel
+Options.IsDebugEnabled = isDebugEnabled
+Options.SetLogLevel = setLogLevel
+Options.IsCategoryEnabled = isCategoryEnabled
+Options.SetCategoryEnabled = setCategoryEnabled
+Options.EnableAllCategories = enableAllCategories
+Options.DisableAllCategories = disableAllCategories
+Options.GetInventoryTrackingEnabled = getInventoryTrackingEnabled
+Options.GetDonationsTrackingEnabled = getDonationsTrackingEnabled
+Options.GetDonationReportingEnabled = getDonationReportingEnabled
+Options.GetCombatHide = getCombatHide
+Options.GetSortMode = getSortMode
+Options.SetSortMode = setSortMode
+Options.GetMinimapEnabled = getMinimapEnabled
+Options.Open = open
+Options.GetOptionsDB = getOptionsDB
+Options.InitGuildBankAltOptions = initGuildBankAltOptions
+Options.Init = init

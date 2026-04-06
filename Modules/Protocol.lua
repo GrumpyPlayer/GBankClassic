@@ -4,31 +4,143 @@ GBCR.Protocol = {}
 local Protocol = GBCR.Protocol
 
 local Globals = GBCR.Globals
+local date = Globals.date
+local debugprofilestop = Globals.debugprofilestop
+local find = Globals.find
+local gsub = Globals.gsub
+local hooksecurefunc = Globals.hooksecurefunc
+local ipairs = Globals.ipairs
+local math_floor = Globals.math_floor
+local math_min = Globals.math_min
+local next = Globals.next
+local pairs = Globals.pairs
+local select = Globals.select
+local string_byte = Globals.string_byte
+local string_format = Globals.string_format
+local string_gsub = Globals.string_gsub
+local string_len = Globals.string_len
+local string_lower = Globals.string_lower
+local string_match = Globals.string_match
 local strsplit = Globals.strsplit
+local sub = Globals.sub
+local table_concat = Globals.table_concat
+local table_insert = Globals.table_insert
+local table_remove = Globals.table_remove
+local table_sort = Globals.table_sort
+local time = Globals.time
+local tonumber = Globals.tonumber
+local tostring = Globals.tostring
+local type = Globals.type
+local unpack = Globals.unpack
 local wipe = Globals.wipe
-local IsInRaid = Globals.IsInRaid
-local IsInInstance = Globals.IsInInstance
-local GetTime = Globals.GetTime
-local GetServerTime = Globals.GetServerTime
-local GetItemInfo = Globals.GetItemInfo
+
 local After = Globals.After
-local Item = Globals.Item
-local GetClassColor = Globals.GetClassColor
 local Enum = Globals.Enum
+local GetClassColor = Globals.GetClassColor
+local GetItemInfo = Globals.GetItemInfo
+local GetServerTime = Globals.GetServerTime
+local GetTime = Globals.GetTime
+local IsInInstance = Globals.IsInInstance
+local IsInRaid = Globals.IsInRaid
+local Item = Globals.Item
 
 local Constants = GBCR.Constants
-local colorYellow = Constants.COLORS.YELLOW
 local colorBlue = Constants.COLORS.BLUE
-local colorWhite = Constants.COLORS.WHITE
 local colorGold = Constants.COLORS.GOLD
+local colorWhite = Constants.COLORS.WHITE
+local colorYellow = Constants.COLORS.YELLOW
 local prefixDescriptions = Constants.COMM_PREFIX_DESCRIPTIONS
 
-function Protocol:Init()
+-- Make payloads smaller and encoded prior to transmission
+local function serializePayload(self, data)
+    local serializedData = GBCR.Libs.LibSerialize:Serialize(data)
+    local compressedData = GBCR.Libs.LibDeflate:CompressDeflate(serializedData, {level = Constants.LIMITS.COMPRESSION_LEVEL})
+    local encodedData = GBCR.Libs.LibDeflate:EncodeForWoWAddonChannel(compressedData)
+
+    return encodedData
+end
+
+-- Transform the received payloads into something usuable
+local function deSerializePayload(self, message)
+    local decoded = GBCR.Libs.LibDeflate:DecodeForWoWAddonChannel(message)
+    local inflated = GBCR.Libs.LibDeflate:DecompressDeflate(decoded)
+
+    return GBCR.Libs.LibSerialize:Deserialize(inflated)
+end
+
+-- Wrapper to AceComm to suppress outgoing messages in instances or raids
+local function sendCommMessage(self, prefix, text, distribution, target, prio, callbackFn, callbackArg)
+    if not GBCR.Addon.SendCommMessage then
+        return
+    end
+
+    local prefixDesc = prefixDescriptions[prefix] or "(Unknown)"
+
+    if IsInInstance() or IsInRaid() then
+		GBCR.Output:Debug("COMMS", ">", "(suppressing)", prefix, prefixDesc, "to", GBCR.Guild:ColorPlayerName(target), "(in instance or raid)")
+
+        return
+    end
+
+    if GBCR.Options:IsDebugEnabled() then
+        local success, data = deSerializePayload(self, text)
+
+        if success then
+            local tablePayload = {}
+            local payload
+
+            if type(data) == "table" then
+                for k, v in pairs(data) do
+                    table_insert(tablePayload, k .. "=" .. tostring(v))
+                end
+                payload = table_concat(tablePayload, ",")
+            else
+                payload = data
+            end
+
+            GBCR.Output:Debug("COMMS", ">", prefix, prefixDesc, "via", string.upper(distribution), "to", target and target or "guild", "(" .. (#text or 0) .. " bytes)", "payload:", payload)
+        end
+    else
+        GBCR.Output:Debug("COMMS", ">", prefix, prefixDesc, "via", string.upper(distribution), "to", target and GBCR.Guild:ColorPlayerName(target) or "guild", "(" .. (#text or 0) .. " bytes)")
+    end
+
+    return GBCR.Addon:SendCommMessage(prefix, text, distribution, target, prio, callbackFn, callbackArg)
+end
+
+-- Helper to send whispers to appropriately formatted online target
+local function sendWhisper(self, prefix, text, target, prio, callbackFn, callbackArg)
+    local prefixDesc = prefixDescriptions[prefix] or "(Unknown)"
+
+    -- Strip realm suffix only for same-realm targets; cross-realm requires full name
+    target = GBCR.Guild:NormalizeName(target, true)
+
+    local isTargetOnline = GBCR.Guild:IsPlayerOnlineMember(target)
+
+    GBCR.Output:Debug("WHISPER", "SendWhisper called: prefix=%s %s, target=%s, isOnline=%s", prefix, prefixDesc, target, tostring(isTargetOnline))
+
+    if not isTargetOnline then
+        GBCR.Output:Debug("WHISPER", "Cannot send %s %s to %s (player is offline)", prefix, prefixDesc, target)
+
+        return false
+    end
+
+    sendCommMessage(self, prefix, text, "WHISPER", target, prio, callbackFn, callbackArg)
+
+    GBCR.Output:Debug("WHISPER", "SendCommMessage completed for %s %s to %s", prefix, prefixDesc, target)
+
+    return true
+end
+
+--- =========================================== ---
+local function init(self)
     self.isAddonOutdated = false
 	self.guildMembersFingerprintData = {}
 	self.lastRosterSync = nil
 
     self.pendingSendCount = 0
+
+    self.requestCount = 0
+    self.hasRequested = false
 
     -- Item link reconstruction
     self.itemReconstructQueue = {} -- Queue system for batched item reconstruction
@@ -240,7 +352,7 @@ function Protocol:QueueDebouncedMessageWithMultipleGuildBankAlts(sender, payload
                     sender = sender,
                     queuedAt = GetServerTime(),
                 }
-                GBCR.Output:Debug("PROTOCOL", "Best sender for %s is now %s (incomingVersion=%s)", GBCR.Output:ColorPlayerName(altNorm), GBCR.Output:ColorPlayerName(sender), tostring(incomingVersion))
+                GBCR.Output:Debug("PROTOCOL", "Best sender for %s is now %s (incomingVersion=%s)", GBCR.Guild:ColorPlayerName(altNorm), GBCR.Guild:ColorPlayerName(sender), tostring(incomingVersion))
                 queued = true
             end
         end
@@ -253,7 +365,7 @@ function Protocol:QueueDebouncedMessageWithMultipleGuildBankAlts(sender, payload
 			Protocol:ProcessDebouncedMessageWithMultipleGuildBankAlts()
 		end, interval)
 
-		GBCR.Output:Debug("PROTOCOL", "Queued processing of guild bank alt data from %s for %d guild bank alts (processing in %.1fs)", GBCR.Output:ColorPlayerName(sender), Globals:Count(incomingAlts or {}), interval)
+		GBCR.Output:Debug("PROTOCOL", "Queued processing of guild bank alt data from %s for %d guild bank alts (processing in %.1fs)", GBCR.Guild:ColorPlayerName(sender), Globals:Count(incomingAlts or {}), interval)
 	end
 
     return true
@@ -360,13 +472,13 @@ function Protocol:ProcessFingerprintAltData(fingerprintAltData, sender)
 			local ourVersion = type(ourAlt) == "table" and ourAlt.version
 			local incomingVersion = type(altData) == "table" and altData.version or 0
 
-			GBCR.Output:Debug("PROTOCOL", "Evaluating fingerprint from %s for %s (incomingVersion=%d, ourVersion=%s)", GBCR.Output:ColorPlayerName(sender or altData.sender), GBCR.Output:ColorPlayerName(altName), tostring(incomingVersion), tostring(ourVersion))
+			GBCR.Output:Debug("PROTOCOL", "Evaluating fingerprint from %s for %s (incomingVersion=%d, ourVersion=%s)", GBCR.Guild:ColorPlayerName(sender or altData.sender), GBCR.Guild:ColorPlayerName(altName), tostring(incomingVersion), tostring(ourVersion))
 
 			if not ourVersion or incomingVersion > ourVersion then
 				shouldQuery = true
-				GBCR.Output:Debug("PROTOCOL", "Query decision for %s: incoming version is newer, query", GBCR.Output:ColorPlayerName(altName))
+				GBCR.Output:Debug("PROTOCOL", "Query decision for %s: incoming version is newer, query", GBCR.Guild:ColorPlayerName(altName))
 			else
-				GBCR.Output:Debug("PROTOCOL", "Query decision for %s: incoming version is same or older, don't query", GBCR.Output:ColorPlayerName(altName))
+				GBCR.Output:Debug("PROTOCOL", "Query decision for %s: incoming version is same or older, don't query", GBCR.Guild:ColorPlayerName(altName))
 			end
 
 			if shouldQuery then
@@ -397,9 +509,9 @@ function Protocol:ProcessFingerprint(payload, sender)
     end
 
 	local altCount = incomingAlts and Globals:Count(incomingAlts)
-	GBCR.Output:Debug("PROTOCOL", GBCR.Output:ColorPlayerName(sender), GBCR.Globals:Colorize(colorBlue, "shares"), "fingerprint", string.format("(%d guild bank alts)", altCount))
+	GBCR.Output:Debug("PROTOCOL", GBCR.Guild:ColorPlayerName(sender), Globals:Colorize(colorBlue, "shares"), "fingerprint", string_format("(%d guild bank alts)", altCount))
 
-	local guildName = GBCR.Guild:GetGuildName()
+	local guildName = GBCR.Guild:GetGuildInfo()
 	local rosterVersionTimestamp = GBCR.Database.savedVariables and GBCR.Database.savedVariables.roster and GBCR.Database.savedVariables.roster.version
 	if guildName and rosterVersionTimestamp then
 		if incomingRosterVersionTimestamp then
@@ -420,7 +532,7 @@ end
 function Protocol:ProcessRosterData(data, sender)
     local isSenderAuthority = GBCR.Guild.guildMembersCache and GBCR.Guild.guildMembersCache[sender] and GBCR.Guild.guildMembersCache[sender].isAuthority
     if isSenderAuthority then
-        GBCR.Output:Debug("PROTOCOL", GBCR.Output:ColorPlayerName(sender), GBCR.Globals:Colorize(colorBlue, "shares"), "roster data: we accept it")
+        GBCR.Output:Debug("PROTOCOL", GBCR.Guild:ColorPlayerName(sender), Globals:Colorize(colorBlue, "shares"), "roster data: we accept it")
         self:ConsumePendingSync("roster", sender)
         GBCR.Database.savedVariables.roster = data.roster
     end
@@ -436,13 +548,13 @@ function Protocol:ProcessGuildBankAltData(data, sender)
     end
 
     local status = allowed and self:ReceiveData(data, sender) or Constants.ADOPTION_STATUS.UNAUTHORIZED
-    GBCR.Output:Debug("PROTOCOL", GBCR.Output:ColorPlayerName(sender), GBCR.Globals:Colorize(colorBlue, "shares"), "bank data about", GBCR.Output:ColorPlayerName(altName) .. ": we", allowed and "accept it" or "do not accept it", formatSyncStatus(status))
+    GBCR.Output:Debug("PROTOCOL", GBCR.Guild:ColorPlayerName(sender), Globals:Colorize(colorBlue, "shares"), "bank data about", GBCR.Guild:ColorPlayerName(altName) .. ": we", allowed and "accept it" or "do not accept it", formatSyncStatus(status))
 
     if allowed and status == Constants.ADOPTION_STATUS.ADOPTED then
-        GBCR.Output:Info("Received data for %s from %s.", GBCR.Output:ColorPlayerName(altName), GBCR.Output:ColorPlayerName(sender))
+        GBCR.Output:Info("Received data for %s from %s.", GBCR.Guild:ColorPlayerName(altName), GBCR.Guild:ColorPlayerName(sender))
         GBCR.UI:QueueUIRefresh()
 	elseif allowed then
-		GBCR.Output:Debug("PROTOCOL", "Ignoring data for %s from %s (reason: %s).", GBCR.Output:ColorPlayerName(altName), GBCR.Output:ColorPlayerName(sender), status)
+		GBCR.Output:Debug("PROTOCOL", "Ignoring data for %s from %s (reason: %s).", GBCR.Guild:ColorPlayerName(altName), GBCR.Guild:ColorPlayerName(sender), status)
 	else
 		return
     end
@@ -461,7 +573,7 @@ function Protocol:OnCommReceived(prefix, message, distribution, sender)
 	end
 
 	if IsInInstance() or IsInRaid() then
-		GBCR.Output:Debug("COMMS", "<", "(suppressing)", prefix, prefixDesc, "from", GBCR.Output:ColorPlayerName(sender), "(in instance or raid)")
+		GBCR.Output:Debug("COMMS", "<", "(suppressing)", prefix, prefixDesc, "from", GBCR.Guild:ColorPlayerName(sender), "(in instance or raid)")
 
 		return
 	end
@@ -472,9 +584,9 @@ function Protocol:OnCommReceived(prefix, message, distribution, sender)
 		return
 	end
 
-	local success, data = GBCR.Core:DeSerializePayload(message)
+	local success, data = deSerializePayload(Protocol, message)
 	if not success then
-		GBCR.Output:Debug("COMMS", "<", "(error)", prefix, prefixDesc, "from", GBCR.Output:ColorPlayerName(sender), "(failed to deserialize, error=" .. tostring(data) .. ")")
+		GBCR.Output:Debug("COMMS", "<", "(error)", prefix, prefixDesc, "from", GBCR.Guild:ColorPlayerName(sender), "(failed to deserialize, error=" .. tostring(data) .. ")")
 
         return
 	end
@@ -484,15 +596,15 @@ function Protocol:OnCommReceived(prefix, message, distribution, sender)
 		local payload
 		if type(data) == "table" then
 			for k, v in pairs(data) do
-				table.insert(tablePayload, k .. "=" .. tostring(v))
+				table_insert(tablePayload, k .. "=" .. tostring(v))
 			end
-			payload = table.concat(tablePayload, ",")
+			payload = table_concat(tablePayload, ",")
 		else
 			payload = data
 		end
 		GBCR.Output:Debug("COMMS", "<", prefix, prefixDesc, "via", string.upper(distribution), "from", sender, "(" .. (#message or 0) .. " bytes" .. (data.type and ", type=" .. tostring(data and data.type) or "") ..")", "payload:", payload)
 	else
-		GBCR.Output:Debug("COMMS", "<", prefix, prefixDesc, "via", string.upper(distribution), "from", GBCR.Output:ColorPlayerName(sender), "(" .. (#message or 0) .. " bytes" .. (data.type and ", type=" .. tostring(data and data.type) or "") ..")")
+		GBCR.Output:Debug("COMMS", "<", prefix, prefixDesc, "via", string.upper(distribution), "from", GBCR.Guild:ColorPlayerName(sender), "(" .. (#message or 0) .. " bytes" .. (data.type and ", type=" .. tostring(data and data.type) or "") ..")")
 	end
 
 	if prefix == "gbc-fp-share" then
@@ -521,12 +633,12 @@ function Protocol:OnCommReceived(prefix, message, distribution, sender)
 		local isStillAGuildBankAlt = GBCR.Guild:IsGuildBankAlt(altName) or false
 
 		if sender == altName then
-			GBCR.Output:Debug("PROTOCOL", GBCR.Output:ColorPlayerName(sender), GBCR.Globals:Colorize(colorYellow, "queries"), "guild bank alt data for themselves: ignored")
+			GBCR.Output:Debug("PROTOCOL", GBCR.Guild:ColorPlayerName(sender), Globals:Colorize(colorYellow, "queries"), "guild bank alt data for themselves: ignored")
 
 			return
 		end
 
-		GBCR.Output:Debug("PROTOCOL", GBCR.Output:ColorPlayerName(sender), GBCR.Globals:Colorize(colorYellow, "queries"), "guild bank alt data for", GBCR.Output:ColorPlayerName(altName), "")
+		GBCR.Output:Debug("PROTOCOL", GBCR.Guild:ColorPlayerName(sender), Globals:Colorize(colorYellow, "queries"), "guild bank alt data for", GBCR.Guild:ColorPlayerName(altName), "")
 
 		if hasData and isStillAGuildBankAlt then
 			self:SendData(altName, sender)
@@ -544,7 +656,7 @@ function Protocol:OnCommReceived(prefix, message, distribution, sender)
 
 	if prefix == "gbc-roster-query" then -- See self:QueryForRosterData
 		if (data.player and data.player == player) or not data.player then
-			GBCR.Output:Debug("PROTOCOL", GBCR.Output:ColorPlayerName(sender), GBCR.Globals:Colorize(colorYellow, "queries"), "roster data")
+			GBCR.Output:Debug("PROTOCOL", GBCR.Guild:ColorPlayerName(sender), Globals:Colorize(colorYellow, "queries"), "roster data")
 
 			local currentTime = GetServerTime()
 			if self.lastRosterSync == nil or currentTime - self.lastRosterSync > 300 then
@@ -567,7 +679,7 @@ function Protocol:OnCommReceived(prefix, message, distribution, sender)
 				addonVersionNumber = incomingAddonVersionNumber,
 				seen = GetServerTime()
 			}
-			GBCR.Output:Debug("ROSTER", "Parsed version %s for %s from hello reply", incomingAddonVersionNumber, GBCR.Output:ColorPlayerName(sender))
+			GBCR.Output:Debug("ROSTER", "Parsed version %s for %s from hello reply", incomingAddonVersionNumber, GBCR.Guild:ColorPlayerName(sender))
 
 			-- Addon version check
 			if incomingAddonVersionNumber > GBCR.Core.addonVersionNumber then
@@ -641,7 +753,7 @@ function Protocol:CraftFingerprintPayload()
     end
 
     -- Sort in-place
-    table.sort(alts, function(a, b)
+    table_sort(alts, function(a, b)
         return a[2] < b[2]
     end)
 
@@ -710,8 +822,8 @@ end
 --- SEND:
 
 function Protocol:SendFingerprint(priority)
-	local guild = GBCR.Guild:GetGuildName()
-	if not guild then
+	local guildName = GBCR.Guild:GetGuildInfo()
+	if not guildName then
         GBCR.Output:Debug("PROTOCOL", "SendFingerprint early exit because of missing guild information")
 
 		return
@@ -724,8 +836,8 @@ function Protocol:SendFingerprint(priority)
 		return
 	end
 
-	local data = GBCR.Core:SerializePayload(version)
-	GBCR.Core:SendCommMessage("gbc-fp-share", data, "Guild", nil, priority or "NORMAL")
+	local data = serializePayload(Protocol, version)
+	sendCommMessage(Protocol, "gbc-fp-share", data, "Guild", nil, priority or "NORMAL")
 end
 
 --- RECEIVE:
@@ -751,7 +863,7 @@ function Protocol:StripItemLinks(items)
 			strippedItem.itemLink = item.itemLink
 		end
 
-		table.insert(stripped, strippedItem)
+		table_insert(stripped, strippedItem)
 	end
 
 	return stripped
@@ -778,16 +890,16 @@ function Protocol:CraftDataPayload(altName, altData)
 	local money = altData.money
 	local ledger = {}
 	for key, value in pairs(altData.ledger or {}) do
-		table.insert(ledger, { key, value })
+		table_insert(ledger, { key, value })
 	end
 	local items = self:StripItemLinks(altData.items) or {}
 	local requests = altData.requests or {}
 
 	-- Sort inputs to guarantee positive deltas
-	table.sort(items, function(a, b)
+	table_sort(items, function(a, b)
         return tonumber(a.itemId) < tonumber(b.itemId)
     end)
-	table.sort(requests, function(a, b)
+	table_sort(requests, function(a, b)
         return tonumber(a.requestId) < tonumber(b.requestId)
     end)
 
@@ -796,7 +908,7 @@ function Protocol:CraftDataPayload(altName, altData)
 	local function getGuidIndex(g)
 		if not guidIndex[g] then
 			guidIndex[g] = #guidDict + 1
-			table.insert(guidDict, g)
+			table_insert(guidDict, g)
 		end
 
 		return guidIndex[g]
@@ -925,7 +1037,7 @@ function Protocol:ParseDataPayload(payload)
             itemCount = -rawCount
             local enchant = payload[position]; position = position + 1
             local suffix = payload[position]; position = position + 1
-            itemString = string.format("%d:%d:%d", currentItemId, enchant, suffix)
+            itemString = string_format("%d:%d:%d", currentItemId, enchant, suffix)
         end
 
         items[i] = { itemId = currentItemId, itemCount = itemCount, itemString = itemString }
@@ -1035,16 +1147,16 @@ function Protocol:CreateOnChunkSentCallback(altName, destination)
 		-- Completion summary
 		if bytesSent >= totalBytes then
 			local elapsed = GetTime() - (sendStats.startTime or GetTime())
-			local summary = string.format("Send complete: %d chunks, %d bytes in %.1fs", sendStats.chunksSent, totalBytes, elapsed)
+			local summary = string_format("Send complete: %d chunks, %d bytes in %.1fs", sendStats.chunksSent, totalBytes, elapsed)
 			if sendStats.failures > 0 or sendStats.throttled > 0 then
-				summary = summary .. string.format(" | failures: %d, throttled: %d", sendStats.failures, sendStats.throttled)
+				summary = summary .. string_format(" | failures: %d, throttled: %d", sendStats.failures, sendStats.throttled)
 			end
 
 			GBCR.Output:Debug("CHUNK", summary)
 			if altName == GBCR.Guild:GetNormalizedPlayer() then
-				GBCR.Output:Response("Finished sending your latest data%s.", destination and string.format(" to %s", GBCR.Output:ColorPlayerName(destination)) or " to the guild")
+				GBCR.Output:Response("Finished sending your latest data%s.", destination and string_format(" to %s", GBCR.Guild:ColorPlayerName(destination)) or " to the guild")
 			else
-				GBCR.Output:Info("Finished sending data for %s%s.", GBCR.Output:ColorPlayerName(altName), destination and string.format(" to %s", GBCR.Output:ColorPlayerName(destination)))
+				GBCR.Output:Info("Finished sending data for %s%s.", GBCR.Guild:ColorPlayerName(altName), destination and string_format(" to %s", GBCR.Guild:ColorPlayerName(destination)))
 			end
 
 			-- Decrement peer send queue counter
@@ -1075,7 +1187,7 @@ function Protocol:SendData(name, target)
 		return
 	end
 
-    if not GBCR.Database.savedVariables or not GBCR.Database.savedVariables.name then
+    if not GBCR.Database.savedVariables or not GBCR.Database.savedVariables.guildName then
         GBCR.Output:Debug("SYNC", "SendData: early exit because GBCR.Database.savedVariables was not loaded for %s", name)
 
         return
@@ -1115,11 +1227,11 @@ function Protocol:SendData(name, target)
 		return
 	end
 
-	local data = GBCR.Core:SerializePayload(craftedPayload)
+	local data = serializePayload(Protocol, craftedPayload)
 	if channel == "WHISPER" and dest then
-		GBCR.Core:SendWhisper("gbc-data-share", data, dest, "NORMAL", onChunkSent)
+		sendWhisper(Protocol, "gbc-data-share", data, dest, "NORMAL", onChunkSent)
 	else
-		GBCR.Core:SendCommMessage("gbc-data-share", data, "Guild", nil, "BULK", onChunkSent)
+		sendCommMessage(Protocol, "gbc-data-share", data, "Guild", nil, "BULK", onChunkSent)
 	end
 
 	GBCR.Output:Debug("SYNC", "SendData: sent full data for %s (%d bytes)", norm, string.len(data or ""))
@@ -1170,28 +1282,36 @@ function Protocol:ReceiveData(incomingData, sender)
 		end
 	end
 
-	if GBCR.Guild.hasRequested then
-		if GBCR.Guild.requestCount == nil then
-			GBCR.Guild.requestCount = 0
+	if self.hasRequested then
+		if self.requestCount == nil then
+			self.requestCount = 0
 		else
-			GBCR.Guild.requestCount = GBCR.Guild.requestCount - 1
+			self.requestCount = self.requestCount - 1
 		end
-		if GBCR.Guild.requestCount == 0 then
-			GBCR.Guild.hasRequested = false
+		if self.requestCount == 0 then
+			self.hasRequested = false
 		end
 	end
 
 	if not GBCR.Database.savedVariables.alts then
 		GBCR.Database.savedVariables.alts = {}
 	end
-	GBCR.Database.savedVariables.alts[incomingAltName].version = incomingVersion
-	GBCR.Database.savedVariables.alts[incomingAltName].money = incomingMoney
-	GBCR.Database.savedVariables.alts[incomingAltName].ledger = incomingLedger
-	GBCR.Database.savedVariables.alts[incomingAltName].items = incomingItems
-	GBCR.Database.savedVariables.alts[incomingAltName].requests = incomingRequests
+
+	if not GBCR.Database.savedVariables.alts[incomingAltName] then
+        GBCR.Database.savedVariables.alts[incomingAltName] = {}
+    end
+
+	local altData = GBCR.Database.savedVariables.alts[incomingAltName]
+    altData.version = incomingVersion
+    altData.money = incomingMoney
+    altData.ledger = incomingLedger
+    altData.items = incomingItems
+    altData.requests = incomingRequests
+
 	GBCR.Output:Debug("SYNC", "ReceiveData: accepted and saved guild bank alt data for %s", incomingAltName)
 
-    GBCR.UI.Inventory.searchDataBuilt = false
+	GBCR.Search:MarkAltDirty(incomingAltName)
+	GBCR.Donations:BuildDonationCache()
 
 	if incomingItems then
 		self:ReconstructItemLinks(incomingItems)
@@ -1209,7 +1329,7 @@ end
 
 -- Query for guild bank alt to specific target or entire guild since GBCR.Guild:RequestMissingGuildBankAltData() provides no target
 function Protocol:QueryForGuildBankAltData(target, altName)
-	if not GBCR.Guild:IsQueryAllowed() then
+	if not self:IsQueryAllowed() then
 		return
 	end
 
@@ -1219,6 +1339,7 @@ function Protocol:QueryForGuildBankAltData(target, altName)
 			if GBCR.Guild:IsGuildBankAlt(member) and member ~= GBCR.Guild:GetNormalizedPlayer() then
 				if not guildBankAlt then
 					guildBankAlt = member
+
 					break
 				end
 			end
@@ -1230,6 +1351,7 @@ function Protocol:QueryForGuildBankAltData(target, altName)
 				if guildMember ~= GBCR.Guild:GetNormalizedPlayer() and GBCR.Guild:IsPlayerOnlineMember(guildMember) then
 					if not onlinePeer then
 						onlinePeer = guildMember
+
 						break
 					end
 				end
@@ -1239,17 +1361,17 @@ function Protocol:QueryForGuildBankAltData(target, altName)
 		target = guildBankAlt or onlinePeer
 	end
 
-	GBCR.Output:Debug("SYNC", "Querying %s for %s", target and GBCR.Output:ColorPlayerName(target) or "guild", GBCR.Output:ColorPlayerName(altName))
+	GBCR.Output:Debug("SYNC", "Querying %s for %s", target and GBCR.Guild:ColorPlayerName(target) or "guild", GBCR.Guild:ColorPlayerName(altName))
 	local payload = { name = altName, requester = GBCR.Guild:GetNormalizedPlayer() }
-	local data = GBCR.Core:SerializePayload(payload)
-	if target and GBCR.Core:SendWhisper("gbc-data-query", data, target, "NORMAL") then
+	local data = serializePayload(Protocol, payload)
+	if target and sendWhisper(Protocol, "gbc-data-query", data, target, "NORMAL") then
 		self:MarkPendingSync("alt", target, altName)
 
 		return
 	end
 
 	-- Fallback: broadcast to the guild
-	GBCR.Core:SendCommMessage("gbc-data-query", data, "GUILD", nil, "NORMAL")
+	sendCommMessage(Protocol, "gbc-data-query", data, "GUILD", nil, "NORMAL")
 	self:MarkPendingSync("alt", "guild", altName)
 end
 
@@ -1270,13 +1392,13 @@ function Protocol:SendRoster(target)
 	end
 
 	local payload = { roster = GBCR.Database.savedVariables.roster }
-	local data = GBCR.Core:SerializePayload(payload)
-	if target and GBCR.Core:SendWhisper("gbc-roster-share", data, target, "BULK") then
+	local data = serializePayload(Protocol, payload)
+	if target and sendWhisper(Protocol, "gbc-roster-share", data, target, "BULK") then
 		return
 	end
 
 	-- Fallback: broadcast to the guild
-	GBCR.Core:SendCommMessage("gbc-roster-share", data, "Guild", nil, "BULK")
+	sendCommMessage(Protocol, "gbc-roster-share", data, "Guild", nil, "BULK")
 end
 
 -- Create and send latest version of the roster after enabling a new guild bank alt or /bank roster
@@ -1294,10 +1416,10 @@ function Protocol:AuthorRosterData()
 			local characterNames = {}
 			for i = 1, #rosterGuildBankAlts do
 				local guildBankAltName = rosterGuildBankAlts[i]
-				table.insert(characterNames, guildBankAltName)
+				table_insert(characterNames, guildBankAltName)
 			end
 			if #characterNames > 0 then
-				GBCR.Output:Response("Sent updated roster containing the follow banks: " .. table.concat(characterNames, ", ") .. ".")
+				GBCR.Output:Response("Sent updated roster containing the follow banks: " .. table_concat(characterNames, ", ") .. ".")
 			else
 				GBCR.Output:Response("Sent empty roster.")
 			end
@@ -1315,24 +1437,24 @@ end
 
 -- Query for roster data
 function Protocol:QueryForRosterData(target, incomingRosterVersion)
-	if not Protocol:IsQueryAllowed() then
+	if not self:IsQueryAllowed() then
 		return
 	end
 
 	self:MarkPendingSync("roster", target)
 
-	GBCR.Output:Debug("SYNC", "Querying %s for roster (incomingRosterVersion=%d)", GBCR.Output:ColorPlayerName(target), incomingRosterVersion)
+	GBCR.Output:Debug("SYNC", "Querying %s for roster (incomingRosterVersion=%d)", GBCR.Guild:ColorPlayerName(target), incomingRosterVersion)
 
 	local payload = { version = incomingRosterVersion }
-	local data = GBCR.Core:SerializePayload(payload)
-	if target and GBCR.Core:SendWhisper("gbc-roster-query", data, target, "NORMAL") then
+	local data = serializePayload(Protocol, payload)
+	if target and sendWhisper(Protocol, "gbc-roster-query", data, target, "NORMAL") then
 		self:MarkPendingSync("roster", target)
 
 		return
 	end
 
 	-- Fallback: broadcast to the guild
-	GBCR.Core:SendCommMessage("gbc-roster-query", data, "Guild", nil, "NORMAL")
+	sendCommMessage(Protocol, "gbc-roster-query", data, "Guild", nil, "NORMAL")
 	self:MarkPendingSync("roster", "guild")
 end
 
@@ -1354,8 +1476,8 @@ function Protocol:Hello(type)
 
     local currentPlayer = GBCR.Guild:GetNormalizedPlayer()
     local playerClass = GBCR.Guild:GetGuildMemberInfo(currentPlayer)
-    local _, _, _, classColor = GetClassColor(playerClass)
-    local helloParts = { "Hi! ", GBCR.Globals:Colorize(classColor, currentPlayer), " is using version ", GBCR.Globals:Colorize(colorGold, GBCR.Core.addonVersionNumber), "." }
+    local classColor = select(4, GetClassColor(playerClass))
+    local helloParts = { "Hi! ", Globals:Colorize(classColor, currentPlayer), " is using version ", Globals:Colorize(colorGold, GBCR.Core.addonVersionNumber), "." }
     local rosterCount = Globals:Count(currentData.roster)
     local altsCount = Globals:Count(currentData.alts)
 
@@ -1363,38 +1485,38 @@ function Protocol:Hello(type)
         local rosterList = {}
         if currentData.roster.alts then
             for _, v in pairs(currentData.roster.alts) do
-                table.insert(rosterList, v)
+                table_insert(rosterList, v)
             end
         end
-        local rosterAlts = #rosterList > 0 and " (" .. table.concat(rosterList, ", ") .. ")" or ""
+        local rosterAlts = #rosterList > 0 and " (" .. table_concat(rosterList, ", ") .. ")" or ""
 
         local guildBankList = {}
         for k, v in pairs(currentData.alts) do
             if v and v.items and Globals:Count(v.items) > 0 then
-                table.insert(guildBankList, k)
+                table_insert(guildBankList, k)
             end
         end
-        local guildBankAlts = #guildBankList > 0 and " (" .. table.concat(guildBankList, ", ") .. ")" or ""
+        local guildBankAlts = #guildBankList > 0 and " (" .. table_concat(guildBankList, ", ") .. ")" or ""
 
         local pluralRosterAlts = (rosterList ~= 1 and "s" or "")
         local pluralGuildBankAlts = (guildBankList ~= 1 and "s" or "")
         if currentData.roster.alts then
-            table.insert(helloParts, "\n")
-            table.insert(helloParts, "I know about " .. GBCR.Globals:Colorize(colorGold, #rosterList) .. " guild bank alt" .. pluralRosterAlts .. rosterAlts .. " on the roster.")
-            table.insert(helloParts, "\n")
-            table.insert(helloParts, "I have guild bank data from " .. GBCR.Globals:Colorize(colorGold, #guildBankList) .. " alt" .. pluralGuildBankAlts .. guildBankAlts .. ".")
+            table_insert(helloParts, "\n")
+            table_insert(helloParts, "I know about " .. Globals:Colorize(colorGold, #rosterList) .. " guild bank alt" .. pluralRosterAlts .. rosterAlts .. " on the roster.")
+            table_insert(helloParts, "\n")
+            table_insert(helloParts, "I have guild bank data from " .. Globals:Colorize(colorGold, #guildBankList) .. " alt" .. pluralGuildBankAlts .. guildBankAlts .. ".")
         end
     else
-        table.insert(helloParts, " I know about " .. GBCR.Globals:Colorize(colorGold, 0) .. " guild bank alts on the roster, and have guild bank data from " .. GBCR.Globals:Colorize(colorGold, 0) .. " alts.")
+        table_insert(helloParts, " I know about " .. Globals:Colorize(colorGold, 0) .. " guild bank alts on the roster, and have guild bank data from " .. Globals:Colorize(colorGold, 0) .. " alts.")
     end
 
-    local hello = table.concat(helloParts)
-    local data = GBCR.Core:SerializePayload(hello)
+    local hello = table_concat(helloParts)
+    local data = serializePayload(Protocol, hello)
     if type ~= "reply" then
         GBCR.Output:Info(hello)
-        GBCR.Core:SendCommMessage("gbc-h", data, "Guild", nil, "BULK")
+        sendCommMessage(Protocol, "gbc-h", data, "Guild", nil, "BULK")
     else
-        GBCR.Core:SendCommMessage("gbc-hr", data, "Guild", nil, "BULK")
+        sendCommMessage(Protocol, "gbc-hr", data, "Guild", nil, "BULK")
     end
 end
 
@@ -1407,14 +1529,14 @@ end
 
 --- SEND:
 
--- /bank share + after Bank:Scan() + Events:OnShareTimer() every 3 minutes (TIMER_INTERVALS.VERSION_BROADCAST) + once every 30 seconds if UI inventory is empty
+-- /bank share + after Bank:Scan() + Events:OnShareTimer() every 3 minutes (TIMER_INTERVALS.FINGERPRINT_BROADCAST) + once every 30 seconds if UI inventory is empty
 function Protocol:Share(type)
-    local guildName = GBCR.Guild:GetGuildName()
+    local guildName = GBCR.Guild:GetGuildInfo()
 	if not guildName then
 		return
 	end
 
-	if GBCR.Database.savedVariables and GBCR.Database.savedVariables.name == guildName then
+	if GBCR.Database.savedVariables and GBCR.Database.savedVariables.guildName == guildName then
 		local normPlayer = GBCR.Guild:GetNormalizedPlayer()
 		local share = "I'm sharing my bank data. Share yours please."
 
@@ -1434,11 +1556,11 @@ function Protocol:Share(type)
 		-- 	version timestamp
 		self:SendFingerprint()
 
-		local data = GBCR.Core:SerializePayload(share)
+		local data = serializePayload(Protocol, share)
 		if type ~= "reply" then
-			GBCR.Core:SendCommMessage("gbc-s", data, "Guild", nil, "NORMAL")
+			sendCommMessage(Protocol, "gbc-s", data, "Guild", nil, "NORMAL")
 		else
-			GBCR.Core:SendCommMessage("gbc-sr", data, "Guild", nil, "NORMAL")
+			sendCommMessage(Protocol, "gbc-sr", data, "Guild", nil, "NORMAL")
 		end
 	end
 end
@@ -1454,19 +1576,19 @@ end
 
 -- Wipe every online members' data: /bank wipeall (only by officers)
 function Protocol:Wipe(type)
-    local guild = GBCR.Guild:GetGuildName()
-	if not guild and not GBCR.Guild.canWeEditOfficerNote then
+    local guildName = GBCR.Guild:GetGuildInfo()
+	if not guildName and not GBCR.Guild.canWeEditOfficerNote then
 		return
 	end
 
-    local wipe = "I wiped all addon data from " .. guild .. "."
-    GBCR.Guild:Reset(guild)
+    local wipe = "I wiped all addon data from " .. guildName .. "."
+    GBCR.Guild:ResetGuild()
 
-	local data = GBCR.Core:SerializePayload(wipe)
+	local data = serializePayload(Protocol, wipe)
     if type ~= "reply" then
-        GBCR.Core:SendCommMessage("gbc-w", data, "Guild", nil, "BULK")
+        sendCommMessage(Protocol, "gbc-w", data, "Guild", nil, "BULK")
     else
-        GBCR.Core:SendCommMessage("gbc-wr", data, "Guild", nil, "BULK")
+        sendCommMessage(Protocol, "gbc-wr", data, "Guild", nil, "BULK")
     end
 end
 
@@ -1522,7 +1644,7 @@ function Protocol:ConsumePendingSync(syncType, sender, name)
 	if syncType == "roster" then
 		local roster = self.pendingSync.roster
 		local versionTimestamp = roster and roster[normSender]
-		if versionTimestamp and now - versionTimestamp <= Constants.TIMER_INTERVALS.VERSION_BROADCAST then
+		if versionTimestamp and now - versionTimestamp <= Constants.TIMER_INTERVALS.FINGERPRINT_BROADCAST then
 			roster[normSender] = nil
 
 			return true
@@ -1538,7 +1660,7 @@ function Protocol:ConsumePendingSync(syncType, sender, name)
 		local normName = GBCR.Guild:NormalizeName(name) or name
 		local alts = self.pendingSync.alts and self.pendingSync.alts[normName]
 		local versionTimestamp = alts and alts[normSender]
-		if versionTimestamp and now - versionTimestamp <= Constants.TIMER_INTERVALS.VERSION_BROADCAST then
+		if versionTimestamp and now - versionTimestamp <= Constants.TIMER_INTERVALS.FINGERPRINT_BROADCAST then
 			alts[normSender] = nil
 			if next(alts) == nil then
 				self.pendingSync.alts[normName] = nil
@@ -1561,18 +1683,22 @@ end
 --- === ITEM RECNSTRUCTION ===
 
 local function createTemporaryItemLink(encoded)
-    if not encoded or encoded == "" then return nil end
+    if not encoded or encoded == "" then
+		return nil
+	end
 
-    local fields = GBCR.Inventory:SplitItemString(encoded)
+    local itemId, enchant, suffix = encoded:match("([^:]+):?([^:]*):?([^:]*)")
 
-    local itemId = fields[1]
-    if not itemId then return nil end
+    if not itemId then
+		return nil
+	end
 
-    local enchant = fields[2] or "0"
-    local suffix = fields[3] or "0"
+	-- Default to "0" if the match found nothing
+    enchant = (enchant and enchant ~= "") and enchant or "0"
+    suffix = (suffix and suffix ~= "") and suffix or "0"
 
-    local itemString = string.format("item:%d:%s:0:0:0:0:%s:0:0:0:0:0:0", itemId, enchant, suffix)
-    local temporaryLink = string.format(GBCR.Globals:Colorize(colorWhite, "|H%s|h[item:%d]|h"), itemString, itemId)
+    local itemString = string_format("item:%d:%s:0:0:0:0:%s:0:0:0:0:0:0", itemId, enchant, suffix)
+    local temporaryLink = string_format(Globals:Colorize(colorWhite, "|H%s|h[item:%d]|h"), itemString, itemId)
 
     return temporaryLink
 end
@@ -1588,7 +1714,7 @@ function Protocol:ProcessItemQueue()
 	local processCount = math.min(Constants.LIMITS.BATCH_SIZE, #self.itemReconstructQueue)
 
 	for i = 1, processCount do
-		local item = table.remove(self.itemReconstructQueue, 1)
+		local item = table_remove(self.itemReconstructQueue, 1)
 		if item and item.itemId and not item.itemLink then
 			local itemLink = select(2, GetItemInfo(item.itemId))
 			if itemLink and not item.itemString then
@@ -1631,7 +1757,7 @@ function Protocol:ProcessItemQueue()
 						self.pendingAsyncLoads = self.pendingAsyncLoads - 1
 					end
 				else
-					table.insert(self.itemReconstructQueue, item)
+					table_insert(self.itemReconstructQueue, item)
 				end
 			end
 		end
@@ -1673,7 +1799,7 @@ function Protocol:ReconstructItemLinks(items)
 	-- Items already in cache will load synchronously and won't need async
 	for _, item in ipairs(items) do
 		if item and item.itemId and not item.itemLink then
-			table.insert(self.itemReconstructQueue, item)
+			table_insert(self.itemReconstructQueue, item)
 		end
 	end
 
@@ -1728,7 +1854,7 @@ function Protocol:TrackSenderMetadata(sender, incomingAddonVersionNumber, incomi
         if incomingRosterVersionTimestamp then
             self.guildMembersFingerprintData[sender].rosterVersionTimestamp = incomingRosterVersionTimestamp
         end
-		GBCR.Output:Debug("ROSTER", "Tracking member %s with addon version %s (isGuildBankAlt=%s, rosterVersionTimestamp=%s)", GBCR.Output:ColorPlayerName(sender), tostring(incomingAddonVersionNumber), tostring(incomingIsGuildBankAlt), tostring(incomingRosterVersionTimestamp))
+		GBCR.Output:Debug("ROSTER", "Tracking member %s with addon version %s (isGuildBankAlt=%s, rosterVersionTimestamp=%s)", GBCR.Guild:ColorPlayerName(sender), tostring(incomingAddonVersionNumber), tostring(incomingIsGuildBankAlt), tostring(incomingRosterVersionTimestamp))
 
 		-- Addon version check
 		if incomingAddonVersionNumber > GBCR.Core.addonVersionNumber then
@@ -1741,3 +1867,18 @@ function Protocol:TrackSenderMetadata(sender, incomingAddonVersionNumber, incomi
 		end
     end
 end
+
+
+function Protocol:IsQueryAllowed()
+	if GBCR.Guild:GetOnlineMembersCount() <= 1 then
+		return false
+	end
+
+    self.hasRequested = true
+    self.requestCount = (self.requestCount or 0) + 1
+
+	return true
+end
+
+-- Export functions for other modules
+Protocol.Init = init

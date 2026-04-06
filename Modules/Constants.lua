@@ -5,22 +5,39 @@ local Constants = GBCR.Constants
 
 local Globals = GBCR.Globals
 local gsub = Globals.gsub
+local ipairs = Globals.ipairs
+local pairs = Globals.pairs
+local string_format = Globals.string_format
+local string_gsub = Globals.string_gsub
+local tostring = Globals.tostring
+
 local Enum = Globals.Enum
+local lootItemPushedSelf = Globals.LOOT_ITEM_PUSHED_SELF
+local lootItemPushedSelfMultiple = Globals.LOOT_ITEM_PUSHED_SELF_MULTIPLE
+local lootItemSelf = Globals.LOOT_ITEM_SELF
+local lootItemSelfMultiple = Globals.LOOT_ITEM_SELF_MULTIPLE
 
 -- Limits
 Constants.LIMITS = {
+	COMPRESSION_LEVEL = 6,			-- LibDeflate compression level (same payload size for data and fingerprint when using 6-9)
 	MAX_PENDING_SENDS = 3, 			-- TODO
+	SEARCH_RESULTS = 100,			-- Maximum amount of search results before the user is prompted to refine their search
 	MAX_CONCURRENT_ASYNC = 3, 		-- Limit concurrent async operations for item link reconstruction
-	BATCH_SIZE = 10, 				-- Limit the batch size for item link reconstruction
-	MAX_BUFFER_SIZE = 4096			-- Maximum amount of messages for the debug chat tab
+	BATCH_SIZE = 100, 				-- Limit the batch size for item link reconstruction and UI rendering
+	MAX_BUFFER_SIZE = 4096			-- Maximum amount of messages for the /chat debuglog
 }
 
 -- Timer intervals (in seconds)
 Constants.TIMER_INTERVALS = {
-	VERSION_BROADCAST = 180,        -- 3 minutes: lightweight fingerprint broadcast
-	ALT_DATA_QUEUE_RETRY = 5,       -- 5 seconds: queue reprocessing delay
-	TOOLTIP_THROTTLE_MS = 50,		-- 50ms between tooltip updates
-	BATCH_DELAY = 0.25, 			-- Delay between batches of item link reconstruction (slower = smoother)
+	FINGERPRINT_BROADCAST = 180,    -- 3 minutes: lightweight fingerprint broadcast
+	DEBUG_LOG_REFRESH = 2.5,		-- Runs 2.5s after the first event (fixed delay)
+	UI_REFRESH = 2.5,				-- Runs 2.5s after the first event (fixed delay)
+	BUILD_DONATION_CACHE = 2.5,		-- Runs 2.5s after the last event (trailing debouce, stays quiet until activity is done)
+	REBUILD_ROSTER = 10,			-- Runs 10s after the last event (trailing debouce, stays quiet until activity is done)
+	BAG_UPDATE_QUIET_TIME = 5,      -- 5 seconds: scan the updated inventory after 5 seconds without BAG_UPDATE_DELAYED events
+	TOOLTIP_THROTTLE_MS = 50,		-- 50ms: time between tooltip updates when hovering items in our UI
+	BATCH_DELAY = 0.5, 				-- 1/2 second: delay between batches of item link reconstruction (slower = smoother)
+	SEARCH_DEBOUNCE = 0.3,			-- Wait until the user stops typing for ~0.3 seconds before firing the expensive search
 }
 
 -- One place to define and maintain non-class specific colors
@@ -36,10 +53,17 @@ Constants.COLORS = {
 }
 
 -- Commands are displayed in help in the order they appear here
-Constants.COMMAND_REGISTRY = {
+local commandRegistry = {
 	-- Command registry: name, usage, help (nil to hide from help output), expert, handler
 
 	-- Basic commands
+	{
+		name = "config",
+		help = "open the AddOn configuration options",
+		handler = function()
+			GBCR.Options:Open()
+		end,
+	},
 	{
 		name = "help",
 		help = "this message",
@@ -48,10 +72,18 @@ Constants.COMMAND_REGISTRY = {
 		end,
 	},
 	{
-		name = "version",
-		help = "display the GBankClassic - Revived version",
+		name = "reset",
+		help = "reset your own " .. addonName .. " database",
 		handler = function()
-			GBCR.Output:Response("You are using GBankClassic - Revived, version: %s.", GBCR.Globals:Colorize(Constants.COLORS.GOLD, GBCR.Core.addonVersion))
+			GBCR.Guild:ResetGuild()
+		end,
+	},
+	{
+		name = "restoreui",
+		help = "restore the user interface window size and position back to the default",
+		expert = true,
+		handler = function()
+			GBCR.UI:RestoreUI()
 		end,
 	},
 	{
@@ -63,7 +95,7 @@ Constants.COMMAND_REGISTRY = {
 	},
 	{
 		name = "share",
-		help = "manually share the contents of your guild bank with other online users of GBankClassic - Revived; this is done every 3 minutes automatically",
+		help = "manually share the contents of your guild bank with other online users of " .. addonName .. "; this is done every 3 minutes automatically",
 		handler = function()
 			GBCR.Inventory:OnUpdateStart()
 			GBCR.Inventory:OnUpdateStop()
@@ -71,23 +103,10 @@ Constants.COMMAND_REGISTRY = {
 		end,
 	},
 	{
-		name = "reset",
-		help = "reset your own GBankClassic - Revived database",
+		name = "version",
+		help = "display the " .. addonName .. " version",
 		handler = function()
-			local guild = GBCR.Guild:GetGuildName()
-			if not guild then
-				return
-			end
-
-			GBCR.Guild:Reset(guild)
-		end,
-	},
-	{
-		name = "restoreui",
-		help = "restore the user interface window size and position back to the default",
-		expert = true,
-		handler = function()
-			GBCR.Chat:RestoreUI()
+			GBCR.Output:Response("You are using " .. addonName .. ", version: %s.", Globals:Colorize(Constants.COLORS.GOLD, GBCR.Core.addonVersion))
 		end,
 	},
 
@@ -106,9 +125,10 @@ Constants.COMMAND_REGISTRY = {
 			else
 				local queueMultipleAltCount = Globals:Count(GBCR.Protocol.debounceQueues.multipleAlts or {})
 				local queueSingularAltCount = Globals:Count(GBCR.Protocol.debounceQueues.singularAlt or {})
-				GBCR.Output:Response("Debounce status: %s.", GBCR.Globals:Colorize(Constants.COLORS.GOLD, GBCR.Protocol.debounceConfig.enabled and "enabled" or "disabled"))
-				GBCR.Output:Response("Queued protocol messages with singular guild bank alt: %d.", GBCR.Globals:Colorize(Constants.COLORS.GOLD, queueSingularAltCount))
-				GBCR.Output:Response("Queued protocol messages with multiple guild bank alts: %d.", GBCR.Globals:Colorize(Constants.COLORS.GOLD, queueMultipleAltCount))
+
+				GBCR.Output:Response("Debounce status: %s.", Globals:Colorize(Constants.COLORS.GOLD, GBCR.Protocol.debounceConfig.enabled and "enabled" or "disabled"))
+				GBCR.Output:Response("Queued protocol messages with singular guild bank alt: %d.", Globals:Colorize(Constants.COLORS.GOLD, queueSingularAltCount))
+				GBCR.Output:Response("Queued protocol messages with multiple guild bank alts: %d.", Globals:Colorize(Constants.COLORS.GOLD, queueMultipleAltCount))
 
 				if arg1 == "detail" then
 					if queueMultipleAltCount > 0 then
@@ -128,14 +148,19 @@ Constants.COMMAND_REGISTRY = {
 		end,
 	},
 	{
-		name = "debugtab",
-		help = "create a dedicated chat tab for debug output",
+		name = "debugclear",
+		help = "clear the debug output",
 		expert = true,
 		handler = function()
-			if GBCR.Output:CreateDebugTab() then
-				GBCR.Output:Response("Debug output will now appear in chat tab named %s.", GBCR.Globals:Colorize(Constants.COLORS.GOLD, "GBankClassicDebug"))
-				GBCR.Output:Response("Use %s to enable debug logging.", GBCR.Globals:Colorize(Constants.COLORS.GOLD, "/bank debug"))
-			end
+			GBCR.UI:ClearDebugContent()
+		end,
+	},
+	{
+		name = "debuglog",
+		help = "create a dedicated window for debug output",
+		expert = true,
+		handler = function()
+			GBCR.UI.Debug:Toggle()
 		end,
 	},
 	{
@@ -164,15 +189,15 @@ Constants.COMMAND_REGISTRY = {
 	},
 	{
 		name = "wipe",
-		help = "reset your own GBankClassic - Revived database",
+		help = "reset your own " .. addonName .. " database",
 		expert = true,
 		handler = function()
-			GBCR.Guild:WipeMine()
+			GBCR.Guild:ResetGuild()
 		end,
 	},
 	{
 		name = "wipeall",
-		help = "officer only: reset your own GBankClassic - Revived database and that of all online guild members",
+		help = "officer only: reset your own " .. addonName .. " database and that of all online guild members",
 		expert = true,
 		handler = function()
 			GBCR.Protocol:Wipe()
@@ -181,15 +206,30 @@ Constants.COMMAND_REGISTRY = {
 
 	-- Hidden commands (no help text)
 	{
+		name = "conf", -- alternative to `/bank config`
+		help = "open the AddOn configuration options",
+		handler = function()
+			GBCR.Options:Open()
+		end,
+	},
+	{
+		name = "options", -- alternative to `/bank config`
+		help = "open the AddOn configuration options",
+		handler = function()
+			GBCR.Options:Open()
+		end,
+	},
+	{
 		name = "debug",
 		handler = function()
 			if GBCR.Options:IsDebugEnabled() then
-				local restoreLevel = Constants.preDebugLogLevel or Constants.LOG_LEVEL.INFO
+				local restoreLevel = Constants.preDebugLogLevel and Constants.preDebugLogLevel or Constants.LOG_LEVEL.INFO.level
+
 				Constants.preDebugLogLevel = nil
-				GBCR.Options:SetLogLevel(restoreLevel.level)
+				GBCR.Options:SetLogLevel(restoreLevel)
 				GBCR.Output:Response("Debug: off.")
+				GBCR.UI.Debug:Close()
 			else
-				-- Save current level before entering debug mode
 				Constants.preDebugLogLevel = GBCR.Options:GetLogLevel()
 				GBCR.Options:SetLogLevel(Constants.LOG_LEVEL.DEBUG.level)
 				GBCR.Output:Response("Debug: on.")
@@ -197,8 +237,9 @@ Constants.COMMAND_REGISTRY = {
 		end,
 	},
 }
+Constants.COMMAND_REGISTRY = commandRegistry
 Constants.COMMAND_HANDLERS = {}
-for _, cmd in ipairs(Constants.COMMAND_REGISTRY) do
+for _, cmd in ipairs(commandRegistry) do
 	Constants.COMMAND_HANDLERS[cmd.name] = cmd.handler
 end
 
@@ -206,22 +247,22 @@ end
 Constants.HELP_INSTRUCTIONS = {
 	{
 		title = "Instructions for setting up a new guild bank:",
-		text = string.format([[
+		text = string_format([[
 1. Log in with the guild bank character, ensuring they are in the guild.
 2. Add %s to their guild or officer note, then type %s.
 3. In addon options (Escape -> Options -> Addons -> GBankClassic), click on the %s icon (expand/collapse) to the left of the entry, enable reporting and scanning for the bank character in the %s section.
 4. Open and close your bank and mailbox.
 5. Type %s and confirm your bank character is included in the roster.
 6. Type %s. Wait up to 3 minutes (or type %s for immediate sharing) until %s completes.
-7. Verify with a guild member (they type %s).]], GBCR.Globals:Colorize(Constants.COLORS.GOLD, "gbank"), GBCR.Globals:Colorize(Constants.COLORS.GOLD, "/reload"), GBCR.Globals:Colorize(Constants.COLORS.GOLD, "-"), GBCR.Globals:Colorize(Constants.COLORS.GOLD, "Bank"), GBCR.Globals:Colorize(Constants.COLORS.GOLD, "/bank roster"), GBCR.Globals:Colorize(Constants.COLORS.GOLD, "/reload"), GBCR.Globals:Colorize(Constants.COLORS.GOLD, "/bank share"), GBCR.Globals:Colorize(Constants.COLORS.GOLD, "Finished sending your latest data"), GBCR.Globals:Colorize(Constants.COLORS.GOLD, "/bank")),
+7. Verify with a guild member (they type %s).]], Globals:Colorize(Constants.COLORS.GOLD, "gbank"), Globals:Colorize(Constants.COLORS.GOLD, "/reload"), Globals:Colorize(Constants.COLORS.GOLD, "-"), Globals:Colorize(Constants.COLORS.GOLD, "Bank"), Globals:Colorize(Constants.COLORS.GOLD, "/bank roster"), Globals:Colorize(Constants.COLORS.GOLD, "/reload"), Globals:Colorize(Constants.COLORS.GOLD, "/bank share"), Globals:Colorize(Constants.COLORS.GOLD, "Finished sending your latest data"), Globals:Colorize(Constants.COLORS.GOLD, "/bank")),
 	},
 	{
 		title = "Instructions for removing a guild bank:",
-		text = string.format([[
+		text = string_format([[
 1. Log in with an officer or another bank character in the same guild (or a character from a different guild).
 2. If the bank character is still in the guild, remove %s from their notes.
 3. Type %s and confirm the bank character is no longer listed.
-4. Verify with a guild member (they type %s).]], GBCR.Globals:Colorize(Constants.COLORS.GOLD, "gbank"), GBCR.Globals:Colorize(Constants.COLORS.GOLD, "/bank roster"), GBCR.Globals:Colorize(Constants.COLORS.GOLD, "/bank")),
+4. Verify with a guild member (they type %s).]], Globals:Colorize(Constants.COLORS.GOLD, "gbank"), Globals:Colorize(Constants.COLORS.GOLD, "/bank roster"), Globals:Colorize(Constants.COLORS.GOLD, "/bank")),
 	},
 }
 
@@ -256,7 +297,7 @@ Constants.DEBUG_CATEGORY = {
 	COMMS = "COMMS",             -- All addon communication traffic
 	SYNC = "SYNC",               -- Data synchronization operations
 	CHUNK = "CHUNK",             -- Data synchronization operations specific to chunk sending
-	DONATION = "DONATION",		 -- Donation ledger operations
+	DONATIONS = "DONATIONS",		 -- Donation ledger operations
 	WHISPER = "WHISPER",         -- Whisper sends, skips, and online checks
 	-- REQUESTS = "REQUESTS",    -- Request system activity and updates
 	UI = "UI",                   -- UI operations, window opens/closes
@@ -269,11 +310,11 @@ Constants.DEBUG_CATEGORY = {
 	-- FULFILL = "FULFILL",		 -- Request fullfillment by guild bank alts
 	SEARCH = "SEARCH",			 -- Search operations
 	-- QUERIES = "QUERIES",         -- Peer query/response decisions and hash matching
-	REPLIES = "REPLIES" 		 -- Debug output from /bank hello replies and /bank wipeall replies
+	-- REPLIES = "REPLIES" 		 -- Debug output from /bank hello replies and /bank wipeall replies
 }
 
 -- Log levels (lower = more verbose)
-Constants.LOG_LEVEL = {
+local logLevels = {
 	DEBUG = {
 		level = 1,		-- Development/troubleshooting details
 		description = "Debug (show everything)",
@@ -295,10 +336,17 @@ Constants.LOG_LEVEL = {
 		description = "Quiet (only respond to /bank commands)"
 	}
 }
+Constants.LOG_LEVEL = logLevels
 Constants.LOG_LEVEL_BY_VALUE = {}
-for _, info in pairs(Constants.LOG_LEVEL) do
+for _, info in pairs(logLevels) do
     Constants.LOG_LEVEL_BY_VALUE[info.level] = info
 end
+
+-- Loot
+Constants.PATTERN_LOOT_MULTIPLE = string_gsub(string_gsub(lootItemSelfMultiple, "%%s", "(.+)"), "%%d", "(%%d+)")
+Constants.PATTERN_LOOT_PUSHED_MULTIPLE = string_gsub(string_gsub(lootItemPushedSelfMultiple, "%%s", "(.+)"), "%%d", "(%%d+)")
+Constants.PATTERN_LOOT_PUSHED_SINGLE = string_gsub(lootItemPushedSelf, "%%s", "(.+)")
+Constants.PATTERN_LOOT_SINGLE = string_gsub(lootItemSelf, "%%s", "(.+)")
 
 -- Detect if mail is from the Auction House
 Constants.AH_MAIL_SUBJECT_PATTERNS = {
@@ -316,7 +364,15 @@ Constants.ITEM_CLASSES_NEEDING_LINK = {
 }
 
 -- Sorting
-Constants.SORT_MODES = {
+Constants.SORT_LIST = {
+	["default"] = "Default (rarity/type)",
+	["alpha"]   = "Alphabetical",
+	["type"]    = "By type (class/slot)",
+	["rarity"]  = "By rarity",
+	["level"]   = "By item level"
+}
+Constants.SORT_ORDER = { "default", "alpha", "type", "rarity", "level" }
+local sortModes = {
 	-- Possible property values:
 	-- 	name: The name of the item.
 	-- 	rarity: The quality of the item. The value is 0 to 7, which represents Poor to Heirloom.
@@ -364,7 +420,93 @@ Constants.SORT_MODES = {
 		{ property = "name", fallback = "" },
 	},
 }
-Constants.COMPARATORS = {}
-for mode, rules in pairs(Constants.SORT_MODES) do
-    Constants.COMPARATORS[mode] = Globals:CreateSortHandler(rules)
+Constants.SORT_MODES = sortModes
+Constants.SORT_COMPARATORS = {}
+for mode, rules in pairs(sortModes) do
+    Constants.SORT_COMPARATORS[mode] = Globals:CreateSortHandler(rules)
 end
+
+-- Filtering
+Constants.FILTER = {
+	CLASS_MAP = {
+		armor = 4, weapon = 2, consumable = 0, trade = 7, container = 1, recipe = 9, quest = 12
+	},
+	MISC_CLASSES = {
+		[15]=true, [5]=true, [10]=true, [13]=true, [14]=true, [3]=true, [8]=true, [11]=true, [6]=true
+	},
+	TYPE_LIST = {
+        ["any"]       = "All types",
+        ["armor"]     = "Armor",
+        ["weapon"]    = "Weapons",
+        ["consumable"]= "Consumables",
+        ["trade"]     = "Trade goods",
+        ["container"] = "Container",
+        ["recipe"]    = "Recipe",
+        ["quest"]     = "Quest items",
+        ["misc"]      = "Everything else"
+    },
+	TYPE_ORDER = { "any", "armor", "weapon", "consumable", "trade", "container", "recipe", "quest", "misc" },
+	SLOT_LIST = {
+        ["any"]       = "All slots",
+        ["head"]      = "Head",
+        ["neck"]      = "Neck",
+        ["shoulder"]  = "Shoulder",
+        ["back"]      = "Back",
+        ["chest"]     = "Chest",
+        ["shirt"]     = "Shirt",
+        ["tabard"]    = "Tabard",
+        ["wrist"]     = "Wrist",
+        ["hands"]     = "Hands",
+        ["waist"]     = "Waist",
+        ["legs"]      = "Legs",
+        ["feet"]      = "Feet",
+        ["finger"]    = "Finger",
+        ["trinket"]   = "Trinket",
+        ["onehand"]   = "One-hand",
+        ["shield"]    = "Shield",
+        ["twohand"]   = "Two-hand",
+        ["ranged"]    = "Ranged",
+        ["mainhand"]  = "Main hand",
+        ["offhand"]   = "Off hand",
+        ["holdable"]  = "Held in off-hand",
+        ["bag"]       = "Bag",
+        ["robe"]      = "Robe"
+    },
+	SLOT_ORDER = { "any", "head", "neck", "shoulder", "shirt", "chest", "wrist", "hands", "waist", "legs", "feet", "finger", "trinket", "back", "onehand", "mainhand", "offhand", "twohand", "ranged", "shield", "holdable", "tabard", "bag" },
+	SLOT_MAP = {
+		head 		= 1,
+		neck 		= 2,
+		shoulder 	= 3,
+		shirt 		= 4,
+		chest 		= 5,
+		waist 		= 6,
+		legs 		= 7,
+		feet 		= 8,
+		wrist 		= 9,
+		hands 		= 10,
+		finger 		= 11,
+		trinket 	= 12,
+		onehand 	= 13,
+		shield 		= 14,
+		ranged 		= 26,
+		back 		= 16,
+		twohand 	= 17,
+		bag 		= 18,
+		tabard 		= 19,
+		robe		= 20,
+		mainhand 	= 21,
+		offhand 	= 22,
+		holdable 	= 23
+	},
+	RARITY_LIST = {
+        ["any"]       = "All qualities",
+        ["poor"]      = "Poor (grey)",
+        ["common"]    = "Common (white)",
+        ["uncommon"]  = "Uncommon (green)",
+        ["rare"]      = "Rare (blue)",
+        ["epic"]      = "Epic (purple)",
+        ["legendary"] = "Legendary (orange)"
+    },
+	RARITY_ORDER = { "any", "poor", "common", "uncommon", "rare", "epic", "legendary" },
+	RARITY_MAP = { poor = 0, common = 1, uncommon = 2, rare = 3, epic = 4, legendary = 5 },
+}

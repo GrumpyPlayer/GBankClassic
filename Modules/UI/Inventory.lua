@@ -4,100 +4,257 @@ GBCR.UI.Inventory = {}
 local UI_Inventory = GBCR.UI.Inventory
 
 local Globals = GBCR.Globals
-local date = Globals.date
-local GetCoinTextureString = Globals.GetCoinTextureString
-local IsShiftKeyDown = Globals.IsShiftKeyDown
-local IsControlKeyDown = Globals.IsControlKeyDown
+local math_min = Globals.math_min
+local string_format = Globals.string_format
+local type = Globals.type
+local wipe = Globals.wipe
+
+local After = Globals.After
 local CreateFrame = Globals.CreateFrame
 local GameTooltip = Globals.GameTooltip
 
 local Constants = GBCR.Constants
-local colorYellow = Constants.COLORS.YELLOW
-local colorBlue = Constants.COLORS.BLUE
 local colorGray = Constants.COLORS.GRAY
-local colorOrange = Constants.COLORS.ORANGE
 local colorGreen = Constants.COLORS.GREEN
+local colorOrange = Constants.COLORS.ORANGE
+local colorYellow = Constants.COLORS.YELLOW
 
-function UI_Inventory:Init()
-    self.filterType = "any"
-    self.filterSlot = "any"
-    self.filterRarity = "any"
-    self:DrawWindow()
-end
-
-function UI_Inventory:Toggle()
-    if self.isOpen then
-        self:Close()
-    else
-        self:Open()
-    end
-end
-
-function UI_Inventory:Open()
-	if self.isOpen then
-		return
-	end
-
-    self.isOpen = true
-
-    if not self.Window then
-        self:DrawWindow()
-    end
-    self.Window:Show()
-
-	GBCR.UI:ClampFrameToScreen(self.Window)
-
-    self:DrawContent()
-
-    GBCR.Protocol:PerformSync()
-end
-
-function UI_Inventory:Close()
-	if not self.isOpen or not self.Window then
-		return
-	end
-
-    self:OnClose()
-end
-
-function UI_Inventory:OnClose()
+local function onClose(self)
     self.isOpen = false
+    self.renderGeneration = (self.renderGeneration or 0) + 1
+
     GBCR.UI.Donations:Close()
     GBCR.UI.Search:Close()
-    if self.Window then
-        self.Window:Hide()
+
+    if self.window then
+        self.window:Hide()
     end
 end
 
-function UI_Inventory:DrawWindow()
-    local window = GBCR.Libs.AceGUI:Create("Frame")
+local function drawContent(self)
+    GBCR.Output:Debug("UI", "UI_Inventory:DrawContent called")
+
+    local savedVariables = GBCR.Database.savedVariables
+	local rosterGuildBankAlts = GBCR.Guild:GetRosterGuildBankAlts()
+	if not savedVariables or not rosterGuildBankAlts then
+		onClose(self)
+		GBCR.Protocol:PerformSync()
+		GBCR.Output:Response("Database is empty; wait for sync.")
+
+		return
+	end
+
+    if self.currentTab then
+        if not (savedVariables.alts and savedVariables.alts[self.currentTab]) then
+            self.currentTab = nil
+            self.tabLoaded = false
+        end
+    end
+
+    local tabs = {}
+    local firstTab = nil
+    local firstTabMoney = nil
+    local firstTabVersion = nil
+
+    for i = 1, #rosterGuildBankAlts do
+        local guildBankAltName = rosterGuildBankAlts[i]
+		local alt = savedVariables.alts[guildBankAltName]
+
+        if alt and type(alt) == "table" then
+            if not firstTab then
+                firstTab = guildBankAltName
+                firstTabMoney = alt.money or 0
+                firstTabVersion = alt.version or 0
+            end
+
+            tabs[i] = { value = guildBankAltName, text = guildBankAltName }
+        end
+    end
+
+	if #tabs == 0 then
+		onClose(self)
+		GBCR.Protocol:PerformSync()
+		GBCR.Output:Response("Database is empty; wait for sync.")
+
+		return
+	end
+
+    self.tabGroup:ReleaseChildren()
+    self.tabGroup.localstatus = {}
+    self.tabGroup:SetTabs(tabs)
+    GBCR.UI.UpdatedStatusText(UI_Inventory, self.filteredCount or "", self.totalCount or "", firstTabMoney, firstTabVersion)
+
+    self.tabGroup:SetCallback("OnGroupSelected", function(group)
+        local tab = group.localstatus.selected
+        local aceGUI = GBCR.Libs.AceGUI
+
+        if self.currentTab == tab and self.tabLoaded then
+            return
+        end
+
+        self.currentTab = tab
+        self.tabLoaded = false
+
+        self.renderGeneration = (self.renderGeneration or 0) + 1
+        local currentGeneration = self.renderGeneration
+
+        GBCR.Output:Debug("ITEM", "Loading tab %s", tab)
+
+        self.tabGroup:ReleaseChildren()
+
+        local g = aceGUI:Create("SimpleGroup")
+        g:SetFullWidth(true)
+        g:SetFullHeight(true)
+        g:SetLayout("Flow")
+        self.tabGroup:AddChild(g)
+
+        local alt = savedVariables.alts[tab]
+        local scroll = aceGUI:Create("ScrollFrame")
+        scroll:SetLayout("Flow")
+        scroll:SetFullHeight(true)
+        scroll:SetFullWidth(true)
+        g:AddChild(scroll)
+
+        scroll.callbackProcessed = false
+
+        local items = alt.items
+        GBCR.Output:Debug("ITEM", "Inventory tab %s: using alt.items (%d items)", tab, #items)
+
+        GBCR.UI.UpdatedStatusText(UI_Inventory, "", "", alt.money or 0, alt.version or 0)
+
+        if items and #items > 0 then
+            GBCR.Inventory:GetItems(items, function(list)
+                if scroll.callbackProcessed or self.currentTab ~= tab or self.renderGeneration ~= currentGeneration then
+                    return
+                end
+
+                scroll.callbackProcessed = true
+                scroll:ReleaseChildren()
+
+                local listCount = list and #list or 0
+                GBCR.Output:Debug("ITEM", "Inventory tab %s: GetItems callback received %d items", tab, listCount)
+
+                self.tabLoaded = true
+
+                wipe(self.cachedFilteredList)
+                local filteredCount = 0
+
+                for i = 1, listCount do
+                    local item = list[i]
+                    if GBCR.UI.PassesFilters(self, item) then
+                        filteredCount = filteredCount + 1
+                        self.cachedFilteredList[filteredCount] = item
+                    end
+                end
+                GBCR.Inventory:Sort(self.cachedFilteredList, GBCR.Options:GetSortMode())
+
+                GBCR.UI.UpdatedStatusText(UI_Inventory, filteredCount, listCount, alt.money or 0, alt.version or 0)
+
+                if filteredCount == 0 then
+                    local noResultsLabel = aceGUI:Create("Label")
+                    local isLocal = (GBCR.Guild:GetNormalizedPlayer() == tab)
+
+                    if isLocal and listCount == 0 then
+                        noResultsLabel:SetText(string_format("%s\n\nNo data has been scanned yet, or no items found.\n\nTo populate your guild bank data:\n1. %s of your data via the addon options.\n2. Visit the %s to scan your bank and bags.\n3. Close your bank.\n4. Open and close your %s.\n5. If other guild members are online, %s for the share to complete.\n", Globals:Colorize(colorOrange, "This is you!"), Globals:Colorize(colorGreen, "Enable reporting and scanning"), Globals:Colorize(colorGreen, "bank"), Globals:Colorize(colorGreen, "mailbox"), Globals:Colorize(colorGreen, "wait")))
+                    else
+                        noResultsLabel:SetText(Globals:Colorize(colorGray, "No items match current filters."))
+                    end
+
+                    noResultsLabel:SetFullWidth(true)
+                    scroll:AddChild(noResultsLabel)
+                else
+                    local output = GBCR.Output
+                    local ui = GBCR.UI
+                    local currentIndex = 1
+                    local renderBatchSize = Constants.LIMITS.BATCH_SIZE
+
+                    local function renderBatch()
+                        if self.renderGeneration ~= currentGeneration then
+                            return
+                        end
+
+                        local limit = math_min(currentIndex + renderBatchSize - 1, filteredCount)
+
+                        for i = currentIndex, limit do
+                            local item = self.cachedFilteredList[i]
+                            output:Debug("ITEM", "Inventory tab %s: displaying %s with count %d (itemId: %d)", tab, item.itemInfo.name, item.itemCount or 0, item.itemId)
+
+                            local itemWidget = ui:DrawItem(item, scroll)
+                            if itemWidget then
+                                itemWidget:SetUserData("item", item)
+                                itemWidget:SetCallback("OnEnter", GBCR.UI.OnEnter)
+                                itemWidget:SetCallback("OnLeave", GBCR.UI.OnLeave)
+                                itemWidget:SetCallback("OnClick", GBCR.UI.OnClick)
+
+                                local itemWidgetFrame = itemWidget.frame
+                                itemWidgetFrame:RegisterForDrag("LeftButton")
+                                itemWidgetFrame.dragItemId = item.itemId
+                                itemWidgetFrame:SetScript("OnDragStart", GBCR.UI.OnDragStart)
+                            end
+                        end
+
+                        currentIndex = limit + 1
+                        if currentIndex <= filteredCount then
+                            After(0, renderBatch)
+                        else
+                            scroll:DoLayout()
+                        end
+                    end
+
+                    renderBatch()
+                end
+            end)
+        else
+            scroll:ReleaseChildren()
+            local emptyLabel = aceGUI:Create("Label")
+            emptyLabel:SetText(Globals:Colorize(colorGray, "No items found for this guild bank alt."))
+            emptyLabel:SetFullWidth(true)
+            scroll:AddChild(emptyLabel)
+        end
+    end)
+
+	local currentTab = self.tabGroup.localstatus and self.tabGroup.localstatus.selected
+	if currentTab and savedVariables.alts[currentTab] then
+        if self.currentTab ~= currentTab then
+            self.currentTab = nil
+            self.tabGroup:SelectTab(currentTab)
+        end
+	else
+        self.currentTab = nil
+		self.tabGroup:SelectTab(firstTab)
+	end
+end
+
+local function drawWindow(self)
+    local aceGUI = GBCR.Libs.AceGUI
+    local optionsDB = GBCR.Options:GetOptionsDB()
+
+    local window = aceGUI:Create("Frame")
     window:Hide()
     window:SetCallback("OnClose", function()
-        self:OnClose()
+        onClose(UI_Inventory)
     end)
     window:SetTitle(GBCR.Core.addonHeader)
     window:SetLayout("Flow")
-    local optionsDB = GBCR.Options:GetOptionsDB()
-    window:SetStatusTable(optionsDB.profile.framePositions or optionsDB.default.profile.framePositions)
+    window:SetStatusTable(optionsDB.profile.framePositions.inventory)
     window.frame:SetResizeBounds(500, 500)
     window.frame:EnableKeyboard(true)
     window.frame:SetPropagateKeyboardInput(true)
-    window.frame:SetScript("OnKeyDown", function(self, event)
-        GBCR.UI:EventHandler(self, event)
+    window.frame:SetScript("OnKeyDown", function(widget, event)
+        GBCR.UI:EventHandler(widget, event)
     end)
-    self.Window = window
+    self.window = window
 
-	-- Shrink status bar right edge to make room for the help icon
 	local statusbg = window.statustext:GetParent()
 	statusbg:ClearAllPoints()
 	statusbg:SetPoint("BOTTOMLEFT",  window.frame, "BOTTOMLEFT",  15, 15)
 	statusbg:SetPoint("BOTTOMRIGHT", window.frame, "BOTTOMRIGHT", -163, 15)
 
-	-- Help "?" icon
 	local helpIcon = CreateFrame("Frame", nil, window.frame)
 	helpIcon:SetSize(24, 24)
 	helpIcon:SetPoint("BOTTOMRIGHT", window.frame, "BOTTOMRIGHT", -133, 15)
 	helpIcon:EnableMouse(true)
+
 	local helpText = helpIcon:CreateTexture(nil, "OVERLAY")
 	helpText:SetAllPoints(helpIcon)
 	helpText:SetTexture("Interface\\Common\\help-i")
@@ -106,30 +263,29 @@ function UI_Inventory:DrawWindow()
 		GameTooltip:ClearLines()
 		GameTooltip:AddLine(GBCR.Core.addonHeader)
 		GameTooltip:AddLine(" ")
-		GameTooltip:AddLine(GBCR.Globals:Colorize(colorYellow, "How it works:"), 1, 1, 1, false)
+		GameTooltip:AddLine(Globals:Colorize(colorYellow, "How it works:"), 1, 1, 1, false)
 		GameTooltip:AddLine("Each tab shows one bank character.", 0.9, 0.9, 0.9, true)
 		GameTooltip:AddLine("You only see items from the selected tab.", 0.9, 0.9, 0.9, true)
 		GameTooltip:AddLine(" ")
-		GameTooltip:AddLine(GBCR.Globals:Colorize(colorYellow, "Search items:"), 1, 1, 1, false)
-		GameTooltip:AddLine("Search for items across all bank characters.", 0.9, 0.9, 0.9, true)
+		GameTooltip:AddLine(Globals:Colorize(colorYellow, "Search items:"), 1, 1, 1, false)
+		GameTooltip:AddLine("Displays first " .. Constants.LIMITS.SEARCH_RESULTS .. " matches across all bank characters.", 0.9, 0.9, 0.9, true)
 		GameTooltip:AddLine("Type at least 3 letters.", 0.9, 0.9, 0.9, true)
 		GameTooltip:AddLine("Or drag an item into the search box.", 0.9, 0.9, 0.9, true)
 		GameTooltip:AddLine(" ")
-		GameTooltip:AddLine(GBCR.Globals:Colorize(colorYellow, "Sort and filter:"), 1, 1, 1, false)
+		GameTooltip:AddLine(Globals:Colorize(colorYellow, "Sort and filter:"), 1, 1, 1, false)
 		GameTooltip:AddLine("Use sort and filters to find items faster.", 0.9, 0.9, 0.9, true)
 		GameTooltip:AddLine("Reset filters when done.", 0.9, 0.9, 0.9, true)
 		GameTooltip:AddLine(" ")
-		GameTooltip:AddLine(GBCR.Globals:Colorize(colorYellow, "Donate:"), 1, 1, 1, false)
+		GameTooltip:AddLine(Globals:Colorize(colorYellow, "Donate:"), 1, 1, 1, false)
 		GameTooltip:AddLine("Send items or gold by mail to the character in the tab.", 0.9, 0.9, 0.9, true)
 		GameTooltip:AddLine("View top 30 donors based on total vendor value of items and gold.", 0.9, 0.9, 0.9, true)
 		GameTooltip:Show()
 	end)
 	helpIcon:SetScript("OnLeave", function()
-		GBCR.UI:HideTooltip()
+		GameTooltip:Hide()
 	end)
 
-    -- Button container (3 columns)
-    local buttonContainer = GBCR.Libs.AceGUI:Create("SimpleGroup")
+    local buttonContainer = aceGUI:Create("SimpleGroup")
     buttonContainer:SetLayout("Table")
     buttonContainer:SetUserData("table", {
         columns = {
@@ -142,8 +298,7 @@ function UI_Inventory:DrawWindow()
     buttonContainer:SetFullWidth(true)
     window:AddChild(buttonContainer)
 
-    -- Search button (opens a separate search pane on the left)
-    local searchButton = GBCR.Libs.AceGUI:Create("Button")
+    local searchButton = aceGUI:Create("Button")
     searchButton:SetText("Search")
     searchButton:SetCallback("OnClick", function()
         GBCR.UI.Search:Toggle()
@@ -158,36 +313,27 @@ function UI_Inventory:DrawWindow()
 		GameTooltip:Show()
 	end)
 	searchButton:SetCallback("OnLeave", function()
-		GBCR.UI:HideTooltip()
+		GameTooltip:Hide()
 	end)
     searchButton:SetWidth(160)
     searchButton:SetHeight(24)
     buttonContainer:AddChild(searchButton)
 
-    -- Sort dropdown
-    local sortList = {
-        ["default"] = "Default (rarity/type)",
-        ["alpha"]   = "Alphabetical",
-        ["type"]    = "By type (class/slot)",
-        ["rarity"]  = "By rarity",
-        ["level"]   = "By item level"
-    }
-    local sortOrder = { "default", "alpha", "type", "rarity", "level" }
-    local sortDropdown = GBCR.Libs.AceGUI:Create("Dropdown")
+    local sortDropdown = aceGUI:Create("Dropdown")
     sortDropdown:SetLabel("Sort")
-    sortDropdown:SetList(sortList, sortOrder)
+    sortDropdown:SetList(Constants.SORT_LIST, Constants.SORT_ORDER)
     sortDropdown:SetWidth(160)
     sortDropdown:SetFullWidth(false)
     sortDropdown:SetValue(GBCR.Options:GetSortMode())
     sortDropdown:SetCallback("OnValueChanged", function(_, _, value)
         GBCR.Options:SetSortMode(value)
-        self:RefreshCurrentTab()
+        self.renderGeneration = (self.renderGeneration or 0) + 1
+        GBCR.UI:RefreshCurrentTab()
     end)
-    self.SortDropdown = sortDropdown
+    self.sortDropdown = sortDropdown
     buttonContainer:AddChild(sortDropdown)
 
-    -- Requests button
-	local requestsButton = GBCR.Libs.AceGUI:Create("Button")
+	local requestsButton = aceGUI:Create("Button")
 	requestsButton:SetText("Requests")
     requestsButton:SetDisabled(true)
 	requestsButton:SetCallback("OnEnter", function()
@@ -198,14 +344,13 @@ function UI_Inventory:DrawWindow()
 		GameTooltip:Show()
 	end)
 	requestsButton:SetCallback("OnLeave", function()
-		GBCR.UI:HideTooltip()
+		GameTooltip:Hide()
 	end)
 	requestsButton:SetWidth(160)
 	requestsButton:SetHeight(24)
 	buttonContainer:AddChild(requestsButton)
 
-    -- Donations button (opens a donations pane on the right)
-    local donationsButton = GBCR.Libs.AceGUI:Create("Button")
+    local donationsButton = aceGUI:Create("Button")
     donationsButton:SetText("Donations")
     donationsButton:SetCallback("OnClick", function()
         GBCR.UI.Donations:Toggle()
@@ -218,14 +363,13 @@ function UI_Inventory:DrawWindow()
 		GameTooltip:Show()
 	end)
 	donationsButton:SetCallback("OnLeave", function()
-		GBCR.UI:HideTooltip()
+		GameTooltip:Hide()
 	end)
     donationsButton:SetWidth(160)
     donationsButton:SetHeight(24)
     buttonContainer:AddChild(donationsButton)
 
-    -- Filter row (below buttons)
-    local filterContainer = GBCR.Libs.AceGUI:Create("SimpleGroup")
+    local filterContainer = aceGUI:Create("SimpleGroup")
     filterContainer:SetLayout("Table")
     filterContainer:SetUserData("table", {
         columns = {
@@ -238,101 +382,52 @@ function UI_Inventory:DrawWindow()
     filterContainer:SetFullWidth(true)
     window:AddChild(filterContainer)
 
-    -- Filter: item type
-    local filterTypeList = {
-        ["any"]       = "All types",
-        ["armor"]     = "Armor",
-        ["weapon"]    = "Weapons",
-        ["consumable"]= "Consumables",
-        ["trade"]     = "Trade goods",
-        ["container"] = "Container",
-        ["recipe"]    = "Recipe",
-        ["quest"]     = "Quest items",
-        ["misc"]      = "Everything else"
-    }
-    local filterTypeOrder = { "any", "armor", "weapon", "consumable", "trade", "container", "recipe", "quest", "misc" }
-    local filterTypeDropdown = GBCR.Libs.AceGUI:Create("Dropdown")
+    local filterTypeDropdown = aceGUI:Create("Dropdown")
     filterTypeDropdown:SetLabel("Type")
-    filterTypeDropdown:SetList(filterTypeList, filterTypeOrder)
+    filterTypeDropdown:SetList(Constants.FILTER.TYPE_LIST, Constants.FILTER.TYPE_ORDER)
     filterTypeDropdown:SetWidth(160)
     filterTypeDropdown:SetValue("any")
     filterTypeDropdown:SetCallback("OnValueChanged", function(_, _, value)
-        self.filterType = value
-        self:RefreshCurrentTab()
+        UI_Inventory.filterType = value
+        self.renderGeneration = (self.renderGeneration or 0) + 1
+        GBCR.UI:RefreshCurrentTab()
     end)
-    self.FilterTypeDropdown = filterTypeDropdown
+    self.filterTypeDropdown = filterTypeDropdown
     filterContainer:AddChild(filterTypeDropdown)
 
-    -- Filter: equip slot
-    local filterSlotList = {
-        ["any"]       = "All slots",
-        ["head"]      = "Head",
-        ["neck"]      = "Neck",
-        ["shoulder"]  = "Shoulder",
-        ["back"]      = "Back",
-        ["chest"]     = "Chest",
-        ["shirt"]     = "Shirt",
-        ["tabard"]    = "Tabard",
-        ["wrist"]     = "Wrist",
-        ["hands"]     = "Hands",
-        ["waist"]     = "Waist",
-        ["legs"]      = "Legs",
-        ["feet"]      = "Feet",
-        ["finger"]    = "Finger",
-        ["trinket"]   = "Trinket",
-        ["onehand"]   = "One-hand",
-        ["shield"]    = "Shield",
-        ["twohand"]   = "Two-hand",
-        ["ranged"]    = "Ranged",
-        ["mainhand"]  = "Main hand",
-        ["offhand"]   = "Off hand",
-        ["holdable"]  = "Held in off-hand",
-        ["bag"]       = "Bag",
-        ["robe"]      = "Robe"
-    }
-    local filterSlotOrder = { "any", "head", "neck", "shoulder", "shirt", "chest", "wrist", "hands", "waist", "legs", "feet", "finger", "trinket", "back", "onehand", "mainhand", "offhand", "twohand", "ranged", "shield", "holdable", "tabard", "bag" }
-    local filterSlotDropdown = GBCR.Libs.AceGUI:Create("Dropdown")
+    local filterSlotDropdown = aceGUI:Create("Dropdown")
     filterSlotDropdown:SetLabel("Slot")
-    filterSlotDropdown:SetList(filterSlotList, filterSlotOrder)
+    filterSlotDropdown:SetList(Constants.FILTER.SLOT_LIST, Constants.FILTER.SLOT_ORDER)
     filterSlotDropdown:SetWidth(160)
     filterSlotDropdown:SetValue("any")
     filterSlotDropdown:SetCallback("OnValueChanged", function(_, _, value)
-        self.filterSlot = value
-        self:RefreshCurrentTab()
+        UI_Inventory.filterSlot = value
+        self.renderGeneration = (self.renderGeneration or 0) + 1
+        GBCR.UI:RefreshCurrentTab()
     end)
-    self.FilterSlotDropdown = filterSlotDropdown
+    self.filterSlotDropdown = filterSlotDropdown
     filterContainer:AddChild(filterSlotDropdown)
 
-    -- Filter: rarity
-    local filterRarityList = {
-        ["any"]       = "All qualities",
-        ["poor"]      = "Poor (grey)",
-        ["common"]    = "Common (white)",
-        ["uncommon"]  = "Uncommon (green)",
-        ["rare"]      = "Rare (blue)",
-        ["epic"]      = "Epic (purple)",
-        ["legendary"] = "Legendary (orange)"
-    }
-    local filterRarityOrder = { "any", "poor", "common", "uncommon", "rare", "epic", "legendary" }
-    local filterRarityDropdown = GBCR.Libs.AceGUI:Create("Dropdown")
+    local filterRarityDropdown = aceGUI:Create("Dropdown")
     filterRarityDropdown:SetLabel("Quality")
-    filterRarityDropdown:SetList(filterRarityList, filterRarityOrder)
+    filterRarityDropdown:SetList(Constants.FILTER.RARITY_LIST, Constants.FILTER.RARITY_ORDER)
     filterRarityDropdown:SetWidth(160)
     filterRarityDropdown:SetValue("any")
     filterRarityDropdown:SetCallback("OnValueChanged", function(_, _, value)
-        self.filterRarity = value
-        self:RefreshCurrentTab()
+        UI_Inventory.filterRarity = value
+        self.renderGeneration = (self.renderGeneration or 0) + 1
+        GBCR.UI:RefreshCurrentTab()
     end)
-    self.FilterRarityDropdown = filterRarityDropdown
+    self.filterRarityDropdown = filterRarityDropdown
     filterContainer:AddChild(filterRarityDropdown)
 
-    -- Reset filters button
-    local resetButton = GBCR.Libs.AceGUI:Create("Button")
+    local resetButton = aceGUI:Create("Button")
     resetButton:SetText("Reset filters")
     resetButton:SetWidth(160)
     resetButton:SetHeight(24)
     resetButton:SetCallback("OnClick", function()
-        self:ResetFilters()
+        self.renderGeneration = (self.renderGeneration or 0) + 1
+        GBCR.UI.ResetFilters(UI_Inventory)
     end)
 	resetButton:SetCallback("OnEnter", function()
 		GameTooltip:SetOwner(resetButton.frame, "ANCHOR_BOTTOM")
@@ -342,388 +437,71 @@ function UI_Inventory:DrawWindow()
 		GameTooltip:Show()
 	end)
 	resetButton:SetCallback("OnLeave", function()
-		GBCR.UI:HideTooltip()
+		GameTooltip:Hide()
 	end)
     resetButton:SetDisabled(true)
-    self.ResetFiltersButton = resetButton
+    self.resetFiltersButton = resetButton
     filterContainer:AddChild(resetButton)
 
-    local tabGroup = GBCR.Libs.AceGUI:Create("TabGroup")
+    local tabGroup = aceGUI:Create("TabGroup")
     tabGroup:SetLayout("Flow")
     tabGroup:SetFullWidth(true)
     tabGroup:SetFullHeight(true)
     window:AddChild(tabGroup)
-    self.TabGroup = tabGroup
+    self.tabGroup = tabGroup
 
-    -- Initialize filter state
-    self:ResetFilters()
+    GBCR.UI.ResetFilters(self)
 end
 
-function UI_Inventory:DrawContent()
-    GBCR.Output:Debug("UI", "UI_Inventory:DrawContent called")
-    local info = GBCR.Database.savedVariables
-	local roster_alts = GBCR.Guild:GetRosterGuildBankAlts()
-	if not info or not roster_alts then
-		self:OnClose()
-		GBCR.Protocol:PerformSync()
-		GBCR.Output:Response("Database is empty; wait for sync.")
-
+local function openWindow(self)
+	if self.isOpen then
 		return
 	end
 
-    -- Validate currentTab against fresh data
-    if self.currentTab then
-        local norm = GBCR.Guild:NormalizeName(self.currentTab)
-        if not (info.alts and info.alts[norm]) then
-            self.currentTab = nil
-            self.tabLoaded = false
-        end
+    self.isOpen = true
+
+    if not self.window then
+        drawWindow(self)
     end
 
-    -- Rebuild search on next open
-	GBCR.UI.Search.searchDataBuilt = false
+    self.window:Show()
 
-    local tabs = {}
-    local firstTab = nil
-    local firstTabMoney = nil
-    local firstTabVersion = nil
-    for i = 1, #roster_alts do
-        local guildBankAltName = roster_alts[i]
-		local norm = GBCR.Guild:NormalizeName(guildBankAltName) or guildBankAltName
-		local alt = info.alts[norm]
-        if alt and type(alt) == "table" then
-            if not firstTab then
-                firstTab = guildBankAltName
-                firstTabMoney = alt.money or 0
-                firstTabVersion = alt.version or 0
-            end
-            tabs[i] = { value = guildBankAltName, text = guildBankAltName }
-        end
-    end
+	GBCR.UI:ClampFrameToScreen(self.window)
 
-	if #tabs == 0 then
-		self:OnClose()
-		GBCR.Protocol:PerformSync()
-		GBCR.Output:Response("Database is empty; wait for sync.")
+    GBCR.UI:ForceDraw()
 
+    GBCR.Protocol:PerformSync()
+end
+
+local function closeWindow(self)
+	if not self.isOpen or not self.window then
 		return
 	end
 
-    self.TabGroup:ReleaseChildren()
-    self.TabGroup.localstatus = {}
-    self.TabGroup:SetTabs(tabs)
-    self:UpdateStatusText(self.filteredCount or "", self.totalCount or "", firstTabMoney, firstTabVersion)
-
-    self.TabGroup:SetCallback("OnGroupSelected", function(group)
-        local tab = group.localstatus.selected
-
-        -- -- Prevent processing the same tab multiple times
-        -- if self.currentTab == tab and self.tabLoaded then
-        --     GBCR.Output:Debug("INVENTORY", "Blocked duplicate OnGroupSelected for tab %s.", tab)
-
-        --     return
-        -- end
-
-        self.currentTab = tab
-        self.tabLoaded = false
-        GBCR.Output:Debug("ITEM", "Loading tab %s", tab)
-
-        self.TabGroup:ReleaseChildren()
-
-        local g = GBCR.Libs.AceGUI:Create("SimpleGroup")
-        g:SetFullWidth(true)
-        g:SetFullHeight(true)
-        g:SetLayout("Flow")
-        self.TabGroup:AddChild(g)
-
-        local normTab = GBCR.Guild:NormalizeName(tab) or tab
-        local alt = info.alts[normTab]
-        local scroll = GBCR.Libs.AceGUI:Create("ScrollFrame")
-        scroll:SetLayout("Flow")
-        scroll:SetFullHeight(true)
-        scroll:SetFullWidth(true)
-        g:AddChild(scroll)
-
-        -- Track scroll container to prevent race conditions
-        scroll.callbackProcessed = false
-
-        -- Item aggregation
-        local items = {}
-        if alt.items and next(alt.items) ~= nil then
-            for _, item in pairs(alt.items) do
-                table.insert(items, item)
-            end
-            GBCR.Output:Debug("ITEM", "Inventory tab %s: using alt.items (%d items)", tab, #items)
-        end
-        GBCR.Output:Debug("ITEM", "Inventory tab %s: aggregated to %d unique items", tab, #items)
-
-        -- Show loading indicator immediately
-        local loadingLabel = GBCR.Libs.AceGUI:Create("Label")
-        local isLocal = (GBCR.Guild:GetNormalizedPlayer() == tab)
-        if isLocal then
-            local msg = string.format("%s\n\nNo data has been scanned yet, or no items found.\n\nTo populate your guild bank data:\n1. %s of your data via the addon options.\n2. Visit the %s to scan your bank and bags.\n3. Close your bank.\n4. Open and close your %s.\n5. If other guild members are online, %s for the share to complete.\n", GBCR.Globals:Colorize(colorOrange, "This is you!"), GBCR.Globals:Colorize(colorGreen, "Enable reporting and scanning"), GBCR.Globals:Colorize(colorGreen, "bank"), GBCR.Globals:Colorize(colorGreen, "mailbox"), GBCR.Globals:Colorize(colorGreen, "wait"))
-            loadingLabel:SetText(msg)
-        else
-            local notFound = GBCR.Globals:Colorize(colorGray, "No items found for this guild bank alt.")
-            loadingLabel:SetText(notFound)
-        end
-        UI_Inventory:UpdateStatusText("", "", alt.money or 0, alt.version or 0)
-        loadingLabel:SetFullWidth(true)
-        scroll:AddChild(loadingLabel)
-
-        -- Filter reset button
-        if UI_Inventory:GetActiveFilterCount() > 0 then
-            UI_Inventory.ResetFiltersButton:SetDisabled(false)
-        else
-            UI_Inventory.ResetFiltersButton:SetDisabled(true)
-        end
-
-        if items and #items > 0 then
-            -- Validate and filter items before passing to GetItems
-            local validItems = {}
-            for i, item in ipairs(items) do
-                if item and item.itemId and item.itemId > 0 then
-                    table.insert(validItems, item)
-                else
-                    GBCR.Output:Debug("ITEM", "WARNING: Tab %s skipping invalid item at index %d (itemId: %s, itemLink: %s)", tab, i, tostring(item and item.itemId or "nil item"), tostring(item and item.itemLink or "nil"))
-                end
-            end
-
-            local selectedTab = tab
-            GBCR.Inventory:GetItems(validItems, function(list)
-                -- Prevent callback from running twice on same scroll container
-                if scroll.callbackProcessed then
-                    GBCR.Output:Debug("ITEM", "Ignoring duplicate callback for tab %s", tab)
-
-                    return
-                end
-
-                -- Verify we're still on the same tab (user may have switched)
-                if self.currentTab ~= selectedTab then
-                    GBCR.Output:Debug("ITEM", "Ignoring callback for old tab %s (now on %s)", selectedTab, self.currentTab)
-
-                    return
-                end
-
-                scroll.callbackProcessed = true
-                self.tabLoaded = true
-
-                GBCR.Output:Debug("ITEM", "Inventory tab %s: GetItems callback received %d items", tab, list and #list or 0)
-                scroll:ReleaseChildren()
-
-                -- Apply filters
-                local filteredList = {}
-                local filteredCount = 0
-                for _, item in ipairs(list) do
-                    if UI_Inventory:PassesFilters(item) then
-                        table.insert(filteredList, item)
-                        filteredCount = filteredCount + 1
-                    end
-                end
-                GBCR.Inventory:Sort(filteredList, GBCR.Options:GetSortMode())
-
-                -- Update status text to show filter results
-                UI_Inventory:UpdateStatusText(filteredCount, #list, alt.money or 0, alt.version or 0)
-
-                -- Release loading label and display filtered items
-                scroll:ReleaseChildren()
-                for _, item in pairs(filteredList) do
-                    if item and item.itemInfo and item.itemInfo.name then
-                        GBCR.Output:Debug("ITEM", "Inventory tab %s: displaying %s with count %d (itemId: %d)", tab, item.itemInfo.name, item.itemCount or 0, item.itemId)
-                    end
-                    local itemWidget = GBCR.UI:DrawItem(item, scroll)
-                    if itemWidget then
-                        itemWidget:SetCallback("OnEnter", function(self)
-                            if item and item.itemInfo then
-                                GameTooltip:SetOwner(self.frame, "ANCHOR_RIGHT")
-                                GameTooltip:SetHyperlink(item.itemLink or ("item:"..item.itemId))
-                                GameTooltip:Show()
-                            end
-                        end)
-                        itemWidget:SetCallback("OnLeave", function()
-                            GBCR.UI:HideTooltip()
-                        end)
-                        itemWidget:SetCallback("OnClick", function(self, event)
-                            if IsShiftKeyDown() or IsControlKeyDown() then
-                                GBCR.UI:EventHandler(self, event)
-
-                                return
-                            end
-                        end)
-                    end
-                end
-
-                -- Show "no results" message if all items filtered out
-                if filteredCount == 0 and #list > 0 then
-                    local noResultsLabel = GBCR.Libs.AceGUI:Create("Label")
-                    noResultsLabel:SetText(GBCR.Globals:Colorize(colorGray, "No items match current filters."))
-                    noResultsLabel:SetFullWidth(true)
-                    scroll:AddChild(noResultsLabel)
-                end
-            end)
-        end
-    end)
-
-	-- Preserve currently selected tab instead
-	-- Only select firstTab if no tab is currently selected
-	local currentTab = self.TabGroup.localstatus and self.TabGroup.localstatus.selected
-	if currentTab and info.alts[currentTab] then
-		-- Preserve current selection if it's still valid
-        -- Don't call SelectTab if it's already the current tab (prevents reload on sync)
-        -- The tab is already displayed, no need to trigger OnGroupSelected again
-        if self.currentTab ~= currentTab then
-            self.currentTab = nil
-            self.TabGroup:SelectTab(currentTab)
-        end
-	else
-		-- No current selection or invalid tab, select first tab
-        self.currentTab = nil
-		self.TabGroup:SelectTab(firstTab)
-	end
+    onClose(self)
 end
 
-function UI_Inventory:UpdateStatusText(filteredCount, totalCount, goldAmount, versionTimestamp)
-    filteredCount = filteredCount or 0
-    totalCount = totalCount or 0
-
-    local activeFilters = self:GetActiveFilterCount()
-    local pluralFilters = (activeFilters ~= 1 and "s" or "")
-    local filterText = activeFilters > 0 and GBCR.Globals:Colorize(colorBlue, string.format(" (%d filter%s active)", activeFilters, pluralFilters)) or ""
-    local pluralItems = (totalCount ~= 1 and "s" or "")
-
-    if activeFilters > 0 then
-        local statusText = string.format("Showing %d of %d item%s%s", filteredCount, totalCount, pluralItems, filterText)
-        self.Window:SetStatusText(statusText)
-        self.filteredCount = filteredCount
-        self.totalCount = totalCount
+local function toggleWindow(self)
+    if self.isOpen then
+        closeWindow(self)
     else
-        local defaultStatus
-        if type(versionTimestamp) == "number" and versionTimestamp > 0 then
-            local updatedAt = ""
-            local versionDate = date("%b %d, %Y %H:%M", versionTimestamp)
-            updatedAt = string.format(" as of %s", versionDate)
-            defaultStatus = string.format("%s%s", GetCoinTextureString(goldAmount), updatedAt)
-        else
-            defaultStatus = "No available data"
-        end
-        self.Window:SetStatusText(defaultStatus)
+        openWindow(self)
     end
 end
 
-function UI_Inventory:RefreshCurrentTab()
-    GBCR.Output:Debug("UI", "UI_Inventory:RefreshCurrentTab called")
-    local group = self.TabGroup
-    if not group then
-        return
-    end
-
-    local current = group.localstatus.selected
-    if not current then
-        return
-    end
-
-    group:ReleaseChildren()
-    group:Fire("OnGroupSelected", current)
-end
-
-function UI_Inventory:ResetFilters()
-    -- Disable the filter reset button
-    UI_Inventory.ResetFiltersButton:SetDisabled(true)
-
-    -- Reset filter state
+local function init(self)
     self.filterType = "any"
     self.filterSlot = "any"
     self.filterRarity = "any"
 
-    -- Reset dropdown values
-    if self.FilterTypeDropdown then
-        self.FilterTypeDropdown:SetValue("any")
-    end
-    if self.FilterSlotDropdown then
-        self.FilterSlotDropdown:SetValue("any")
-    end
-    if self.FilterRarityDropdown then
-        self.FilterRarityDropdown:SetValue("any")
-    end
+    self.cachedFilteredList = {}
+    self.renderGeneration = 0
 
-    -- Refresh current tab
-    self:RefreshCurrentTab()
+    drawWindow(self)
 end
 
-function UI_Inventory:PassesFilters(item)
-    if not item or not item.itemInfo then
-        return true
-    end
-
-    local info = item.itemInfo
-
-    -- Type filter
-    if self.filterType and self.filterType ~= "any" then
-        local class = info.class or 0
-
-        if self.filterType == "armor" and class ~= 4 then
-            return false
-        elseif self.filterType == "weapon" and class ~= 2 then
-            return false
-        elseif self.filterType == "consumable" and class ~= 0 then
-            return false
-        elseif self.filterType == "trade" and class ~= 7 then
-            return false
-        elseif self.filterType == "container" and class ~= 1 then
-            return false
-        elseif self.filterType == "recipe" and class ~= 9 then
-            return false
-        elseif self.filterType == "quest" and class ~= 12 then
-            return false
-        elseif self.filterType == "misc" and class ~= 15 and class ~= 5 and class ~= 10 and class ~= 13 and class ~= 14 and class ~= 3 and class ~= 8 and class ~= 11 and class ~= 6 then
-            return false
-        end
-    end
-
-    -- Slot filter
-    if self.filterSlot and self.filterSlot ~= "any" then
-        local equipId = info.equipId or 0
-        local slotMap = {
-            head = 1, neck = 2, shoulder = 3, shirt = 4, chest = 5, waist = 6, legs = 7, feet = 8, wrist = 9, hands = 10, finger = 11, trinket = 12, onehand = 13, shield = 14, ranged = 26, back = 16, twohand = 17, bag = 18, tabard = 19, robe = 20, mainhand = 21, offhand = 22, holdable = 23
-        }
-        local targetSlot = slotMap[self.filterSlot]
-
-        if targetSlot and targetSlot ~= equipId then
-            if self.filterSlot == "bag" and equipId ~= 0 then
-                return false
-            elseif self.filterSlot ~= "bag" and equipId ~= targetSlot then
-                return false
-            end
-        end
-    end
-
-    -- Rarity filter
-    if self.filterRarity and self.filterRarity ~= "any" then
-        local rarity = info.rarity or 1
-        local rarityMap = {
-            poor = 0, common = 1, uncommon = 2, rare = 3, epic = 4, legendary = 5
-        }
-        local targetRarity = rarityMap[self.filterRarity]
-        if targetRarity and rarity ~= targetRarity then
-            return false
-        end
-    end
-
-    return true
-end
-
-function UI_Inventory:GetActiveFilterCount()
-    local count = 0
-
-    if self.filterType and self.filterType ~= "any" then
-        count = count + 1
-    end
-    if self.filterSlot and self.filterSlot ~= "any" then
-        count = count + 1
-    end
-    if self.filterRarity and self.filterRarity ~= "any" then
-        count = count + 1
-    end
-
-    return count
-end
+-- Export functions for other modules
+UI_Inventory.DrawContent = drawContent
+UI_Inventory.Close = closeWindow
+UI_Inventory.Toggle = toggleWindow
+UI_Inventory.Init = init

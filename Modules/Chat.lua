@@ -4,78 +4,40 @@ GBCR.Chat = {}
 local Chat = GBCR.Chat
 
 local Globals = GBCR.Globals
+local ipairs = Globals.ipairs
+local math_floor = Globals.math_floor
+local pairs = Globals.pairs
+local select = Globals.select
+local string_format = Globals.string_format
+local table_sort = Globals.table_sort
 local time = Globals.time
-local UIParent = Globals.UIParent
+local tonumber = Globals.tonumber
+
 local GetClassColor = Globals.GetClassColor
 
 local Constants = GBCR.Constants
-local colorGreen = Constants.COLORS.GREEN
 local colorGold = Constants.COLORS.GOLD
-local commandRegistry = Constants.COMMAND_REGISTRY
+local colorGreen = Constants.COLORS.GREEN
 local commandHandlers = Constants.COMMAND_HANDLERS
+local commandRegistry = Constants.COMMAND_REGISTRY
 local helpInstructions = Constants.HELP_INSTRUCTIONS
 
-function Chat:Init()
-    GBCR.Addon:RegisterChatCommand("bank", function(input)
-        return self:ChatCommand(input)
-    end)
-end
-
-function Chat:ChatCommand(input)
-	if input == nil or input == "" then
-		GBCR.UI.Inventory:Toggle()
-	else
-		local prefix, arg1 = GBCR.Addon:GetArgs(input, 2)
-		local handler = commandHandlers[prefix]
-		if handler then
-			handler(arg1)
-		else
-			GBCR.Output:Response("Unknown command: %s.", prefix)
-			self:ShowHelp()
-		end
-	end
-
-	return false
-end
-
-function Chat:ShowHelp()
-	GBCR.Output:Response("\n", GBCR.Globals:Colorize(colorGreen, "Commands:"))
-	GBCR.Output:Response("%s - display the GBankClassic - Revived interface", GBCR.Globals:Colorize(colorGold, "/bank"))
-	for _, cmd in ipairs(commandRegistry) do
-		if cmd.help and not cmd.expert then
-			local usage = cmd.usage and (" " .. cmd.usage) or ""
-			GBCR.Output:Response("%s - %s", GBCR.Globals:Colorize(colorGold, "/bank " .. cmd.name .. usage), cmd.help)
-		end
-	end
-
-	GBCR.Output:Response("\n", GBCR.Globals:Colorize(colorGreen, "Expert commands:"))
-	for _, cmd in ipairs(commandRegistry) do
-		if cmd.help and cmd.expert then
-			local usage = cmd.usage and (" " .. cmd.usage) or ""
-			GBCR.Output:Response("%s - %s", GBCR.Globals:Colorize(colorGold, "/bank " .. cmd.name .. usage), cmd.help)
-		end
-	end
-
-	for _, instruction in ipairs(helpInstructions) do
-		GBCR.Output:Response("\n%s", GBCR.Globals:Colorize(colorGreen, instruction.title))
-		GBCR.Output:Response(instruction.text)
-	end
-end
-
-function Chat:PrintVersions()
+-- Print all tracked addon versions from other guild members in respone to /bank versions
+local function printVersions(self)
+	local now = time()
 	local myPlayer = GBCR.Guild:GetNormalizedPlayer()
 	local versions = {}
+	local position = 1
 
-	-- Add ourselves
-	table.insert(versions, { playerName = myPlayer, addonVersionNumber = GBCR.Core.addonVersionNumber, seen = time(), isSelf = true })
+	versions[position] = { playerName = myPlayer, addonVersionNumber = GBCR.Core.addonVersionNumber, seen = time(), isSelf = true }
+	position = position + 1
 
-	-- Add tracked guild members
 	for playerName, info in pairs(GBCR.Protocol.guildMembersFingerprintData) do
-		table.insert(versions, { playerName = playerName, addonVersionNumber = tonumber(info.addonVersionNumber), seen = info.seen, isSelf = false })
+		versions[position] = { playerName = playerName, addonVersionNumber = tonumber(info.addonVersionNumber), seen = info.seen, isSelf = false }
+		position = position + 1
 	end
 
-	-- Sort by version (descending), then by name
-	table.sort(versions, function(a, b)
+	table_sort(versions, function(a, b)
 		if (a and a.addonVersionNumber and b and b.addonVersionNumber) and (a.addonVersionNumber ~= b.addonVersionNumber) then
 			return a.addonVersionNumber > b.addonVersionNumber
 		end
@@ -83,54 +45,79 @@ function Chat:PrintVersions()
 		return a.playerName < b.playerName
 	end)
 
-	local count = #versions
-	GBCR.Output:Response("Addon versions (%d members):", count)
+	GBCR.Output:Response("Addon versions (%d members):", #versions)
 
-	local now = time()
 	for _, entry in ipairs(versions) do
 		local age = ""
+
 		if not entry.isSelf then
 			local seconds = now - entry.seen
+
 			if seconds < 60 then
 				age = " (just now)"
 			elseif seconds < 3600 then
-				age = string.format(" (%dm ago)", math.floor(seconds / 60))
+				age = string_format(" (%dm ago)", math_floor(seconds / 60))
 			else
-				age = string.format(" (%dh ago)", math.floor(seconds / 3600))
+				age = string_format(" (%dh ago)", math_floor(seconds / 3600))
 			end
 		end
-		local marker = entry.isSelf and GBCR.Globals:Colorize(colorGold, " (you)") or ""
-		local playerClass = GBCR.Guild:GetGuildMemberInfo(entry.playerName)
-		local classColor = select(4, GetClassColor(playerClass))
-		GBCR.Output:Response("  %s: %s%s%s", GBCR.Globals:Colorize(classColor, entry.playerName), entry.addonVersionNumber, marker, age)
+
+		GBCR.Output:Response("  %s: %s%s%s", Globals:Colorize(select(4, GetClassColor(GBCR.Guild:GetGuildMemberInfo(entry.playerName))), entry.playerName), entry.addonVersionNumber, entry.isSelf and Globals:Colorize(colorGold, " (you)") or "", age)
 	end
 end
 
-function Chat:RestoreUI()
-	local optionsDB = GBCR.Options:GetOptionsDB()
-	if not optionsDB then
-		return
+-- Print all help commands in response to /bank help
+local function showHelp(self)
+	GBCR.Output:Response("\n", Globals:Colorize(colorGreen, "Commands:"))
+	GBCR.Output:Response("%s - display the %s UI", GBCR.Core.addonTitle, Globals:Colorize(colorGold, "/bank"))
+	for _, cmd in ipairs(commandRegistry) do
+		if cmd.help and not cmd.expert then
+			local usage = cmd.usage and (" " .. cmd.usage) or ""
+			GBCR.Output:Response("%s - %s", Globals:Colorize(colorGold, "/bank " .. cmd.name .. usage), cmd.help)
+		end
 	end
 
-	local count = Globals:Count(optionsDB.char.framePositions)
-	if count > 0 then
-		optionsDB.char.framePositions = nil
+	GBCR.Output:Response("\n", Globals:Colorize(colorGreen, "Expert commands:"))
+	for _, cmd in ipairs(commandRegistry) do
+		if cmd.help and cmd.expert then
+			local usage = cmd.usage and (" " .. cmd.usage) or ""
+			GBCR.Output:Response("%s - %s", Globals:Colorize(colorGold, "/bank " .. cmd.name .. usage), cmd.help)
+		end
 	end
 
-	local frame = GBCR.UI.Inventory.Window.frame
-    local defaults = optionsDB.defaults.char.framePositions
-	frame:ClearAllPoints()
-	frame:SetPoint("CENTER", UIParent, "CENTER", 0 ,0)
-    if defaults then
-        frame:SetSize(defaults.width, defaults.height)
-    end
+	for _, instruction in ipairs(helpInstructions) do
+		GBCR.Output:Response("\n%s", Globals:Colorize(colorGreen, instruction.title))
+		GBCR.Output:Response(instruction.text)
+	end
+end
 
-	if GBCR.UI.Inventory.isOpen then
-		GBCR.UI.Inventory:Close()
+-- Helper to execute chat commands (toggles the UI if no other arguments are provided)
+local function chatCommand(self, input)
+	if input == nil or input == "" then
 		GBCR.UI.Inventory:Toggle()
 	else
-		GBCR.UI.Inventory:Open()
+		local prefix, arg1 = GBCR.Addon:GetArgs(input, 2)
+		local handler = commandHandlers[prefix]
+
+		if handler then
+			handler(arg1)
+		else
+			GBCR.Output:Response("Unknown command: %s.", Globals:Colorize(colorGold, prefix))
+			showHelp(self)
+		end
 	end
 
-	GBCR.Output:Response("The user interface window size and position have been reset to their defaults.")
+	return false
 end
+
+-- Register /bank as the chat command for this addon
+local function init(self)
+    GBCR.Addon:RegisterChatCommand("bank", function(input)
+        return chatCommand(self, input)
+    end)
+end
+
+-- Export functions for other modules
+Chat.PrintVersions = printVersions
+Chat.ShowHelp = showHelp
+Chat.Init = init
