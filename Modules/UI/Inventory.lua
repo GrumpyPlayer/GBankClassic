@@ -314,7 +314,7 @@ end
 
 local function invalidateDataCache(self, isFullRebuild)
     self.itemsHydrated = false
-    self.needsFullRebuild = isFullRebuild or true
+    self.needsFullRebuild = isFullRebuild == true
     self.pendingCorpusBuild = false
     self.lastAggregatedView = nil
     self.filteredCount = 0
@@ -4767,10 +4767,10 @@ local function getTabTopBarMessage(tab)
         local isGBA = GBCR.Guild and GBCR.Guild.weAreGuildBankAlt
         if isGBA then
             if seedCount > 0 then
-                return Globals.ColorizeText(Constants.COLORS.GREEN, "Ok: your data has been shared this session, safe to log off")
+                return Globals.ColorizeText(Constants.COLORS.GREEN, "Ok  •  Your data has been shared this session, safe to log off")
             else
                 return Globals.ColorizeText(Constants.COLORS.ORANGE,
-                                            "Warning: data not yet shared with online members, stay online a few minutes")
+                                            "Please wait  •  Your data has not yet been shared with online members, stay online")
             end
         end
 
