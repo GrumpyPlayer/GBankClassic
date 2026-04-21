@@ -15,8 +15,6 @@ local GetAddOnMetadata = Globals.GetAddOnMetadata
 local Constants = GBCR.Constants
 local logLevels = Constants.LOG_LEVEL
 
--- _G[addonName] = GBCR -- TODO: remove before release
-
 -- Make the addon metadata universally available
 local function loadMetadata(self)
     local addonTitle = GetAddOnMetadata(addonName, "Title")
@@ -113,11 +111,6 @@ function GBCR.Addon:OnDisable()
         GBCR.Protocol.debounceHardDeadlineTimer = nil
     end
 
-    -- if GBCR.Protocol.debounceTimers.singularAlt[key] then
-    --     GBCR.Protocol.debounceTimers.singularAlt[key]:Cancel()
-    --     GBCR.Protocol.debounceTimers.singularAlt[key] = nil
-    -- end
-
     if GBCR.Protocol.debounceTimers.multipleAlts then
         GBCR.Protocol.debounceTimers.multipleAlts:Cancel()
         GBCR.Protocol.debounceTimers.multipleAlts = nil
@@ -153,7 +146,7 @@ function GBCR.Addon:OnDisable()
         GBCR.Events.timerGetItemInfoReceivedScanInventory = nil
     end
 
-    if GBCR.Ledger and GBCR.Ledger.timerLedgerUpdateBroadcast then
+    if GBCR.Ledger.timerLedgerUpdateBroadcast then
         GBCR.Ledger.timerLedgerUpdateBroadcast:Cancel()
         GBCR.Ledger.timerLedgerUpdateBroadcast = nil
     end
@@ -186,6 +179,7 @@ function GBCR.Addon:OnDisable()
         end
         wipe(GBCR.Protocol.requestTimeoutTimers)
     end
+
     if GBCR.Protocol.requestRetryTimers then
         for _, timer in pairs(GBCR.Protocol.requestRetryTimers) do
             timer:Cancel()
@@ -193,19 +187,8 @@ function GBCR.Addon:OnDisable()
         wipe(GBCR.Protocol.requestRetryTimers)
     end
 
-    if GBCR.UI.Inventory.clockTicker then
-        GBCR.UI.Inventory.clockTicker:Cancel()
-        GBCR.UI.Inventory.clockTicker = nil
-    end
-    if GBCR.UI.Inventory.syncPulseTicker then
-        GBCR.UI.Inventory.syncPulseTicker:Cancel()
-        GBCR.UI.Inventory.syncPulseTicker = nil
-    end
-
-    if GBCR.Ledger and GBCR.Ledger.timerLedgerUpdateBroadcast then
-        GBCR.Ledger.timerLedgerUpdateBroadcast:Cancel()
-        GBCR.Ledger.timerLedgerUpdateBroadcast = nil
-    end
+    GBCR.Protocol.isProcessingQueue = false
+    GBCR.UI.Network.isOpen = false
 end
 
 -- Export functions for other modules
