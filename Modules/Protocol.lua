@@ -451,7 +451,7 @@ end
 
 -- Helper to warn user about outdated addon based on incoming data
 local function checkAndWarnAddonOutdated(self, incomingVersion)
-    if incomingVersion and incomingVersion > GBCR.Core.addonVersionNumber then
+    if incomingVersion and tonumber(incomingVersion) > GBCR.Core.addonVersionNumber then
         if not self.isAddonOutdated then
             self.isAddonOutdated = true
             GBCR.Output:Response(
