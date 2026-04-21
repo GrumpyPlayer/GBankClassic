@@ -60,6 +60,8 @@ local function buildGlobalItemSourcesIndex(self, dirtyAlts, callback)
         end
 
         if dirtyCount <= 8 then
+            self.sourcesIndexGeneration = (self.sourcesIndexGeneration or 0) + 1
+
             GBCR.Output:Debug("INVENTORY", "buildGlobalItemSourcesIndex: partial rebuild (%d dirty)", dirtyCount)
 
             for altName in pairs(dirtyAlts) do
@@ -124,7 +126,10 @@ local function buildGlobalItemSourcesIndex(self, dirtyAlts, callback)
         GBCR.Output:Debug("INVENTORY", "buildGlobalItemSourcesIndex: %d dirty alts, promoting to full rebuild", dirtyCount)
     end
 
-    GBCR.Output:Debug("INVENTORY", "buildGlobalItemSourcesIndex: full rebuild")
+    self.sourcesIndexGeneration = (self.sourcesIndexGeneration or 0) + 1
+    local myGen = self.sourcesIndexGeneration
+
+    GBCR.Output:Debug("INVENTORY", "buildGlobalItemSourcesIndex: full rebuild (gen %d)", myGen)
     local altsList = {}
 
     local altsCount = 0
@@ -148,6 +153,10 @@ local function buildGlobalItemSourcesIndex(self, dirtyAlts, callback)
     local itemIndex = 1
 
     local function Resume()
+        if myGen ~= self.sourcesIndexGeneration then
+            return
+        end
+
         local frameStart = debugprofilestop()
         local processedThisFrame = 0
 
@@ -188,6 +197,10 @@ local function buildGlobalItemSourcesIndex(self, dirtyAlts, callback)
 
             altIndex = altIndex + 1
             itemIndex = 1
+        end
+
+        if myGen ~= self.sourcesIndexGeneration then
+            return
         end
 
         if callback then
@@ -641,6 +654,7 @@ end
 -- Initialize caches
 local function init(self)
     self.cachedSourcesPerItem = {}
+    self.sourcesIndexGeneration = 0
     self.cachedItemsHashes = {}
     self.cachedItemKeys = {}
     self.cachedMailItemKeys = {}
