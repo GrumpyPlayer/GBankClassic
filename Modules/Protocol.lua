@@ -1546,7 +1546,7 @@ local function sendHello(self, messageType, target)
 end
 
 -- Send a wipeall (gbc-w) so every online member wipes their data (and confirms with gbc-wr) upon /bank wipeall (only officers)
-local function sendWipeAll(messageType)
+local function sendWipeAll()
     local guildName = GBCR.Guild:GetGuildInfo()
     if not guildName or not GBCR.Guild.weCanEditOfficerNotes then
         GBCR.Output:Error("Access denied. Only guild members with permission to edit officer notes are permitted to do this.")
@@ -1560,11 +1560,7 @@ local function sendWipeAll(messageType)
     GBCR.Guild:ResetGuild()
 
     local data = serializePayload(wipeMessage)
-    if messageType ~= "reply" then
-        sendCommMessage("gbc-w", data, "GUILD", nil, "NORMAL")
-    else
-        sendCommMessage("gbc-wr", data, "GUILD", nil, "NORMAL")
-    end
+    sendCommMessage("gbc-w", data, "GUILD", nil, "NORMAL")
 end
 
 -- Helper to generate a tiny, 1-chunk representation of the entire guild bank state (gbc-hash) to broadcast upon logging in
@@ -2535,7 +2531,14 @@ local function onCommReceived(self, prefix, message, distribution, sender)
     end
 
     if prefix == "gbc-w" then
-        sendWipeAll("reply")
+        local guildName = GBCR.Guild:GetGuildInfo()
+        if guildName then
+            GBCR.Guild:ResetGuild()
+            GBCR.Output:Info("Guild bank database has been reset by %s.", GBCR.Guild:ColorPlayerName(sender))
+
+            local ackData = serializePayload("wiped")
+            sendCommMessage("gbc-wr", ackData, "GUILD", nil, "NORMAL")
+        end
 
         return
     end
