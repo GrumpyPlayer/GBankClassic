@@ -10,7 +10,7 @@ local IsControlKeyDown = Globals.IsControlKeyDown
 local IsShiftKeyDown = Globals.IsShiftKeyDown
 local WorldFrame = Globals.WorldFrame
 
-local function init(self)
+local function init()
     local iconDB = GBCR.Libs.LibDataBroker:NewDataObject("GBankClassicIcon", {
         type = "data source",
         text = GBCR.Core.addonHeader,
@@ -18,26 +18,36 @@ local function init(self)
         OnEnter = function()
             GameTooltip:SetOwner(WorldFrame, "ANCHOR_CURSOR")
             GameTooltip:AddLine(GBCR.Core.addonHeader)
-            GameTooltip:AddDoubleLine("Click", "Show guild bank items", 1, 1, 1)
-            GameTooltip:AddDoubleLine("Shift-Click", "Configure options", 1, 1, 1)
-            GameTooltip:AddDoubleLine("Ctrl-Click", "Restore default UI", 1, 1, 1)
-            GameTooltip:AddDoubleLine("Alt-Click", "Show debug output window", 1, 1, 1)
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddDoubleLine("Left-click:", "Browse guild bank items", 1, 1, 1)
+            GameTooltip:AddDoubleLine("Right-click:", "View synchronization status", 1, 1, 1)
+            GameTooltip:AddDoubleLine("Middle-click:", "Prepare data export", 1, 1, 1)
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddDoubleLine("Shift-click", "Configure options", 1, 1, 1)
+            GameTooltip:AddDoubleLine("Ctrl-click", "Restore default UI", 1, 1, 1)
+            GameTooltip:AddDoubleLine("Alt-click", "Show debug output window", 1, 1, 1)
             GameTooltip:Show()
         end,
         OnLeave = function()
             GameTooltip:Hide()
         end,
-        OnClick = function(_, b)
+        OnClick = function(_, button)
             if IsShiftKeyDown() then
-                GBCR.Options:Open()
+                GBCR.UI.Inventory:ToggleTab("configuration")
             elseif IsControlKeyDown() then
                 GBCR.UI:RestoreUI()
             elseif IsAltKeyDown() then
                 GBCR.UI.Debug:Toggle()
             else
-                GBCR.UI.Inventory:Toggle()
+                if button == "LeftButton" then
+                    GBCR.UI.Inventory:ToggleTab("browse")
+                elseif button == "RightButton" then
+                    GBCR.UI.Inventory:ToggleTab("network")
+                elseif button == "MiddleButton" then
+                    GBCR.UI.Inventory:ToggleTab("export")
+                end
             end
-        end,
+        end
     })
 
     GBCR.Libs.LibDBIcon:Register(addonName, iconDB, GBCR.Options.db.profile.minimap)

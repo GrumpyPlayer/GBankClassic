@@ -300,6 +300,8 @@ local function Constructor()
 		titletext   = titletext,
 		statustext  = statustext,
 		titlebg     = titlebg,
+		titlebg_l   = titlebg_l,
+		titlebg_r   = titlebg_r,
 		sizer_se    = sizer_se,
 		sizer_s     = sizer_s,
 		sizer_e     = sizer_e,

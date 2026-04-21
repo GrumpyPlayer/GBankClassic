@@ -3,10 +3,12 @@ local addonName, GBCR = ...
 GBCR.Output = {}
 local Output = GBCR.Output
 
+Output.debugMessageBuffer = {}
+
 local Globals = GBCR.Globals
 local date = Globals.date
-local find = Globals.find
 local select = Globals.select
+local string_find = Globals.string_find
 local string_format = Globals.string_format
 local tostring = Globals.tostring
 local type = Globals.type
@@ -25,15 +27,15 @@ local function bufferContent(self, message)
     debugMessageBuffer[#debugMessageBuffer + 1] = message
 
     local limit = Constants.LIMITS.MAX_BUFFER_SIZE
-    local currentSize = #debugMessageBuffer
+    if #debugMessageBuffer > limit + 100 then
+        local keep = limit - 50
+        local overflow = #debugMessageBuffer - keep
 
-    if currentSize > limit + 50 then
-        local newCount = currentSize - 50
-        for i = 1, newCount do
-            debugMessageBuffer[i] = debugMessageBuffer[i + 50]
+        for i = 1, keep do
+            debugMessageBuffer[i] = debugMessageBuffer[i + overflow]
         end
 
-        for i = newCount + 1, currentSize do
+        for i = keep + 1, #debugMessageBuffer do
             debugMessageBuffer[i] = nil
         end
     end
@@ -41,89 +43,92 @@ end
 
 -- Helper function that enabled all logging
 local function log(self, level, prefix, fmt, ...)
-	if level < GBCR.Options:GetLogLevel() and level ~= logLevels.RESPONSE.level then
-		return false
-	end
+    if level < GBCR.Options:GetLogLevel() and level ~= logLevels.RESPONSE.level then
+        return false
+    end
 
-	local message
-	local numArgs = select("#", ...)
+    local message
+    local numArgs = select("#", ...)
 
-	if numArgs > 0 then
-		if type(fmt) == "string" and find(fmt, "%", 1, true) then
-			message = string_format(fmt, ...)
-		else
-			message = tostring(fmt)
-			for i = 1, numArgs do
-				message = message .. " " .. tostring(select(i, ...))
-			end
-		end
-	else
-		message = tostring(fmt)
-	end
+    if numArgs > 0 then
+        if type(fmt) == "string" and string_find(fmt, "%", 1, true) then
+            message = string_format(fmt, ...)
+        else
+            message = tostring(fmt)
+            for i = 1, numArgs do
+                message = message .. " " .. tostring(select(i, ...))
+            end
+        end
+    else
+        message = tostring(fmt)
+    end
 
-	if level == logLevels.DEBUG.level then
-		local timeStr = date("%H:%M:%S", GetServerTime())
-		bufferContent(self, timeStr .. ": " .. (prefix or "") .. " " .. message)
+    if level == logLevels.DEBUG.level then
+        local timeStr = date("%H:%M:%S", GetServerTime())
+        bufferContent(self, timeStr .. ": " .. (prefix or "") .. " " .. message)
 
-		GBCR.UI:QueueDebugLogRefresh()
+        GBCR.UI:QueueDebugLogRefresh()
 
-		return true
-	end
+        return true
+    end
 
-	if prefix then
-		GBCR.Addon:Print(prefix, message)
-	else
-		GBCR.Addon:Print(message)
-	end
+    if prefix then
+        GBCR.Addon:Print(prefix, message)
+    else
+        GBCR.Addon:Print(message)
+    end
 
-	return true
+    return true
 end
 
 -- Development/troubleshooting details
 local function debug(self, categoryOrFmt, ...)
-	if type(categoryOrFmt) == "string" and Constants.DEBUG_CATEGORY[categoryOrFmt] then
-		if not GBCR.Options:IsCategoryEnabled(categoryOrFmt) then
-			return false
-		end
+    if GBCR.Options:GetLogLevel() > logLevels.DEBUG.level then
+        return false
+    end
 
-		return log(self, logLevels.DEBUG.level, Globals:Colorize(colorGray, "[" .. categoryOrFmt .. "]"), ...)
-	end
+    if type(categoryOrFmt) == "string" and Constants.DEBUG_CATEGORY[categoryOrFmt] then
+        if not GBCR.Options:IsCategoryEnabled(categoryOrFmt) then
+            return false
+        end
 
-	-- Fallback: no category specified
-	return log(self, logLevels.DEBUG.level, Globals:Colorize(colorGray, "[DEBUG]"), categoryOrFmt, ...)
+        return log(self, logLevels.DEBUG.level, Globals.ColorizeText(colorGray, "[" .. categoryOrFmt .. "]"), ...)
+    end
+
+    return log(self, logLevels.DEBUG.level, Globals.ColorizeText(colorGray, "[DEBUG]"), categoryOrFmt, ...)
 end
 
 -- Potocol communication details (controlled by COMMS category)
 local function debugComm(self, fmt, ...)
-	if GBCR.Options:GetLogLevel() < logLevels.DEBUG.level then
-		return false
-	end
+    if GBCR.Options:GetLogLevel() < logLevels.DEBUG.level then
+        return false
+    end
 
-	if not GBCR.Options:IsCategoryEnabled("COMMS") then
-		return false
-	end
+    if not GBCR.Options:IsCategoryEnabled("COMMS") then
+        return false
+    end
 
-	return log(self, logLevels.DEBUG.level, Globals:Colorize(colorGray, "[COMMS] (DEBUG)"), fmt, ...)
+    return log(self, logLevels.DEBUG.level, Globals.ColorizeText(colorGray, "[COMMS] (DEBUG)"), fmt, ...)
 end
 
 -- Sync status, normal operations
 local function info(self, fmt, ...)
-	return log(self, logLevels.INFO.level, nil, fmt, ...)
+    return log(self, logLevels.INFO.level, nil, fmt, ...)
 end
 
 -- Something unexpected but recoverable
 local function warn(self, fmt, ...)
-	return log(self, logLevels.WARN.level, Globals:Colorize(colorOrange, "[WARN]"), fmt, ...)
+    return log(self, logLevels.WARN.level, Globals.ColorizeText(colorOrange, "[WARN]"), fmt, ...)
 end
 
 -- Something failed
 local function error(self, fmt, ...)
-	return log(self, logLevels.ERROR.level, Globals:Colorize(colorRed, "[ERROR]"), fmt, ...)
+    return log(self, logLevels.ERROR.level, Globals.ColorizeText(colorRed, "[ERROR]"), fmt, ...)
 end
 
 -- Response to user commands (always shown)
 local function response(self, fmt, ...)
-	return log(self, logLevels.RESPONSE.level, nil, fmt, ...)
+    return log(self, logLevels.RESPONSE.level, nil, fmt, ...)
 end
 
 -- Export functions for other modules

@@ -3,29 +3,34 @@ local addonName, GBCR = ...
 GBCR.Core = {}
 local Core = GBCR.Core
 
-GBCR.Addon = GBCR.Libs.AceAddon:NewAddon(addonName, "AceComm-3.0", "AceConsole-3.0", "AceEvent-3.0", "AceTimer-3.0")
+GBCR.Addon = GBCR.Libs.AceAddon:NewAddon(addonName, "AceComm-3.0", "AceConsole-3.0", "AceEvent-3.0")
 
 local Globals = GBCR.Globals
+local string_match = Globals.string_match
 local tonumber = Globals.tonumber
+local wipe = Globals.wipe
 
 local GetAddOnMetadata = Globals.GetAddOnMetadata
 
 local Constants = GBCR.Constants
 local logLevels = Constants.LOG_LEVEL
 
+-- _G[addonName] = GBCR -- TODO: remove before release
+
 -- Make the addon metadata universally available
 local function loadMetadata(self)
     local addonTitle = GetAddOnMetadata(addonName, "Title")
     local addonVersion = GetAddOnMetadata(addonName, "Version") or "0.0.0"
-    local major, minor, patch = string.match(addonVersion, "(%d+)%.(%d+)%.(%d+)")
+    local major, minor, patch = string_match(addonVersion, "(%d+)%.(%d+)%.(%d+)")
     local addonVersionNumber = (tonumber(major) * 10000) + (tonumber(minor) * 100) + (tonumber(patch) or 0)
-    local addonIsOutdated = GBCR.Protocol.isAddonOutdated and Globals:Colorize(Constants.COLORS.GOLD, " (a newer version is available)") or ""
+    local addonIsOutdated = GBCR.Protocol.isAddonOutdated and
+                                Globals.ColorizeText(Constants.COLORS.GOLD, " (a newer version is available)") or ""
     local addonHeader = addonTitle .. " v" .. addonVersion .. addonIsOutdated
 
     self.addonTitle = addonTitle
-	self.addonHeader = addonHeader
-	self.addonVersion = addonVersion
-	self.addonVersionNumber = addonVersionNumber
+    self.addonHeader = addonHeader
+    self.addonVersion = addonVersion
+    self.addonVersionNumber = addonVersionNumber
 
     if GBCR.UI.Inventory.window then
         GBCR.UI.Inventory.window:SetTitle(addonHeader)
@@ -37,69 +42,48 @@ function GBCR.Addon:OnInitialize()
     loadMetadata(Core)
 
     local defaults = {
-		char = {
-			bank = {
-				inventoryTracking = true,
-				donationsTracking = true,
-				reportReceivedDonations = true,
-			},
-		},
-		profile = {
-			combat = {
-				hide = true,
-			},
-			minimap = {
-				hide = false,
-			},
+        char = {bank = {inventoryTracking = true, donationsTracking = true, reportReceivedDonations = true, rankFulfillment = {}}},
+        profile = {
+            combat = {hide = true},
+            minimap = {hide = false},
+            uiTransparency = false,
+            clockTime = "realm",
             framePositions = {
-				inventory = {
-					width = 700,
-					height = 500,
-				},
-				debug = {
-					width = 800,
-					height = 400,
-				}
+                inventory = {width = 850, height = 485},
+                debug = {width = 800, height = 400},
+                panes = {cartLeft = 550, previewRight = 284}
             },
-			logLevel = logLevels.INFO.level,
-			debugCategories = {
-				ROSTER = false,
-				COMMS = false,
-				SYNC = false,
-				CHUNK = false,
-				DONATIONS = false,
-				WHISPER = false,
-				-- REQUESTS = false,
-				UI = false,
-				PROTOCOL = false,
-				DATABASE = false,
-				EVENTS = false,
-				INVENTORY = false,
-				-- MAIL = false,
-				ITEM = false,
-				-- FULFILL = false,
-				SEARCH = false,
-				-- QUERIES = false,
-				REPLIES = false,
-			},
-			sortMode = "default"
-		},
-		global = {
-			guilds = {}
-		}
-	}
-    GBCR.db = GBCR.Libs.AceDB:New("GBCR_DB_ALPHA", defaults, true)
+            logLevel = logLevels.INFO.level,
+            debugCategories = {
+                COMMS = false,
+                WHISPER = false,
+                PROTOCOL = false,
+                SYNC = false,
+                CHUNK = false,
+                DATABASE = false,
+                UI = false,
+                ITEM = false,
+                SEARCH = false,
+                EVENTS = false,
+                INVENTORY = false,
+                ROSTER = false,
+                LEDGER = false
+            },
+            sortMode = "default"
+        },
+        global = {guilds = {}}
+    }
+    GBCR.db = GBCR.Libs.AceDB:New("GBCR_DB", defaults, true)
 
     GBCR.Database:Init()
     GBCR.Options:Init()
     GBCR.UI.Debug:Init()
     GBCR.Inventory:Init()
     GBCR.Guild:Init()
-    GBCR.Chat:Init()
+    GBCR.Chat.Init()
     GBCR.Protocol:Init()
     GBCR.UI:Init()
-    GBCR.Donations:Init()
-    GBCR.Search:Init()
+    GBCR.Ledger:Init()
 
     local framePositionsDebug = GBCR.db.profile.framePositions.debug
     if not framePositionsDebug.left or not framePositionsDebug.top then
@@ -116,6 +100,112 @@ end
 function GBCR.Addon:OnDisable()
     GBCR.Events:UnregisterEvents()
     GBCR.Protocol:CancelAllDebounceTimers()
+
+    GBCR.Protocol.gossipLoopRunning = false
+
+    if GBCR.Protocol.timerLoginHashBroadcast then
+        GBCR.Protocol.timerLoginHashBroadcast:Cancel()
+        GBCR.Protocol.timerLoginHashBroadcast = nil
+    end
+
+    if GBCR.Protocol.debounceHardDeadlineTimer then
+        GBCR.Protocol.debounceHardDeadlineTimer:Cancel()
+        GBCR.Protocol.debounceHardDeadlineTimer = nil
+    end
+
+    -- if GBCR.Protocol.debounceTimers.singularAlt[key] then
+    --     GBCR.Protocol.debounceTimers.singularAlt[key]:Cancel()
+    --     GBCR.Protocol.debounceTimers.singularAlt[key] = nil
+    -- end
+
+    if GBCR.Protocol.debounceTimers.multipleAlts then
+        GBCR.Protocol.debounceTimers.multipleAlts:Cancel()
+        GBCR.Protocol.debounceTimers.multipleAlts = nil
+    end
+
+    if GBCR.Protocol.fingerprintResponseTimer then
+        GBCR.Protocol.fingerprintResponseTimer:Cancel()
+        GBCR.Protocol.fingerprintResponseTimer = nil
+    end
+
+    if GBCR.Protocol.printVersionsTimer then
+        GBCR.Protocol.printVersionsTimer:Cancel()
+        GBCR.Protocol.printVersionsTimer = nil
+    end
+
+    if GBCR.Guild.timerRebuildGuildRosterInfo then
+        GBCR.Guild.timerRebuildGuildRosterInfo:Cancel()
+        GBCR.Guild.timerRebuildGuildRosterInfo = nil
+    end
+
+    if GBCR.Events.timerRefreshOnlineMembersCache then
+        GBCR.Events.timerRefreshOnlineMembersCache:Cancel()
+        GBCR.Events.timerRefreshOnlineMembersCache = nil
+    end
+
+    if GBCR.Events.timerBagUpdateDelayedScanInventory then
+        GBCR.Events.timerBagUpdateDelayedScanInventory:Cancel()
+        GBCR.Events.timerBagUpdateDelayedScanInventory = nil
+    end
+
+    if GBCR.Events.timerGetItemInfoReceivedScanInventory then
+        GBCR.Events.timerGetItemInfoReceivedScanInventory:Cancel()
+        GBCR.Events.timerGetItemInfoReceivedScanInventory = nil
+    end
+
+    if GBCR.Ledger and GBCR.Ledger.timerLedgerUpdateBroadcast then
+        GBCR.Ledger.timerLedgerUpdateBroadcast:Cancel()
+        GBCR.Ledger.timerLedgerUpdateBroadcast = nil
+    end
+
+    if GBCR.UI.Inventory.clockTicker then
+        GBCR.UI.Inventory.clockTicker:Cancel()
+        GBCR.UI.Inventory.clockTicker = nil
+    end
+
+    if GBCR.UI.Inventory.syncPulseTicker then
+        GBCR.UI.Inventory.syncPulseTicker:Cancel()
+        GBCR.UI.Inventory.syncPulseTicker = nil
+    end
+
+    if GBCR.UI.Inventory.searchTimer then
+        GBCR.UI.Inventory.searchTimer:Cancel()
+        GBCR.UI.Inventory.searchTimer = nil
+    end
+
+    if GBCR.UI.Inventory.resizeTimer then
+        GBCR.UI.Inventory.resizeTimer:Cancel()
+        GBCR.UI.Inventory.resizeTimer = nil
+    end
+
+    GBCR.Protocol.isAcceptingIncoming = false
+
+    if GBCR.Protocol.requestTimeoutTimers then
+        for _, timer in pairs(GBCR.Protocol.requestTimeoutTimers) do
+            timer:Cancel()
+        end
+        wipe(GBCR.Protocol.requestTimeoutTimers)
+    end
+    if GBCR.Protocol.requestRetryTimers then
+        for _, timer in pairs(GBCR.Protocol.requestRetryTimers) do
+            timer:Cancel()
+        end
+        wipe(GBCR.Protocol.requestRetryTimers)
+    end
+
+    if GBCR.UI.Inventory.clockTicker then
+        GBCR.UI.Inventory.clockTicker:Cancel()
+        GBCR.UI.Inventory.clockTicker = nil
+    end
+    if GBCR.UI.Inventory.syncPulseTicker then
+        GBCR.UI.Inventory.syncPulseTicker:Cancel()
+        GBCR.UI.Inventory.syncPulseTicker = nil
+    end
+
+    if GBCR.Ledger and GBCR.Ledger.timerLedgerUpdateBroadcast then
+        GBCR.Ledger.timerLedgerUpdateBroadcast:Cancel()
+        GBCR.Ledger.timerLedgerUpdateBroadcast = nil
+    end
 end
 
 -- Export functions for other modules

@@ -7,11 +7,11 @@ local Globals = GBCR.Globals
 local string_len = Globals.string_len
 local table_concat = Globals.table_concat
 
-local function onClose(self)
-    self.isOpen = false
+local function onClose()
+    UI_Debug.isOpen = false
 
-    if self.window then
-        self.window:Hide()
+    if UI_Debug.window then
+        UI_Debug.window:Hide()
     end
 end
 
@@ -25,7 +25,7 @@ local function drawContent(self)
     self.content:SetText(fullText)
 
     local messageCount = #GBCR.Output.debugMessageBuffer
-    self.window:SetStatusText("Messages: " .. messageCount .. ". Select text and press Ctrl + C to copy.")
+    self.window:SetStatusText("Select text and press Ctrl + C to copy " .. messageCount .. " messages")
 
     local editBoxObj = self.content.editBox
     if editBoxObj then
@@ -39,13 +39,12 @@ local function drawWindow(self)
 
     local debugOutput = aceGUI:Create("Frame")
     debugOutput:Hide()
-    debugOutput:SetCallback("OnClose", function()
-		onClose(UI_Debug)
-    end)
+    debugOutput:SetCallback("OnClose", onClose)
     debugOutput:SetTitle(GBCR.Core.addonHeader .. " - Debug output")
-    debugOutput:SetStatusText("Select text and press Ctrl + C to copy.")
+    debugOutput:SetStatusText("Select text and press Ctrl + C to copy")
     debugOutput:SetLayout("Fill")
     debugOutput:SetStatusTable(optionsDB.profile.framePositions.debug)
+    debugOutput.frame:SetClampedToScreen(true)
     self.window = debugOutput
 
     local debugEditBox = aceGUI:Create("MultiLineEditBox")
@@ -58,9 +57,9 @@ local function drawWindow(self)
 end
 
 local function openWindow(self)
-	if self.isOpen then
-		return
-	end
+    if self.isOpen then
+        return
+    end
 
     self.isOpen = true
 
@@ -70,17 +69,15 @@ local function openWindow(self)
 
     self.window:Show()
 
-	GBCR.UI:ClampFrameToScreen(self.window)
-
     drawContent(self)
 end
 
 local function closeWindow(self)
-	if not self.isOpen or not self.window then
-		return
-	end
+    if not self.isOpen or not self.window then
+        return
+    end
 
-    onClose(self)
+    onClose()
 end
 
 local function toggleWindow(self)
@@ -88,13 +85,16 @@ local function toggleWindow(self)
         closeWindow(self)
     else
         if not GBCR.Options:IsDebugEnabled() then
-    	    GBCR.Output:Response("Debugging is disabled. Enable with %s.", GBCR.Globals:Colorize(GBCR.Constants.COLORS.GOLD, "/bank debug"))
+            GBCR.Output:Response("Debugging is disabled. Enable with %s.",
+                                 GBCR.Globals.ColorizeText(GBCR.Constants.COLORS.GOLD, "/bank debug"))
 
             return
         end
 
         openWindow(self)
-	    GBCR.Output:Response("All debug output will appear in a dedicated window. Use the %s command to toggle hide and show that window.", GBCR.Globals:Colorize(GBCR.Constants.COLORS.GOLD, "/bank debuglog"))
+        GBCR.Output:Response(
+            "All debug output appears in a dedicated window. Use the %s command to toggle the visibility of that window.",
+            GBCR.Globals.ColorizeText(GBCR.Constants.COLORS.GOLD, "/bank debuglog"))
     end
 end
 

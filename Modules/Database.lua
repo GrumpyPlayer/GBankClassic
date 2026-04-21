@@ -4,26 +4,44 @@ GBCR.Database = {}
 local Database = GBCR.Database
 
 local Globals = GBCR.Globals
+local debugprofilestop = Globals.debugprofilestop
 local pairs = Globals.pairs
 local select = Globals.select
-local type = Globals.type
 local string_gsub = Globals.string_gsub
+local type = Globals.type
 
+local After = Globals.After
 local GetClassColor = Globals.GetClassColor
 local GetGuildInfo = Globals.GetGuildInfo
 local GetRealmName = Globals.GetRealmName
+local shouldYield = Globals.ShouldYield
 
 local Constants = GBCR.Constants
 local colorGold = Constants.COLORS.GOLD
 
 local Output = GBCR.Output
 
--- Helper to generates a unique, connected-realm safe database key
--- Format: "GuildName-HomeRealm"
+-- Retrieve the list of guild bank alts on the roster (includes manually defined guild bank alts)
+-- This returns an array (ordered iteration)
+-- for i = 1, #list do print(list[i]) end
+local function getRosterGuildBankAlts(self)
+    if not self.savedVariables then
+        return nil
+    end
+
+    local roster = self.savedVariables.roster
+    if roster and roster.alts and #roster.alts > 0 then
+        return roster.alts
+    end
+
+    return nil
+end
+
+-- Helper to generates a unique, connected-realm safe database key (format: "GuildName-HomeRealm")
 local function getUniqueKey(guildName)
     if not guildName then
-		return nil
-	end
+        return nil
+    end
 
     local currentGuild, _, _, guildRealm = GetGuildInfo("player")
     local realm
@@ -31,7 +49,6 @@ local function getUniqueKey(guildName)
     if currentGuild == guildName and guildRealm and guildRealm ~= "" then
         realm = guildRealm
     else
-        -- Fallback to local realm if the API returns nil (standard for non-connected realms)
         realm = GetRealmName()
     end
 
@@ -42,7 +59,7 @@ end
 
 -- Wipe local guild bank alt data for a specific guild bank alt
 local function resetGuildBankAlt(self, guildName, altName)
-	local uniqueKey = getUniqueKey(guildName)
+    local uniqueKey = getUniqueKey(guildName)
     if not uniqueKey or not altName then
         return
     end
@@ -54,12 +71,14 @@ local function resetGuildBankAlt(self, guildName, altName)
 
     db.alts[altName] = {}
 
-    GBCR.Core:Response("Your local database for %s (guild: %s) has been emptied.", GBCR.Globals:Colorize(select(4, GetClassColor(GBCR.Guild:GetGuildMemberInfo(altName))), altName), GBCR.Globals:Colorize(colorGold, guildName))
+    GBCR.Output:Response("Your local database for guild bank %s (guild: %s) has been reset.",
+                         GBCR.Globals.ColorizeText(select(4, GetClassColor(GBCR.Guild:GetGuildMemberInfo(altName))), altName),
+                         GBCR.Globals.ColorizeText(colorGold, guildName))
 end
 
 -- Wipe all local guild bank alt data in saved variables for the specified guild
 local function resetGuildDatabase(self, guildName)
-	local uniqueKey, realmName = getUniqueKey(guildName)
+    local uniqueKey, realmName = getUniqueKey(guildName)
     if not uniqueKey then
         return
     end
@@ -67,79 +86,156 @@ local function resetGuildDatabase(self, guildName)
     self.db.global.guilds[uniqueKey] = {
         guildName = guildName,
         realm = realmName,
-        roster = {},
+        roster = {alts = {}, version = nil, areOfficerNotesUsed = nil, manualAlts = {}},
         alts = {}
     }
     self.savedVariables = nil
 
-	GBCR.Output:Response("Your local database for guild %s has been emptied.", GBCR.Globals:Colorize(colorGold, guildName))
+    GBCR.Output:Response("Your local guild bank database (guild: %s) has been reset.",
+                         GBCR.Globals.ColorizeText(colorGold, guildName))
+end
+
+-- Compress data for compact savedVariables storage
+local function compressData(data)
+    local serialized = GBCR.Libs.LibSerialize:Serialize(data)
+    local compressed = GBCR.Libs.LibDeflate:CompressDeflate(serialized, {level = Constants.LIMITS.COMPRESSION_LEVEL})
+
+    return GBCR.Libs.LibDeflate:EncodeForPrint(compressed)
+end
+
+-- Compress data from savedVariables in memory
+local function decompressData(encoded)
+    local compressed = GBCR.Libs.LibDeflate:DecodeForPrint(encoded)
+    if not compressed then
+        return nil
+    end
+
+    local serialized = GBCR.Libs.LibDeflate:DecompressDeflate(compressed)
+    if not serialized then
+        return nil
+    end
+
+    local ok, items = GBCR.Libs.LibSerialize:Deserialize(serialized)
+
+    return ok and items or nil
+end
+
+-- Helper to determine if data decompression is needed
+local function decompressIfNeeded(alt, compressedField, field, decompressFn)
+    if alt[compressedField] and not alt[field] then
+        alt[field] = decompressFn(alt[compressedField])
+    end
 end
 
 -- Load all guild bank alt data for the current guild from saved variables
 local function loadGuild(self, guildName)
-	if not guildName then
-		return nil
-	end
+    GBCR.Output:Debug("DATABASE", "Loading guild bank database from saved variables for %s", tostring(guildName))
 
-	local uniqueKey, realmName = getUniqueKey(guildName)
+    if not guildName then
+        return nil
+    end
+
+    local uniqueKey, realmName = getUniqueKey(guildName)
 
     self.db.global.guilds = self.db.global.guilds or {}
     local db = self.db.global.guilds[uniqueKey]
 
-	-- Initialization
-	if db == nil then
+    if db == nil then
         resetGuildDatabase(self, guildName)
-        db = self.db.factionrealm[guildName]
+        db = self.db.global.guilds[uniqueKey]
     else
-        -- Initialize missing fields without wiping existing data
         db.guildName = db.guildName or guildName
-		db.realm = db.realm or realmName
+        db.realm = db.realm or realmName
         db.roster = db.roster or {}
         db.alts = db.alts or {}
+        db.networkMeta = nil
     end
 
-	-- Data maintenance
-	if db.alts then
-		local inventory = GBCR.Inventory
-		local protocol = GBCR.Protocol
+    if db and db.alts then
+        local protocol = GBCR.Protocol
 
-		local maintenanceState = { linkKeyCache = {} }
+        local altNames = {}
+        local altCount = 0
+        for altName, alt in pairs(db.alts) do
+            if type(alt) == "table" and (alt.items or alt.itemsCompressed) then
+                altCount = altCount + 1
+                altNames[altCount] = altName
+            end
+        end
 
-		for altName, alt in pairs(db.alts) do
-			if type(alt) == "table" and alt.items then
-                maintenanceState.items = {}
-                maintenanceState.byKey = {}
+        GBCR.Database.loadGeneration = (GBCR.Database.loadGeneration or 0) + 1
+        local myGen = GBCR.Database.loadGeneration
+        local altIndex = 1
 
-                inventory:AggregateInto(maintenanceState, alt.items)
+        local function processAltsLoop()
+            if myGen ~= GBCR.Database.loadGeneration then
+                Output:Debug("DATABASE", "Async maintenance aborted (stale generation %d)", myGen)
 
-                alt.items = maintenanceState.items
+                return
+            end
 
-				Output:Debug("DATABASE", "Forced deduplication for guild bank alt %s: %d items", altName, #alt.items)
+            local startTime = debugprofilestop()
+            local iterations = 0
 
-				if not alt.itemsHash and #alt.items > 0 then
-					alt.itemsHash = inventory:ComputeItemsHash(alt.items, alt.money or 0)
-					Output:Debug("DATABASE", "Recomputed items hash after recalculation for %s: %d", altName, alt.itemsHash)
-				end
+            while altIndex <= altCount do
+                iterations = iterations + 1
+                local altName = altNames[altIndex]
+                local alt = db.alts[altName]
 
-				protocol:ReconstructItemLinks(alt.items)
-			end
-		end
-	end
+                if not alt then
+                    altIndex = altIndex + 1
+                else
+                    decompressIfNeeded(alt, "cacheCompressed", "cache", function(data)
+                        local decoded = decompressData(data)
 
-	self.savedVariables = db
+                        return decoded and {bank = decoded.bank, bags = decoded.bags, mail = decoded.mail} or nil
+                    end)
+                    decompressIfNeeded(alt, "itemsCompressed", "items", function(data)
+                        return decompressData(data)
+                    end)
+                    decompressIfNeeded(alt, "ledgerCompressed", "ledger", function(data)
+                        return decompressData(data)
+                    end)
+
+                    protocol:ReconstructItemLinks(alt.items)
+                    altIndex = altIndex + 1
+                end
+
+                if shouldYield(startTime, iterations, 1, 10) then
+                    After(0, processAltsLoop)
+
+                    return
+                end
+            end
+
+            if myGen ~= GBCR.Database.loadGeneration then
+                return
+            end
+
+            GBCR.UI.Inventory:MarkAllDirty()
+            GBCR.UI:QueueUIRefresh()
+            Output:Debug("DATABASE", "Async maintenance complete for %d alts (gen %d)", altCount, myGen)
+        end
+
+        if altCount > 0 then
+            After(0, processAltsLoop)
+        end
+    end
 
     return db
 end
 
 -- Persist savedVariables for easy use by the addon
 local function init(self)
-	self.savedVariables = nil
-
+    self.savedVariables = nil
     self.db = GBCR.db
 end
 
 -- Export functions for other modules
+Database.GetRosterGuildBankAlts = getRosterGuildBankAlts
 Database.ResetGuildBankAlt = resetGuildBankAlt
 Database.ResetGuildDatabase = resetGuildDatabase
+Database.CompressData = compressData
+Database.DecompressData = decompressData
 Database.Load = loadGuild
 Database.Init = init

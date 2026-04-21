@@ -4,13 +4,19 @@ GBCR.Inventory = {}
 local Inventory = GBCR.Inventory
 
 local Globals = GBCR.Globals
+local bit_bxor = Globals.bit_bxor
+local debugprofilestop = Globals.debugprofilestop
 local ipairs = Globals.ipairs
-local math_min = Globals.math_min
 local pairs = Globals.pairs
 local select = Globals.select
 local string_byte = Globals.string_byte
+local string_find = Globals.string_find
+local string_format = Globals.string_format
 local string_len = Globals.string_len
+local string_match = Globals.string_match
+local strsplit = Globals.strsplit
 local table_sort = Globals.table_sort
+local tonumber = Globals.tonumber
 local tostring = Globals.tostring
 local type = Globals.type
 local wipe = Globals.wipe
@@ -24,144 +30,173 @@ local GetInboxItem = Globals.GetInboxItem
 local GetInboxItemLink = Globals.GetInboxItemLink
 local GetInboxNumItems = Globals.GetInboxNumItems
 local GetItemInfo = Globals.GetItemInfo
-local GetItemInventoryTypeByID = Globals.GetItemInventoryTypeByID
 local GetMoney = Globals.GetMoney
 local GetServerTime = Globals.GetServerTime
-local attachementsMaxReceive = Globals.ATTACHMENTS_MAX_RECEIVE
+local shouldYield = Globals.ShouldYield
+
+local attachmentsMaxReceive = Globals.ATTACHMENTS_MAX_RECEIVE
 local bankContainer = Globals.BANK_CONTAINER
+local itemBindOnAcquire = Globals.ITEM_BIND_ON_ACQUIRE
 local numBankGenericSlots = Globals.NUM_BANKGENERIC_SLOTS
 
 local Constants = GBCR.Constants
 
--- Sort items displayed in the UI based on the selected sort mode
-local function sort(self, items, mode)
-    if not items then
-        return
-    end
-
-    table_sort(items, Constants.SORT_COMPARATORS[mode] or Constants.SORT_COMPARATORS.default)
-end
-
--- Retrieve uncached item information for the UI as fast as possible
-local function getItems(self, items, callback)
-    if not items or type(items) ~= "table" then
-        callback({})
+-- Build an index of item ID and guild bank alt to be able to show a list of sources in the item tooltip
+local function buildGlobalItemSourcesIndex(self, dirtyAlts, callback)
+    local savedVariables = GBCR.Database.savedVariables
+    if not savedVariables or not savedVariables.alts then
+        if callback then
+            callback()
+        end
 
         return
     end
 
-    local list = {}
-    local keys = {}
-    for k in pairs(items) do
-        keys[#keys + 1] = k
-    end
+    if dirtyAlts and next(dirtyAlts) then
+        local dirtyCount = 0
 
-    local totalKeys = #keys
-    local currentIndex = 1
-    local batchSize = Constants.LIMITS.BATCH_SIZE
-    local callbackFired = false
+        for _ in pairs(dirtyAlts) do
+            dirtyCount = dirtyCount + 1
+        end
 
-    if totalKeys == 0 then
-        callback(list)
+        if dirtyCount <= 8 then
+            GBCR.Output:Debug("INVENTORY", "buildGlobalItemSourcesIndex: partial rebuild (%d dirty)", dirtyCount)
 
-        return
-    end
+            for altName in pairs(dirtyAlts) do
+                local altData = savedVariables.alts[altName]
+                local items = altData and altData.items
 
-	local options = GBCR.Options
-    local debugEnabled = options:IsDebugEnabled() and options:IsCategoryEnabled("ITEM")
+                if items then
+                    for i = 1, #items do
+                        local item = items[i]
+                        local id = item.itemId
 
-    local function processBatch()
-        local limit = math_min(currentIndex + batchSize - 1, totalKeys)
+                        if not id and item.itemString then
+                            id = tonumber(string_match(item.itemString, "^(%d+)")) or 0
+                        end
 
-        for i = currentIndex, limit do
-            local key = keys[i]
-            local item = items[key]
-
-            if item and type(item) == "table" and item.itemId and item.itemId > 0 then
-                local itemId = item.itemId
-                local itemLink = item.itemLink
-
-				if debugEnabled then
-					GBCR.Output:Debug("ITEM", "Processing wrapper: itemId=%s, itemLink=%s, originalItemId=%s", tostring(itemId), tostring(itemLink), tostring(item.itemId))
-
-					if itemLink then
-						GBCR.Output:Debug("ITEM", "Item %d has itemLink, using directly", itemId)
-					end
-				end
-
-                local name, _, rarity, level, _, _, _, _, _, icon, price, itemClassId, itemSubClassId = GetItemInfo(itemLink or itemId)
-
-                if name then
-					if debugEnabled then
-						GBCR.Output:Debug("ITEM", "Item %d already cached", itemId)
-					end
-
-                    if not item.itemInfo then
-                        item.itemInfo = { class = itemClassId or 0, subClass = itemSubClassId or 0, equipId = GetItemInventoryTypeByID(itemId) or 0, rarity = rarity or 1, name = name, level = level or 1, price = price or 0, icon = icon or 134400 }
+                        if id and id > 0 then
+                            local sources = self.cachedSourcesPerItem[id]
+                            if sources then
+                                sources[altName] = nil
+                                if not next(sources) then
+                                    self.cachedSourcesPerItem[id] = nil
+                                end
+                            end
+                        end
                     end
-                    list[#list + 1] = item
-                else
-                    if not item.itemInfo then
-                        item.itemInfo = { class = 0, subClass = 0, equipId = 0, rarity = 1, name = "Item " .. tostring(itemId), level = 1, price = 0, icon = 134400 }
-                    end
-                    list[#list + 1] = item
                 end
             end
-        end
 
-        currentIndex = limit + 1
+            for altName in pairs(dirtyAlts) do
+                local altData = savedVariables.alts[altName]
+                local items = altData and altData.items
 
-        if currentIndex > totalKeys then
-            if not callbackFired then
-                callbackFired = true
-                callback(list)
+                if items then
+                    for i = 1, #items do
+                        local item = items[i]
+                        local id = item.itemId
+
+                        if not id and item.itemString then
+                            id = tonumber(string_match(item.itemString, "^(%d+)")) or 0
+                        end
+
+                        if id and id > 0 then
+                            local sources = self.cachedSourcesPerItem[id]
+                            if not sources then
+                                sources = {}
+                                self.cachedSourcesPerItem[id] = sources
+                            end
+
+                            sources[altName] = (sources[altName] or 0) + (item.itemCount or 1)
+                        end
+                    end
+                end
             end
-        else
-            After(0, processBatch)
+
+            if callback then
+                callback()
+            end
+
+            return
+        end
+
+        GBCR.Output:Debug("INVENTORY", "buildGlobalItemSourcesIndex: %d dirty alts, promoting to full rebuild", dirtyCount)
+    end
+
+    GBCR.Output:Debug("INVENTORY", "buildGlobalItemSourcesIndex: full rebuild")
+    local altsList = {}
+
+    local altsCount = 0
+    for altName, altData in pairs(savedVariables.alts) do
+        if type(altData) == "table" then
+            local items = altData.items
+            if not items and altData.itemsCompressed then
+                items = GBCR.Database.DecompressData(altData.itemsCompressed)
+            end
+
+            if items and #items > 0 then
+                altsCount = altsCount + 1
+                altsList[altsCount] = {name = altName, items = items}
+            end
         end
     end
 
-    processBatch()
-end
+    wipe(self.cachedSourcesPerItem)
 
--- Retrieve itemInfo if we're still lacking it for a given search result
-local function getInfo(self, itemId, itemLink)
-    self.infoCache = self.infoCache or {}
+    local altIndex = 1
+    local itemIndex = 1
 
-    local key = itemLink or itemId
-    local cached = self.infoCache[key]
-    if cached then
-        return cached
+    local function Resume()
+        local frameStart = debugprofilestop()
+        local processedThisFrame = 0
+
+        while altIndex <= altsCount do
+            local altEntry = altsList[altIndex]
+            local items = altEntry.items
+            local itemsCount = #items
+            local altName = altEntry.name
+
+            while itemIndex <= itemsCount do
+                local item = items[itemIndex]
+                local id = item.itemId
+
+                if not id and item.itemString then
+                    local m = string_match(item.itemString, "^(%d+)")
+                    id = m and tonumber(m) or 0
+                end
+
+                if id and id > 0 then
+                    local sources = self.cachedSourcesPerItem[id]
+                    if not sources then
+                        sources = {}
+                        self.cachedSourcesPerItem[id] = sources
+                    end
+
+                    sources[altName] = (sources[altName] or 0) + (item.itemCount or 1)
+                end
+
+                itemIndex = itemIndex + 1
+                processedThisFrame = processedThisFrame + 1
+
+                if shouldYield(frameStart, processedThisFrame, 100, 2500) then
+                    After(0, Resume)
+
+                    return
+                end
+            end
+
+            altIndex = altIndex + 1
+            itemIndex = 1
+        end
+
+        if callback then
+            callback()
+        end
     end
 
-	local name, rarity, level, icon, price, itemClassId, itemSubClassId
-
-	-- Try itemLink first if available
-	if itemLink and itemLink ~= "" then
-		name, _, rarity, level, _, _, _, _, _, icon, price, itemClassId, itemSubClassId = GetItemInfo(itemLink)
-	end
-
-	-- Fallback to itemId if itemLink didn't work
-	if not name and itemId and itemId > 0 then
-		name, _, rarity, level, _, _, _, _, _, icon, price, itemClassId, itemSubClassId = GetItemInfo(itemId)
-	end
-
-    local result
-
-	-- If still no data, return basic info with itemId only and the default grey question mark icon
-    if not name then
-        result = { class = 0, subClass = 0, equipId = 0, rarity = 1, name = "Item " .. tostring(itemId or "?"), level = 1, price = 0, icon = 134400 }
-    else
-        local equip = GetItemInventoryTypeByID(itemId)
-        result = { class = itemClassId or 0, subClass = itemSubClassId or 0, equipId = equip or 0, rarity = rarity or 1, name = name, level = level or 1, price = price or 0, icon = icon or 134400 }
-    end
-
-    self.infoCache[key] = result
-
-    return result
+    After(0, Resume)
 end
-
----
 
 -- Get normalized item key for deduplication
 -- Format: itemId:enchant:suffix (3 parts)
@@ -170,15 +205,14 @@ local function getItemKey(self, itemLink)
         return ""
     end
 
-    local cached = self.globalLinkKeyCache[itemLink]
+    local cached = self.cachedItemKeys[itemLink]
     if cached ~= nil then
         return cached
     end
 
-    local itemId, enchant, _, _, _, _, suffix = itemLink:match("|Hitem:([^:]+):([^:]*):([^:]*):([^:]*):([^:]*):([^:]*):([^:]*)")
+    local itemId, enchant, _, _, _, _, suffix = string_match(itemLink,
+                                                             "|Hitem:([^:]+):([^:]*):([^:]*):([^:]*):([^:]*):([^:]*):([^:]*)")
 
-	-- Return itemId, itemId:enchant, itemId::suffix, or itemId:enchant:suffix
-	-- While unique (the 8th part) contains content, just the itemId + enchant + suffix are sufficient to recreate the corect item link
     local key
     if suffix and suffix ~= "" and suffix ~= "0" then
         key = itemId .. ":" .. (enchant or "") .. ":" .. suffix
@@ -188,69 +222,92 @@ local function getItemKey(self, itemLink)
         key = itemId
     end
 
-    self.globalLinkKeyCache[itemLink] = key
+    self.cachedItemKeys[itemLink] = key
 
     return key
 end
 
--- Check if an item needs its itemLink preserved based on item class
+-- Helper to check if an item needs its itemLink preserved based on item class
 local function needsLink(self, itemLink)
-	if not itemLink then
+    if not itemLink then
         return false
     end
 
-   	local classID = select(12, GetItemInfo(itemLink))
+    local classID = select(12, GetItemInfo(itemLink))
+    if classID ~= nil then
+        return Constants.ITEM_CLASSES_NEEDING_LINK[classID] == true
+    end
 
-	-- If item isn't cached, preserve the itemLink to avoid losing suffix data
-	if classID == nil then
-		return true
-	end
+    local itemId = tonumber(string_match(itemLink, "|Hitem:(%d+):"))
+    if itemId and itemId > 0 then
+        self.pendingItemInfoLoads = self.pendingItemInfoLoads or {}
+        if not self.pendingItemInfoLoads[itemId] then
+            self.pendingItemInfoLoads[itemId] = true
+            GetItemInfo(itemId)
+        end
+    end
 
-	-- Gear (weapons/armor) can have random suffixes, so itemLink is required
-    return Constants.ITEM_CLASSES_NEEDING_LINK[classID] == true
+    return true
 end
 
--- Aggregate items from bags, bank, and mail and speed up link parsing across all sources
+-- Helper to aggregate items from bags, bank, and mail and speed up link parsing across all sources
 local function aggregateInto(self, targetState, sourceItems)
     if not sourceItems then
         return
     end
 
-    local function getKey(item)
-        local itemLink = item.itemLink
-        if not itemLink then
-            return item.itemId
-        end
-
-        if needsLink(self, itemLink) then
-            local key = getItemKey(self, itemLink)
-            if key and key ~= "" then
-                return key
-            end
-        else
-            item.itemLink = nil
-        end
-
-        return item.itemId
-    end
-
     for i = 1, #sourceItems do
         local item = sourceItems[i]
 
-        if type(item) == "table" and item.itemId then
+        if type(item) == "table" then
             local count = item.itemCount or 1
-            local key = getKey(item)
+            local key, tempLink, derivedId
 
-            local existing = targetState.byKey[key]
-            if existing then
-                existing.itemCount = existing.itemCount + count
-                if not existing.itemLink and item.itemLink then
-                    existing.itemLink = item.itemLink
+            if item.itemString then
+                key = item.itemString
+                local p1, p2, p3 = strsplit(":", item.itemString)
+                derivedId = tonumber(p1) or 0
+                local enchant = tonumber(p2) or 0
+                local suffix = tonumber(p3) or 0
+                local itemStr = string_format("item:%d:%d:0:0:0:0:%d:0:0:0:0:0:0", derivedId, enchant, suffix)
+                tempLink = string_format("|cffffffff|H%s|h[item:%d]|h|r", itemStr, derivedId)
+            elseif item.itemLink then
+                derivedId = item.itemId or 0
+
+                if needsLink(self, item.itemLink) then
+                    key = getItemKey(self, item.itemLink)
+                    tempLink = item.itemLink
+                else
+                    key = getItemKey(self, item.itemLink)
+                    item.itemLink = nil
+                    local itemStr = string_format("item:%d:0:0:0:0:0:0:0:0:0:0:0:0", derivedId)
+                    tempLink = string_format("|cffffffff|H%s|h[item:%d]|h|r", itemStr, derivedId)
                 end
-            else
-                local newItem = { itemId = item.itemId, itemCount = count, itemLink = item.itemLink, itemInfo = item.itemInfo }
-                targetState.byKey[key] = newItem
-                targetState.items[#targetState.items + 1] = newItem
+
+                if not key or key == "" then
+                    key = tostring(derivedId)
+                end
+            end
+
+            if key then
+                local existing = targetState.byKey[key]
+                if existing then
+                    existing.itemCount = existing.itemCount + count
+                    if not existing.itemLink and tempLink then
+                        existing.itemLink = tempLink
+                    end
+                else
+                    local newItem = {
+                        itemId = derivedId,
+                        itemCount = count,
+                        itemLink = item.itemLink or tempLink,
+                        itemString = item.itemString or (type(key) == "string" and key or tostring(key)),
+                        itemInfo = item.itemInfo
+                    }
+
+                    targetState.byKey[key] = newItem
+                    targetState.items[#targetState.items + 1] = newItem
+                end
             end
         end
     end
@@ -261,10 +318,7 @@ local function recalculateAggregatedItems(self, bankData, bagData, mailData, alt
     wipe(self.aggregateStateItems)
     wipe(self.aggregateStateByKey)
 
-    local targetState = {
-        items = self.aggregateStateItems,
-        byKey = self.aggregateStateByKey
-    }
+    local targetState = {items = self.aggregateStateItems, byKey = self.aggregateStateByKey}
 
     if bankData then
         aggregateInto(self, targetState, bankData)
@@ -284,59 +338,78 @@ local function recalculateAggregatedItems(self, bankData, bagData, mailData, alt
         wipe(alt.items)
     end
 
-    for i = 1, #self.aggregateStateItems do
-        alt.items[i] = self.aggregateStateItems[i]
+    local n = #self.aggregateStateItems
+    for i = 1, n do
+        local item = self.aggregateStateItems[i]
+        item.itemId = nil
+        item.itemInfo = nil
+        item.lowerName = nil
+        item.itemLink = nil
+
+        alt.items[i] = item
     end
 
-    GBCR.Output:Debug("INVENTORY", "Aggregation finished: %d unique items found across bank, bags, and mail.", #alt.items)
+    GBCR.Output:Debug("INVENTORY", "Aggregation finished: %d unique items found across bank, bags, and mail", #alt.items)
+
+    After(0, function()
+        alt.itemsCompressed = GBCR.Database.CompressData(alt.items)
+
+        GBCR.Output:Debug("INVENTORY", "Async compression finished (%d items)", #alt.items)
+    end)
 end
 
--- Compute a hash of money and all items to be able to detect inventory changes
+-- Helper to compute a hash of money and all items to be able to detect inventory changes
 local function computeItemsHash(self, items, money)
-    local sum = money % 2147483647
-
+    local sum = money
     if not items or type(items) ~= "table" then
         return sum
     end
 
-    wipe(self.hashItemsPool)
     local position = 0
 
     for _, item in ipairs(items) do
-        if item and item.itemId and item.itemId > 0 then
+        if item and item.itemString then
             position = position + 1
-            self.hashItemsPool[position] = item
+
+            local entry = self.cachedItemsHashes[position]
+            if not entry then
+                entry = {}
+                self.cachedItemsHashes[position] = entry
+            end
+
+            entry.item = item
+            entry.key = item.itemString
         end
     end
 
-    table_sort(self.hashItemsPool, function(a, b)
-        local aKey = (a.itemLink and needsLink(self, a.itemLink)) and getItemKey(self, a.itemLink) or tostring(a.itemId)
-        local bKey = (b.itemLink and needsLink(self, b.itemLink)) and getItemKey(self, b.itemLink) or tostring(b.itemId)
-
-        if aKey == bKey then
-            return (a.itemCount or 1) < (b.itemCount or 1)
+    for i = position + 1, #self.cachedItemsHashes do
+        self.cachedItemsHashes[i] = nil
+    end
+    table_sort(self.cachedItemsHashes, function(a, b)
+        if a.key == b.key then
+            return (a.item.itemCount or 1) < (b.item.itemCount or 1)
         end
 
-        return aKey < bKey
+        return a.key < b.key
     end)
 
     for i = 1, position do
-        local item = self.hashItemsPool[i]
-        local itemCount = item.itemCount or 1
-        local itemIdentity = (item.itemLink and needsLink(self, item.itemLink)) and getItemKey(self, item.itemLink) or tostring(item.itemId)
+        local entry = self.cachedItemsHashes[i]
+        local key = entry.key
+        local keyLen = string_len(key)
 
-        for j = 1, string_len(itemIdentity) do
-            sum = (sum * 31 + string_byte(itemIdentity, j)) % 2147483647
+        for j = 1, keyLen do
+            sum = bit_bxor(sum * 31, string_byte(key, j))
         end
 
-        sum = (sum * 31 + itemCount) % 2147483647
+        sum = bit_bxor(sum * 31, entry.item.itemCount or 1)
     end
 
     return sum
 end
 
 -- Helper to determine if the bank has been opened
-local function isBankAvailable(self)
+local function isBankAvailable()
     local _, bagType = GetContainerNumFreeSlots(bankContainer)
 
     return bagType ~= nil
@@ -348,13 +421,29 @@ local function scanBag(self, bag, slots, targetTable)
         local itemInfo = GetContainerItemInfo(bag, slot)
 
         if itemInfo then
-            local key = itemInfo.hyperlink and getItemKey(self, itemInfo.hyperlink) or itemInfo.itemID
-            local existing = targetTable[key]
+            local key = itemInfo.hyperlink and getItemKey(self, itemInfo.hyperlink)
+            if not key or key == "" then
+                key = itemInfo.itemID
+            end
 
-            if existing then
-                existing.itemCount = existing.itemCount + itemInfo.stackCount
-            else
-                targetTable[key] = { itemId = itemInfo.itemID, itemCount = itemInfo.stackCount, itemLink = itemInfo.hyperlink }
+            if key then
+                local existing = targetTable[key]
+                if existing then
+                    existing.itemCount = existing.itemCount + itemInfo.stackCount
+                else
+                    if select(14, GetItemInfo(itemInfo.itemID)) ~= itemBindOnAcquire then
+                        local entry = {}
+                        entry.itemCount = itemInfo.stackCount
+
+                        if type(key) == "string" and string_find(key, ":", 1, true) then
+                            entry.itemString = key
+                        else
+                            entry.itemString = tostring(key)
+                        end
+
+                        targetTable[key] = entry
+                    end
+                end
             end
         end
     end
@@ -362,14 +451,14 @@ end
 
 -- Helper to scan the contents of all bags
 local function scanBags(self, bagTable)
-    wipe(self.bagScanCache)
+    wipe(self.cachedBagItems)
 
     for bag = 0, 4 do
-        scanBag(self, bag, GetContainerNumSlots(bag), self.bagScanCache)
+        scanBag(self, bag, GetContainerNumSlots(bag), self.cachedBagItems)
     end
 
     local count = 0
-    for _, item in pairs(self.bagScanCache) do
+    for _, item in pairs(self.cachedBagItems) do
         count = count + 1
         bagTable[count] = item
     end
@@ -377,17 +466,17 @@ end
 
 -- Helper to scan all bank contents when at the bank
 local function scanBank(self, bankTable)
-    if isBankAvailable(self) then
-        wipe(self.bankScanCache)
+    if isBankAvailable() then
+        wipe(self.cachedBankItems)
 
-        scanBag(self, bankContainer, numBankGenericSlots, self.bankScanCache)
+        scanBag(self, bankContainer, numBankGenericSlots, self.cachedBankItems)
 
         for bag = 5, 11 do
-            scanBag(self, bag, GetContainerNumSlots(bag), self.bankScanCache)
+            scanBag(self, bag, GetContainerNumSlots(bag), self.cachedBankItems)
         end
 
         local count = 0
-        for _, item in pairs(self.bankScanCache) do
+        for _, item in pairs(self.cachedBankItems) do
             count = count + 1
             bankTable[count] = item
         end
@@ -396,47 +485,42 @@ end
 
 -- Helper to scan all mail contents when opening the mailbox
 local function scanMailInventory(self, mailTable)
-	if not Inventory.mailHasUpdated then
-		GBCR.Output:Debug("INVENTORY", "scanMailInventory called but mailHasUpdated=false, returning nil")
+    if not Inventory.mailHasUpdated then
+        GBCR.Output:Debug("INVENTORY", "scanMailInventory called but mailHasUpdated=false, returning nil")
 
-		return nil
-	end
+        return nil
+    end
 
-    wipe(self.mailScanCache)
+    wipe(self.cachedMailItemKeys)
     local numItems = GetInboxNumItems()
 
-	GBCR.Output:Debug("INVENTORY", "Starting mailbox scan: %d mail messages", numItems)
+    GBCR.Output:Debug("INVENTORY", "Starting mailbox scan: %d mail messages", numItems)
 
     for i = 1, numItems do
         local _, _, _, _, _, CODAmount, _, hasItem = GetInboxHeaderInfo(i)
 
         if hasItem and CODAmount == 0 then
-            for j = 1, attachementsMaxReceive do
+            for j = 1, attachmentsMaxReceive do
                 local name, itemId, _, count = GetInboxItem(i, j)
 
                 if itemId and name then
                     local itemLink = GetInboxItemLink(i, j)
-
                     if not itemLink and itemId then
                         itemLink = select(2, GetItemInfo(itemId))
                     end
 
-                    local storageLink = nil
-                    if itemLink and needsLink(self, itemLink) then
-                        storageLink = itemLink
-                    end
-
-                    local key = getItemKey(self, itemLink) or itemId
-                    local existing = self.mailScanCache[key]
+                    local key = getItemKey(self, itemLink) or tostring(itemId)
+                    local existing = self.cachedMailItemKeys[key]
 
                     if existing then
                         existing.itemCount = existing.itemCount + count
 
-						GBCR.Output:Debug("INVENTORY", "Item %s: merged (key=%s) added %d, total now %d", name, key, count, existing.itemCount)
+                        GBCR.Output:Debug("INVENTORY", "Item %s: merged (key=%s) added %d, total now %d", name, key, count,
+                                          existing.itemCount)
                     else
-                        self.mailScanCache[key] = { itemId = itemId, itemCount = count, itemLink = storageLink }
+                        self.cachedMailItemKeys[key] = {itemString = key, itemCount = count}
 
-						GBCR.Output:Debug("INVENTORY", "New item in mailbox: %s (itemId: %d, itemCount: %d, itemLink: %s, Key: %s)", name, itemId, count, storageLink and "preserved" or "stripped", key)
+                        GBCR.Output:Debug("INVENTORY", "New item in mailbox: %s (itemString: %s, itemCount: %d)", name, key, count)
                     end
                 end
             end
@@ -444,12 +528,12 @@ local function scanMailInventory(self, mailTable)
     end
 
     local count = 0
-    for _, item in pairs(self.mailScanCache) do
+    for _, item in pairs(self.cachedMailItemKeys) do
         count = count + 1
         mailTable[count] = item
     end
 
-	GBCR.Output:Debug("INVENTORY", "Mail scan complete: %d unique items across %d mail messages", count, numItems)
+    GBCR.Output:Debug("INVENTORY", "Mail scan complete: %d unique items across %d mail messages", count, numItems)
 
     return true
 end
@@ -465,51 +549,42 @@ local function scanInventory(self)
         return
     end
 
-    local guildBankAlts = GBCR.Guild:GetRosterGuildBankAlts()
-	if not guildBankAlts or #guildBankAlts == 0 then
-		return
-	end
-
-    local player = GBCR.Guild:GetNormalizedPlayer()
-    local isBank = false
-    for i = 1, #guildBankAlts do
-        local normV = GBCR.Guild:NormalizeName(guildBankAlts[i]) or guildBankAlts[i]
-        if normV == player then
-            isBank = true
-
-            break
-        end
+    if not GBCR.Guild.weAreGuildBankAlt then
+        return
     end
 
-    if not isBank or not GBCR.Options:GetInventoryTrackingEnabled() then
-		return
-	end
+    if not GBCR.Options:GetInventoryTrackingEnabled() then
+        return
+    end
 
+    local player = GBCR.Guild:GetNormalizedPlayerName()
     local alt = info.alts and info.alts[player] or {}
 
-    if not alt.cache then alt.cache = {} end
-    if not alt.cache.bank then alt.cache.bank = { items = {} } end
-    if not alt.cache.bags then alt.cache.bags = { items = {} } end
-    if not alt.cache.mail then alt.cache.mail = { items = {} } end
+    if not alt.cache then
+        alt.cache = {}
+    end
+    alt.cache.bank = alt.cache.bank or {}
+    alt.cache.bags = alt.cache.bags or {}
+    alt.cache.mail = alt.cache.mail or {}
 
-    if isBankAvailable(self) then
-        wipe(alt.cache.bank.items)
-        scanBank(self, alt.cache.bank.items)
+    if isBankAvailable() then
+        wipe(alt.cache.bank)
+        scanBank(self, alt.cache.bank)
     end
 
-    wipe(alt.cache.bags.items)
-    scanBags(self, alt.cache.bags.items)
+    wipe(alt.cache.bags)
+    scanBags(self, alt.cache.bags)
 
     local money = GetMoney()
     alt.money = money
 
     if self.mailHasUpdated then
-        wipe(alt.cache.mail.items)
-        scanMailInventory(self, alt.cache.mail.items)
+        wipe(alt.cache.mail)
+        scanMailInventory(self, alt.cache.mail)
         self.mailHasUpdated = false
     end
 
-    recalculateAggregatedItems(self, alt.cache.bank.items, alt.cache.bags.items, alt.cache.mail.items, alt)
+    recalculateAggregatedItems(self, alt.cache.bank, alt.cache.bags, alt.cache.mail, alt)
 
     local previousItemsHash = alt.itemsHash
     local currentItemsHash = computeItemsHash(self, alt.items, money)
@@ -518,17 +593,27 @@ local function scanInventory(self)
     if (not previousItemsHash and currentItemsHash) or currentItemsHash ~= previousItemsHash then
         alt.version = GetServerTime()
 
-		GBCR.Output:Debug("INVENTORY", "Inventory changed for %s, version updated to %d (itemsHash=%s)", player, alt.version, tostring(currentItemsHash))
-	else
-		GBCR.Output:Debug("INVENTORY", "No inventory changes for %s, version unchanged (itemsHash=%s)", player, tostring(currentItemsHash))
+        local networkMeta = GBCR.Database.savedVariables and GBCR.Database.savedVariables.networkMeta
+        if networkMeta then
+            networkMeta.seedCount = 0
+            networkMeta.lastSeedTime = nil
+            networkMeta.lastSeedTarget = nil
+        end
+
+        GBCR.Output:Debug("INVENTORY", "Inventory changed for %s, version updated to %d (itemsHash=%s)", player, alt.version,
+                          tostring(currentItemsHash))
+
+        GBCR.Protocol:SendAnnounce(GBCR.Guild:GetNormalizedPlayerName())
+        GBCR.UI.Inventory:MarkAltDirty(player)
+    else
+        GBCR.Output:Debug("INVENTORY", "No inventory changes for %s, version unchanged (itemsHash=%s)", player,
+                          tostring(currentItemsHash))
     end
 
-	if not info.alts then
-		info.alts = {}
-	end
+    if not info.alts then
+        info.alts = {}
+    end
     info.alts[player] = alt
-
-    GBCR.Protocol:Share()
 end
 
 -- Keep track that any event impacting the inventory (bags, bank, mail) has been triggered
@@ -538,16 +623,16 @@ end
 
 -- Start scanning inventory (bags, bank, mail) when updates (certain event triggers) have completed
 local function onUpdateStop(self)
-	GBCR.Output:Debug("INVENTORY", "OnUpdateStop called, hasUpdated=%s", tostring(self.hasUpdated))
+    GBCR.Output:Debug("INVENTORY", "OnUpdateStop called, hasUpdated=%s", tostring(self.hasUpdated))
 
     if self.hasUpdated then
-		GBCR.Output:Debug("INVENTORY", "Calling scan")
+        GBCR.Output:Debug("INVENTORY", "Calling scan")
         scanInventory(self)
-		GBCR.Output:Debug("INVENTORY", "Scan completed")
+        GBCR.Output:Debug("INVENTORY", "Scan completed")
 
-		GBCR.UI:QueueUIRefresh()
-	else
-		GBCR.Output:Debug("INVENTORY", "Skipping scan because hasUpdated is false")
+        GBCR.UI:QueueUIRefresh()
+    else
+        GBCR.Output:Debug("INVENTORY", "Skipping scan because hasUpdated is false")
     end
 
     self.hasUpdated = false
@@ -555,24 +640,20 @@ end
 
 -- Initialize caches
 local function init(self)
-    self.globalLinkKeyCache = {}
+    self.cachedSourcesPerItem = {}
+    self.cachedItemsHashes = {}
+    self.cachedItemKeys = {}
+    self.cachedMailItemKeys = {}
+    self.pendingItemInfoLoads = {}
     self.aggregateStateItems = {}
     self.aggregateStateByKey = {}
-    self.bagScanCache = {}
-    self.bankScanCache = {}
-    self.mailScanCache = {}
-    self.hashItemsPool = {}
+    self.cachedBagItems = {}
+    self.cachedBankItems = {}
 end
 
 -- Export functions for other modules
-Inventory.Sort = sort
-Inventory.GetItems = getItems
-Inventory.GetInfo = getInfo
-
+Inventory.BuildGlobalItemSourcesIndex = buildGlobalItemSourcesIndex
 Inventory.GetItemKey = getItemKey
-Inventory.NeedsLink = needsLink
-Inventory.AggregateInto = aggregateInto
-Inventory.ComputeItemsHash = computeItemsHash
 Inventory.OnUpdateStart = onUpdateStart
 Inventory.OnUpdateStop = onUpdateStop
 Inventory.Init = init
