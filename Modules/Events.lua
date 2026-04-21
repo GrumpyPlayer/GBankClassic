@@ -40,6 +40,8 @@ local tradeTargetMaxExceeded = Globals.ERR_TRADE_TARGET_MAX_LIMIT_CATEGORY_COUNT
 local Constants = GBCR.Constants
 local timerIntervals = Constants.TIMER_INTERVALS
 
+local C_Container = Globals.C_Container
+
 -- ================================================================================================
 -- Register the hook to reset our custom state flag when no longer displaying the tooltip
 GameTooltip:HookScript("OnTooltipCleared", function(self)

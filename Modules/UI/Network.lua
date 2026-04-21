@@ -237,10 +237,14 @@ local function startTicker(self)
 
     _ticker = NewTicker(10, function()
         if not self.isOpen then
-            _ticker:Cancel()
+            if _ticker and _ticker.Cancel then
+                _ticker:Cancel()
+            end
             _ticker = nil
+
             return
         end
+
         self:UpdateDynamicLabels()
     end)
 end

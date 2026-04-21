@@ -47,8 +47,8 @@ end
 
 -- Returns the normalized name (including the realm name) of a given name for database purposes
 local function normalizePlayerName(self, name, noRealm)
-    if not name then
-        return nil
+    if not name or name == "" then
+        return ""
     end
 
     if not noRealm and self.cachedNormalizedPlayerName[name] then
@@ -56,8 +56,8 @@ local function normalizePlayerName(self, name, noRealm)
     end
 
     local trimmed = string_match(name, "^%s*(.-)%s*$")
-    if trimmed == "" then
-        return nil
+    if not trimmed or trimmed == "" then
+        return ""
     end
 
     if trimmed:lower() == "unknown" then
@@ -67,7 +67,7 @@ local function normalizePlayerName(self, name, noRealm)
     local playerName, playerRealm = string_match(trimmed, "^(.+)%-(.+)$")
     local currentRealm = getCachedNormalizedRealm(self)
 
-    if not playerRealm then
+    if not playerName or not playerRealm then
         playerRealm = currentRealm
         playerName = trimmed
     end

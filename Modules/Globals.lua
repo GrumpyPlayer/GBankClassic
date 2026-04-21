@@ -146,6 +146,9 @@ Globals.ITEM_BIND_ON_ACQUIRE = Enum and Enum.ItemBind and Enum.ItemBind.OnAcquir
 Globals.MAX_TRADABLE_ITEMS = MAX_TRADABLE_ITEMS
 Globals.NUM_BANKGENERIC_SLOTS = NUM_BANKGENERIC_SLOTS
 
+-- Global namespaces
+Globals.C_Container = _G.C_Container
+
 -- Libraries
 local AceAddon = LibStub("AceAddon-3.0")
 local AceConfig = LibStub("AceConfig-3.0")
