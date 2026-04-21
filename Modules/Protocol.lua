@@ -1277,6 +1277,16 @@ local function receiveData(self, incomingData, sender)
 
     GBCR.UI.Inventory:MarkAltDirty(incomingAltName)
 
+    if self.requestTimeoutTimers[incomingAltName] then
+        self.requestTimeoutTimers[incomingAltName]:Cancel()
+        self.requestTimeoutTimers[incomingAltName] = nil
+    end
+
+    if self.requestRetryTimers[incomingAltName] then
+        self.requestRetryTimers[incomingAltName]:Cancel()
+        self.requestRetryTimers[incomingAltName] = nil
+    end
+
     if incomingItems then
         reconstructItemLinks(self, incomingItems)
     end
