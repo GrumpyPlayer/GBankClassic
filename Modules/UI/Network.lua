@@ -251,10 +251,10 @@ end
 
 -- Widget pool for the roster grid
 local ROW_H = 20
+local rosterPool = {}
 
 local function ensureRosterPool(self, needed)
-    self.rosterPool = self.rosterPool or {}
-    local pool = self.rosterPool
+    local pool = rosterPool
     local parentContent = self.rowsContainer.content
 
     for i = 1, #pool do
@@ -266,8 +266,6 @@ local function ensureRosterPool(self, needed)
     for i = #pool + 1, needed do
         local f = CreateFrame("Frame", nil, parentContent)
         f:SetHeight(ROW_H)
-        f:SetPoint("TOPLEFT", parentContent, "TOPLEFT", 0, -(i - 1) * ROW_H)
-        f:SetPoint("TOPRIGHT", parentContent, "TOPRIGHT", 0, -(i - 1) * ROW_H)
 
         local nameFS = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         nameFS:SetPoint("LEFT", f, "LEFT", 4, 0)
@@ -291,10 +289,14 @@ local function ensureRosterPool(self, needed)
     end
 
     for i = 1, #pool do
+        local row = pool[i]
+        row.frame:ClearAllPoints()
         if i <= needed then
-            pool[i].frame:Show()
+            row.frame:SetPoint("TOPLEFT", parentContent, "TOPLEFT", 0, -(i - 1) * ROW_H)
+            row.frame:SetPoint("TOPRIGHT", parentContent, "TOPRIGHT", 0, -(i - 1) * ROW_H)
+            row.frame:Show()
         else
-            pool[i].frame:Hide()
+            row.frame:Hide()
         end
     end
 
@@ -325,18 +327,14 @@ function UI_Network:DrawNetworkTab(container)
     scroll:SetCallback("OnRelease", function()
         self.isOpen = false
         stopTicker()
-        if self.rosterPool then
-            for _, row in ipairs(self.rosterPool) do
-                if row.frame then
-                    row.frame:Hide()
-                    row.frame:SetParent(Globals.UIParent)
-                end
+        for _, row in ipairs(rosterPool) do
+            if row.frame then
+                row.frame:Hide()
             end
         end
         self.statusLabel = nil
         self.guildBankGroup = nil
         self.guildBankLabel = nil
-        self.rosterPool = nil
         self.rowsContainer = nil
         self.footer = nil
         self.scrollFrame = nil
