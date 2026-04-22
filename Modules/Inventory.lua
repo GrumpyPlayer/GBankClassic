@@ -381,6 +381,15 @@ local function recalculateAggregatedItems(self, bankData, bagData, mailData, alt
     end)
 end
 
+-- Helper to sort cached items hashes
+local itemsHashSort = function(a, b)
+    if a.key == b.key then
+        return (a.item.itemCount or 1) < (b.item.itemCount or 1)
+    end
+
+    return a.key < b.key
+end
+
 -- Helper to compute a hash of money and all items to be able to detect inventory changes
 local function computeItemsHash(self, items, money)
     local sum = money
@@ -408,13 +417,7 @@ local function computeItemsHash(self, items, money)
     for i = position + 1, #self.cachedItemsHashes do
         self.cachedItemsHashes[i] = nil
     end
-    table_sort(self.cachedItemsHashes, function(a, b)
-        if a.key == b.key then
-            return (a.item.itemCount or 1) < (b.item.itemCount or 1)
-        end
-
-        return a.key < b.key
-    end)
+    table_sort(self.cachedItemsHashes, itemsHashSort)
 
     for i = 1, position do
         local entry = self.cachedItemsHashes[i]
