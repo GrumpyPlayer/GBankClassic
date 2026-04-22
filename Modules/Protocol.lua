@@ -306,15 +306,11 @@ local function setAltProtocolState(self, altName, newState)
     After(0, function()
         self.uiStatePending = false
 
-        if GBCR.UI and GBCR.UI.Network then
-            GBCR.UI.Network:RefreshIfOpen()
-        end
-
         if GBCR.UI and GBCR.UI.Inventory then
             local active = false
 
             for _, s in pairs(Protocol.protocolStates) do
-                if s ~= Constants.STATE.IDLE and s ~= Constants.STATE.UPDATED then
+                if s == Constants.STATE.RECEIVING or s == Constants.STATE.DISCOVERING then
                     active = true
 
                     break
@@ -322,6 +318,7 @@ local function setAltProtocolState(self, altName, newState)
             end
 
             GBCR.UI.Inventory:SetSyncing(active)
+            GBCR.UI.Inventory:NotifyStateChanged()
         end
     end)
 end

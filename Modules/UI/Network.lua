@@ -25,37 +25,6 @@ local colorGray = Constants.COLORS.GRAY
 -- Helpers
 local formatTimeAgo = GBCR.UI.Inventory.FormatTimeAgo
 
-local function getStateLabel(altName, version)
-    if GBCR.Protocol.isLockedOut then
-        return Globals.ColorizeText(colorRed, "Paused (combat)")
-    end
-
-    local state = GBCR.Protocol.protocolStates and GBCR.Protocol.protocolStates[altName] or Constants.STATE.IDLE
-
-    if state == Constants.STATE.IDLE then
-        if not version or version == 0 then
-            return Globals.ColorizeText(colorRed, "Awaiting scan")
-        end
-        return Globals.ColorizeText(colorGreen, "Synced")
-    end
-    if state == Constants.STATE.DISCOVERING then
-        return Globals.ColorizeText(colorYellow, "Discovering...")
-    end
-    if state == Constants.STATE.OUTDATED then
-        return Globals.ColorizeText(colorYellow, "Outdated")
-    end
-    if state == Constants.STATE.REQUESTING then
-        return Globals.ColorizeText(colorBlue, "Requesting...")
-    end
-    if state == Constants.STATE.RECEIVING then
-        return Globals.ColorizeText(colorBlue, "Downloading...")
-    end
-    if state == Constants.STATE.UPDATED then
-        return Globals.ColorizeText(colorGreen, "Just updated")
-    end
-    return Globals.ColorizeText(colorGray, "Unknown")
-end
-
 -- Persistent state (survives /reload)
 local function getSyncMeta()
     local sv = GBCR.Database.savedVariables
@@ -74,7 +43,7 @@ function UI_Network:RecordSuccessfulSeed(toPlayer)
     meta.lastSeedTarget = toPlayer
     meta.seedCount = (meta.seedCount or 0) + 1
     GBCR.UI.Inventory:SetSyncing(false)
-    self:RefreshIfOpen()
+    GBCR.UI.Inventory:NotifyStateChanged()
 end
 
 function UI_Network:RecordReceived(altName, fromPlayer)
@@ -83,14 +52,14 @@ function UI_Network:RecordReceived(altName, fromPlayer)
     meta.lastReceiveAlt = altName
     meta.lastReceiveSource = fromPlayer
     GBCR.UI.Inventory:SetSyncing(false)
-    self:RefreshIfOpen()
+    GBCR.UI.Inventory:NotifyStateChanged()
 end
 
 local function getGlobalStatusText(s)
     local pluralUsers = (s.addonUserCount ~= 1 and "s" or "")
 
     if not s.isInGuild then
-        return "NEUTRAL", "Join a guild to use this addon."
+        return "NEUTRAL", "Join a guild to use this addon"
     end
 
     if s.isLoading then
@@ -98,11 +67,11 @@ local function getGlobalStatusText(s)
     end
 
     if s.isLockedOut then
-        return "WARN", "Sync paused (combat, instance, or raid)."
+        return "WARN", "Sync paused (combat, instance, or raid)"
     end
 
     if s.addonUserCount == 0 then
-        return "WARN", "No other addon users detected (data syncs automatically)."
+        return "WARN", "No other addon users detected (data syncs automatically)"
     end
 
     local req, recv, out = 0, 0, 0
@@ -120,10 +89,10 @@ local function getGlobalStatusText(s)
                          ""
 
     if s.syncing then
-        return "INFO", string_format("Syncing with %d user%s online%s.", s.addonUserCount, pluralUsers, activity)
+        return "INFO", string_format("Syncing with %d user%s online%s", s.addonUserCount, pluralUsers, activity)
     end
 
-    return "OK", string_format("Up to date. %d user%s online%s.", s.addonUserCount, pluralUsers, activity)
+    return "OK", string_format("Up to date, %d user%s online%s", s.addonUserCount, pluralUsers, activity)
 end
 
 local function getGuildBankStatusText(s)
@@ -140,11 +109,6 @@ local function getGuildBankStatusText(s)
                    "Open your bank and mailbox to record your inventory, then wait for the data to sync."
     end
 
-    if s.addonUserCount == 0 then
-        return "WARN", "Your inventory is recorded locally.\n" ..
-                   "No other addon users are online to receive it, stay logged in when others are online. They will request it automatically."
-    end
-
     local seedCount = meta.seedCount or 0
     local lastSeed = meta.lastSeedTime
     local pluralSeed = (seedCount ~= 1 and "s" or "")
@@ -156,38 +120,55 @@ local function getGuildBankStatusText(s)
                    seedCount, pluralSeed, meta.lastSeedTarget or "unknown", formatTimeAgo(lastSeed))
     end
 
+    if s.addonUserCount == 0 then
+        return "WARN", "Your inventory is recorded locally.\n" ..
+                   "No other addon users are online to receive it, stay logged in when others are online. They will request it automatically."
+    end
+
     return "INFO", "Your inventory is recorded. Waiting to share it with an online addon user.\n" ..
                "This happens automatically, stay online for a few minutes."
 end
 
 local function getAltRowState(altName, altData, s)
-    local version = altData and altData.version or 0
-    local items = altData and altData.items
+    if GBCR.Protocol.isLockedOut then
+        return Globals.ColorizeText(colorRed, "Paused")
+    end
 
     if altName == s.myName and s.isGuildBankAlt then
         return Globals.ColorizeText(colorGreen, "This character")
     end
 
-    if not altData or version == 0 then
-        local isOnline = s.cachedAddonUsers[altName]
-        if isOnline then
-            return Globals.ColorizeText(colorYellow, "Online, requesting data...")
-        end
-
-        return Globals.ColorizeText(colorRed, "No data, they have not scanned yet")
-    end
-
     local altState = GBCR.Protocol.protocolStates and GBCR.Protocol.protocolStates[altName]
-    if altState == GBCR.Constants.STATE.REQUESTING then
-        return Globals.ColorizeText(colorBlue, "Downloading...")
+
+    if altState == Constants.STATE.REQUESTING then
+        return Globals.ColorizeText(colorBlue, "Requesting")
     end
 
-    if altState == GBCR.Constants.STATE.RECEIVING then
+    if altState == Constants.STATE.RECEIVING then
         return Globals.ColorizeText(colorBlue, "Receiving...")
     end
 
-    if altState == GBCR.Constants.STATE.OUTDATED then
-        return Globals.ColorizeText(colorYellow, "Update available")
+    if altState == Constants.STATE.OUTDATED then
+        return Globals.ColorizeText(colorYellow, "Outdated")
+    end
+
+    if altState == Constants.STATE.DISCOVERING then
+        return Globals.ColorizeText(colorYellow, "Discovering")
+    end
+
+    if altState == Constants.STATE.UPDATED then
+        return Globals.ColorizeText(colorGreen, "Just updated")
+    end
+
+    local version = altData and altData.version or 0
+
+    if not altData or version == 0 then
+        local isOnline = s.cachedAddonUsers[altName]
+        if isOnline then
+            return Globals.ColorizeText(colorYellow, "Online, waiting...")
+        end
+
+        return Globals.ColorizeText(colorRed, "Awaiting scan")
     end
 
     return Globals.ColorizeText(colorGreen, "Synced")
@@ -435,10 +416,20 @@ function UI_Network:Populate()
     local kind, text = getGuildBankStatusText(s)
     if text then
         self.guildBankGroup.frame:Show()
+        self.guildBankGroup.frame:SetHeight(nil)
+        self.guildBankGroup:SetHeight(nil)
         local color = ({OK = colorGreen, WARN = colorYellow, INFO = colorBlue})[kind]
         self.guildBankLabel:SetText(Globals.ColorizeText(color, text))
     else
+        self.guildBankGroup.frame:SetHeight(0)
+        self.guildBankGroup:SetHeight(0)
+        if self.guildBankGroup.content then
+            self.guildBankGroup.content:SetHeight(0)
+        end
         self.guildBankGroup.frame:Hide()
+        if self.scrollFrame then
+            self.scrollFrame:DoLayout()
+        end
     end
 
     local numAlts = #s.rosterAlts
@@ -452,7 +443,9 @@ function UI_Network:Populate()
         local row = pool[index]
 
         row.name:SetText(GBCR.Guild:ColorPlayerName(altName))
-        row.age:SetText(version > 0 and formatTimeAgo(version) or Globals.ColorizeText(colorRed, "Never"))
+        local ageText = formatTimeAgo(version)
+        local ageColor = version > 0 and colorGray or colorRed
+        row.age:SetText(Globals.ColorizeText(ageColor, ageText))
         row.state:SetText(getAltRowState(altName, altData, s))
     end
 
@@ -467,7 +460,8 @@ function UI_Network:Populate()
     if activeDl > 0 then
         self.footer:SetText(string_format("Downloading data for %d alt(s)…", activeDl))
     elseif meta.lastReceiveTime then
-        self.footer:SetText(string_format("Last received: %s for %s from %s", formatTimeAgo(meta.lastReceiveTime),
+        local ageText = formatTimeAgo(meta.lastReceiveTime)
+        self.footer:SetText(string_format("Last received: %s for %s from %s", Globals.ColorizeText(colorGray, ageText),
                                           meta.lastReceiveAlt or "?", meta.lastReceiveSource or "?"))
     else
         self.footer:SetText("")
@@ -480,23 +474,22 @@ function UI_Network:UpdateDynamicLabels()
         return
     end
 
-    local alts = GBCR.Database:GetRosterGuildBankAlts() or {}
-    local savedAlts = GBCR.Database.savedVariables and GBCR.Database.savedVariables.alts or {}
+    local s = deriveNetworkState()
+    local alts = s.rosterAlts
     local pool = self.rosterPool
 
     for index = 1, #alts do
         local row = pool[index]
-        local altData = savedAlts[alts[index]]
-        local version = altData and altData.version or 0
         if row then
-            row.age:SetText(formatTimeAgo(version))
-            row.state:SetText(getStateLabel(alts[index], version))
-        end
-    end
+            local altName = alts[index]
+            local altData = s.savedAlts[altName]
+            local version = altData and altData.version or 0
 
-    local meta = getSyncMeta()
-    if meta.lastSeedTime and self.guildBankLabel then
-        self:Populate()
+            row.state:SetText(getAltRowState(altName, altData, s))
+            local ageText = formatTimeAgo(version)
+            local ageColor = version > 0 and colorGray or colorRed
+            row.age:SetText(Globals.ColorizeText(ageColor, ageText))
+        end
     end
 end
 

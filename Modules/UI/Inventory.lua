@@ -1257,7 +1257,7 @@ end
 
 local function formatTimeAgo(timestamp)
     if not timestamp or timestamp == 0 then
-        return Globals.ColorizeText(colorGray, "never")
+        return "never"
     end
 
     local diff = GetServerTime() - timestamp
@@ -3781,7 +3781,7 @@ local function drawExportTab(self, container)
                         local ver = altData.version
                         local money = altData.money or 0
                         pendingMeta[#pendingMeta + 1] = "Last updated : " ..
-                                                            (ver and ver > 0 and date("%Y-%m-%d %H:%M", ver) or "Never")
+                                                            (ver and ver > 0 and date("%Y-%m-%d %H:%M", ver) or "never")
                         pendingMeta[#pendingMeta + 1] = string_format("Money        : %dg %ds %dc", math_floor(money / 10000),
                                                                       math_floor((money % 10000) / 100), money % 100)
                         local items = altData.items
@@ -4767,7 +4767,8 @@ local function getTabTopBarMessage(tab)
         local isGBA = GBCR.Guild and GBCR.Guild.weAreGuildBankAlt
         if isGBA then
             if seedCount > 0 then
-                return Globals.ColorizeText(Constants.COLORS.GREEN, "Ok  •  Your data has been shared this session, safe to log off")
+                return Globals.ColorizeText(Constants.COLORS.GREEN,
+                                            "Ok  •  Your data has been shared this session, safe to log off")
             else
                 return Globals.ColorizeText(Constants.COLORS.ORANGE,
                                             "Please wait  •  Your data has not yet been shared with online members, stay online")
@@ -4815,8 +4816,12 @@ local function getTabStatusText(self)
             end
         end
 
-        return string_format("%d ledger entries  •  last guild bank update %s", entries,
-                             newest > 0 and formatTimeAgo(newest) or "never")
+        local age = newest > 0 and formatTimeAgo(newest) or "never"
+        if age == "never" then
+            age = Globals.ColorizeText(colorGray, age)
+        end
+
+        return string_format("%d ledger entries  •  last guild bank update %s", entries, age)
     elseif tab == "export" then
         local items = self.itemsList and #self.itemsList or 0
         local alts = sv and sv.alts and Globals.Count(sv.alts) or 0
@@ -4845,6 +4850,17 @@ local function getTabStatusText(self)
     end
 
     return ""
+end
+
+function UI_Inventory:NotifyStateChanged()
+    if self and self.isOpen then
+        local statusTxt = getTabStatusText(self)
+        if statusTxt and self.window then
+            self.window:SetStatusText(statusTxt)
+        end
+    end
+
+    GBCR.UI.Network:RefreshIfOpen()
 end
 
 -- Helper callback for Tree Group Selection
@@ -5323,7 +5339,7 @@ local function drawWindow(self)
 
     -- Notice text
     local topBarText = aceGUI:Create("Label")
-    topBarText:SetText("|cffffd100Notice:|r stand up and stretch from time to time, you lazy git!") -- TODO
+    topBarText:SetText("")
     topBarText:SetFullWidth(true)
     topBarText:ClearAllPoints()
     topBarText:SetPoint("TOPLEFT", topBar.content, "TOPLEFT", 60, 0)
