@@ -189,6 +189,7 @@ function GBCR.Addon:OnDisable()
 
     GBCR.Protocol.isProcessingQueue = false
     GBCR.UI.Network.isOpen = false
+    GBCR.UI.Network:Stop()
 end
 
 -- Export functions for other modules

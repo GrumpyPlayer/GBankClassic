@@ -210,23 +210,28 @@ end
 
 -- Live-update ticker
 local _ticker = nil
+local _tickCount = 0
 
 local function startTicker(self)
     if _ticker then
         return
     end
 
+    _tickCount = 0
     _ticker = NewTicker(10, function()
         if not self.isOpen then
-            if _ticker and _ticker.Cancel then
+            if _ticker then
                 _ticker:Cancel()
+                _ticker = nil
             end
-            _ticker = nil
-
             return
         end
-
-        self:UpdateDynamicLabels()
+        _tickCount = _tickCount + 1
+        if _tickCount % 3 == 0 then
+            self:Populate()
+        else
+            self:UpdateDynamicLabels()
+        end
     end)
 end
 
@@ -235,6 +240,13 @@ local function stopTicker()
         _ticker:Cancel()
         _ticker = nil
     end
+    _tickCount = 0
+end
+
+-- Public stop: called from Core.OnDisable so the ticker doesn't outlive the addon.
+function UI_Network:Stop()
+    stopTicker()
+    self.isOpen = false
 end
 
 -- Widget pool for the roster grid
@@ -416,8 +428,8 @@ function UI_Network:Populate()
     local kind, text = getGuildBankStatusText(s)
     if text then
         self.guildBankGroup.frame:Show()
-        self.guildBankGroup.frame:SetHeight(nil)
-        self.guildBankGroup:SetHeight(nil)
+        self.guildBankGroup.frame:SetHeight(80)
+        self.guildBankGroup:SetHeight(80)
         local color = ({OK = colorGreen, WARN = colorYellow, INFO = colorBlue})[kind]
         self.guildBankLabel:SetText(Globals.ColorizeText(color, text))
     else

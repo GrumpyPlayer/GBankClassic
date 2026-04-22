@@ -934,12 +934,38 @@ local function registerCustomUI(self)
             topBar.frame:SetPoint("TOPLEFT", content, "TOPLEFT", 0, 0)
             topBar.frame:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, 0)
             topBar:SetWidth(contentWidth)
+            topBar.frame:SetHeight(16)
             topBar.frame:Show()
+            topH = 16
 
-            if topBar.PerformLayout then
-                topBar:PerformLayout()
+            -- Reposition clock label and notice text after every layout pass.
+            -- The GBCR_NoLayout on topBar is a no-op so we own all child positioning here.
+            local inv = UI_Inventory
+            if inv.clockLabel then
+                inv.clockLabel.frame:ClearAllPoints()
+                inv.clockLabel.frame:SetPoint("LEFT", topBar.content, "LEFT", 14, 0)
+                inv.clockLabel.frame:SetWidth(32)
+                inv.clockLabel.frame:SetHeight(16)
+                if inv.clockLabel.label then
+                    inv.clockLabel.label:SetJustifyV("MIDDLE")
+                end
             end
-            topH = topBar.frame:GetHeight()
+            if inv.topBar and inv.topBar.topBarText then
+                local tt = inv.topBar.topBarText
+                tt.frame:ClearAllPoints()
+                tt.frame:SetPoint("LEFT", topBar.content, "LEFT", 60, 0)
+                tt.frame:SetPoint("RIGHT", topBar.content, "RIGHT", -8, 0)
+                tt.frame:SetHeight(16)
+                tt:SetWidth(700)
+                if tt.label then
+                    tt.label:SetJustifyV("MIDDLE")
+                end
+            end
+            -- Re-anchor sync dot (parented to topBar.frame; stays stable on resize).
+            if inv.syncDot then
+                inv.syncDot:ClearAllPoints()
+                inv.syncDot:SetPoint("LEFT", topBar.frame, "LEFT", 2, 0)
+            end
         end
 
         if bottomBar then
@@ -952,7 +978,8 @@ local function registerCustomUI(self)
             if bottomBar.PerformLayout then
                 bottomBar:PerformLayout()
             end
-            bottomH = bottomBar.frame:GetHeight()
+            bottomH = math_max(bottomBar.frame:GetHeight(), 26)
+            bottomBar.frame:SetHeight(bottomH)
         end
 
         if tabs then
@@ -4854,9 +4881,29 @@ end
 
 function UI_Inventory:NotifyStateChanged()
     if self and self.isOpen then
-        local statusTxt = getTabStatusText(self)
-        if statusTxt and self.window then
-            self.window:SetStatusText(statusTxt)
+        -- Status bar: browse tab has its own richer updateStatusText; all others use getTabStatusText.
+        if self.currentTab == "browse" then
+            updateStatusText(self)
+        else
+            local statusTxt = getTabStatusText(self)
+            if statusTxt and self.window then
+                self.window:SetStatusText(statusTxt)
+            end
+        end
+
+        -- Top-bar text: re-evaluate for tabs whose message depends on runtime state
+        -- (notably "network" which shows "Please wait" vs "Ok" based on seedCount).
+        if self.topBar and self.topBar.topBarText then
+            local newMsg = getTabTopBarMessage(self.currentTab)
+            if newMsg ~= self.topBarBaseText then
+                self.topBarBaseText = newMsg
+                if not self.isSyncing then
+                    self.topBar.topBarText:SetText(newMsg)
+                else
+                    local syncing = Globals.ColorizeText(Constants.COLORS.GREEN, "SYNCING")
+                    self.topBar.topBarText:SetText(syncing .. "  •  " .. newMsg)
+                end
+            end
         end
     end
 
@@ -5237,6 +5284,7 @@ function UI_Inventory:SetSyncing(active)
             local _pulseHigh = true
             self.syncPulseTicker = NewTicker(0.45, function()
                 if not self.syncDot or not self.syncDot:IsShown() then
+
                     return
                 end
 
@@ -5285,17 +5333,14 @@ local function drawWindow(self)
     -- Top bar
     local topBar = aceGUI:Create("SimpleGroup")
     topBar:SetFullWidth(true)
-    topBar:SetLayout("Table")
-    topBar:SetHeight(44)
-    topBar:SetUserData("table", {columns = {105, 0}, spaceH = 0, spaceV = 0})
+    topBar:SetLayout("GBCR_NoLayout")
+    topBar.noAutoHeight = true
     window:AddChild(topBar)
     self.topBar = topBar
 
     -- Server clock
     local clockLabel = aceGUI:Create("Label")
     clockLabel:SetFontObject(GameFontNormal)
-    clockLabel:ClearAllPoints()
-    clockLabel:SetPoint("TOPLEFT", topBar.content, "TOPLEFT", 20, 0)
     topBar:AddChild(clockLabel)
     self.clockLabel = clockLabel
 
@@ -5321,21 +5366,18 @@ local function drawWindow(self)
         self.clockLabel:SetText(Globals.ColorizeText(Constants.COLORS.WHITE, timeStr))
     end)
 
-    -- Sync dot: driven by a ticker inside SetSyncing()
-    local syncDot = clockLabel.content:CreateTexture(nil, "OVERLAY")
+    -- Sync dot: parented to topBar.frame (topBar.content = topBar.frame in SimpleGroup).
+    -- Position is enforced by GBCR_AppLayout after every layout pass.
+    local syncDot = topBar.frame:CreateTexture(nil, "OVERLAY")
     syncDot:SetSize(8, 8)
     syncDot:SetColorTexture(0, 1, 0.4, 1)
-    syncDot:SetPoint("LEFT", clockLabel.frame, "LEFT", 0, 0)
+    syncDot:SetPoint("LEFT", topBar.frame, "LEFT", 2, 0)
     syncDot:Hide()
     self.syncDot = syncDot
 
     -- Notice text
     local topBarText = aceGUI:Create("Label")
     topBarText:SetText("")
-    topBarText:SetFullWidth(true)
-    topBarText:ClearAllPoints()
-    topBarText:SetPoint("TOPLEFT", topBar.content, "TOPLEFT", 60, 0)
-    topBarText:SetWidth(750)
     topBarText:SetFontObject(GameFontHighlight)
     topBarText.label:SetWordWrap(false)
     topBar:AddChild(topBarText)
