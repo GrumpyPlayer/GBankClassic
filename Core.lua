@@ -97,99 +97,32 @@ end
 -- Called when the addon is disabled
 function GBCR.Addon:OnDisable()
     GBCR.Events:UnregisterEvents()
+
     GBCR.Protocol:CancelAllDebounceTimers()
-
-    GBCR.Protocol.gossipLoopRunning = false
-
-    if GBCR.Protocol.timerLoginHashBroadcast then
-        GBCR.Protocol.timerLoginHashBroadcast:Cancel()
-        GBCR.Protocol.timerLoginHashBroadcast = nil
-    end
-
-    if GBCR.Protocol.debounceHardDeadlineTimer then
-        GBCR.Protocol.debounceHardDeadlineTimer:Cancel()
-        GBCR.Protocol.debounceHardDeadlineTimer = nil
-    end
-
-    if GBCR.Protocol.debounceTimers.multipleAlts then
-        GBCR.Protocol.debounceTimers.multipleAlts:Cancel()
-        GBCR.Protocol.debounceTimers.multipleAlts = nil
-    end
-
-    if GBCR.Protocol.fingerprintResponseTimer then
-        GBCR.Protocol.fingerprintResponseTimer:Cancel()
-        GBCR.Protocol.fingerprintResponseTimer = nil
-    end
-
-    if GBCR.Protocol.printVersionsTimer then
-        GBCR.Protocol.printVersionsTimer:Cancel()
-        GBCR.Protocol.printVersionsTimer = nil
-    end
-
-    if GBCR.Guild.timerRebuildGuildRosterInfo then
-        GBCR.Guild.timerRebuildGuildRosterInfo:Cancel()
-        GBCR.Guild.timerRebuildGuildRosterInfo = nil
-    end
-
-    if GBCR.Events.timerRefreshOnlineMembersCache then
-        GBCR.Events.timerRefreshOnlineMembersCache:Cancel()
-        GBCR.Events.timerRefreshOnlineMembersCache = nil
-    end
-
-    if GBCR.Events.timerBagUpdateDelayedScanInventory then
-        GBCR.Events.timerBagUpdateDelayedScanInventory:Cancel()
-        GBCR.Events.timerBagUpdateDelayedScanInventory = nil
-    end
-
-    if GBCR.Events.timerGetItemInfoReceivedScanInventory then
-        GBCR.Events.timerGetItemInfoReceivedScanInventory:Cancel()
-        GBCR.Events.timerGetItemInfoReceivedScanInventory = nil
-    end
-
-    if GBCR.Ledger.timerLedgerUpdateBroadcast then
-        GBCR.Ledger.timerLedgerUpdateBroadcast:Cancel()
-        GBCR.Ledger.timerLedgerUpdateBroadcast = nil
-    end
-
-    if GBCR.UI.Inventory.clockTicker then
-        GBCR.UI.Inventory.clockTicker:Cancel()
-        GBCR.UI.Inventory.clockTicker = nil
-    end
-
-    if GBCR.UI.Inventory.syncPulseTicker then
-        GBCR.UI.Inventory.syncPulseTicker:Cancel()
-        GBCR.UI.Inventory.syncPulseTicker = nil
-    end
-
-    if GBCR.UI.Inventory.searchTimer then
-        GBCR.UI.Inventory.searchTimer:Cancel()
-        GBCR.UI.Inventory.searchTimer = nil
-    end
-
-    if GBCR.UI.Inventory.resizeTimer then
-        GBCR.UI.Inventory.resizeTimer:Cancel()
-        GBCR.UI.Inventory.resizeTimer = nil
-    end
-
     GBCR.UI.Network:Stop()
 
+    GBCR.Protocol.gossipLoopRunning = false
     GBCR.Protocol.isAcceptingIncoming = false
-
-    if GBCR.Protocol.requestTimeoutTimers then
-        for _, timer in pairs(GBCR.Protocol.requestTimeoutTimers) do
-            timer:Cancel()
-        end
-        wipe(GBCR.Protocol.requestTimeoutTimers)
-    end
-
-    if GBCR.Protocol.requestRetryTimers then
-        for _, timer in pairs(GBCR.Protocol.requestRetryTimers) do
-            timer:Cancel()
-        end
-        wipe(GBCR.Protocol.requestRetryTimers)
-    end
-
     GBCR.Protocol.isProcessingQueue = false
+
+    local function cancelTimer(holder, field)
+        if holder[field] then
+            holder[field]:Cancel();
+            holder[field] = nil
+        end
+    end
+
+    cancelTimer(GBCR.Protocol, "timerLoginHashBroadcast")
+    cancelTimer(GBCR.Protocol, "printVersionsTimer")
+    cancelTimer(GBCR.Guild, "timerRebuildGuildRosterInfo")
+    cancelTimer(GBCR.Events, "timerRefreshOnlineMembersCache")
+    cancelTimer(GBCR.Events, "timerBagUpdateDelayedScanInventory")
+    cancelTimer(GBCR.Events, "timerGetItemInfoReceivedScanInventory")
+    cancelTimer(GBCR.Ledger, "timerLedgerUpdateBroadcast")
+    cancelTimer(GBCR.UI.Inventory, "clockTicker")
+    cancelTimer(GBCR.UI.Inventory, "syncPulseTicker")
+    cancelTimer(GBCR.UI.Inventory, "searchTimer")
+    cancelTimer(GBCR.UI.Inventory, "resizeTimer")
 end
 
 -- Export functions for other modules
