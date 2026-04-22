@@ -127,6 +127,23 @@ local function decompressIfNeeded(alt, compressedField, field, decompressFn)
     end
 end
 
+-- Helper to decompress cache
+local function decompressCache(data)
+    local decoded = decompressData(data)
+
+    return decoded and {bank = decoded.bank, bags = decoded.bags, mail = decoded.mail} or nil
+end
+
+-- Helper to decompress items
+local function decompressItems(data)
+    return decompressData(data)
+end
+
+-- Helper to decompress ledger
+local function decompressLedger(data)
+    return decompressData(data)
+end
+
 -- Load all guild bank alt data for the current guild from saved variables
 local function loadGuild(self, guildName)
     GBCR.Output:Debug("DATABASE", "Loading guild bank database from saved variables for %s", tostring(guildName))
@@ -191,17 +208,9 @@ local function loadGuild(self, guildName)
                 if not alt then
                     altIndex = altIndex + 1
                 else
-                    decompressIfNeeded(alt, "cacheCompressed", "cache", function(data)
-                        local decoded = decompressData(data)
-
-                        return decoded and {bank = decoded.bank, bags = decoded.bags, mail = decoded.mail} or nil
-                    end)
-                    decompressIfNeeded(alt, "itemsCompressed", "items", function(data)
-                        return decompressData(data)
-                    end)
-                    decompressIfNeeded(alt, "ledgerCompressed", "ledger", function(data)
-                        return decompressData(data)
-                    end)
+                    decompressIfNeeded(alt, "cacheCompressed", "cache", decompressCache)
+                    decompressIfNeeded(alt, "itemsCompressed", "items", decompressItems)
+                    decompressIfNeeded(alt, "ledgerCompressed", "ledger", decompressLedger)
 
                     protocol:ReconstructItemLinks(alt.items)
                     altIndex = altIndex + 1
