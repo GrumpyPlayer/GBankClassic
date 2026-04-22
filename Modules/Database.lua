@@ -162,7 +162,8 @@ local function loadGuild(self, guildName)
         local altNames = {}
         local altCount = 0
         for altName, alt in pairs(db.alts) do
-            if type(alt) == "table" and (alt.items or alt.itemsCompressed) then
+            if type(alt) == "table" and
+                (alt.items or alt.itemsCompressed or alt.ledger or alt.ledgerCompressed or alt.cache or alt.cacheCompressed) then
                 altCount = altCount + 1
                 altNames[altCount] = altName
             end
