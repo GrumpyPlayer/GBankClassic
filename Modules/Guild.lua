@@ -414,14 +414,14 @@ local function rebuildGuildRosterInfo(self)
         local overallStart = debugprofilestop()
 
         local function resumeGuildRosterRebuild()
-            self.onlineCacheGeneration = (self.onlineCacheGeneration or 0) + 1
-
             if self.guildRosterGeneration ~= myGeneration then
                 GBCR.Output:Debug("ROSTER", "Aborting stale guild roster rebuild (generation %d vs %d)", myGeneration,
                                   self.guildRosterGeneration)
 
                 return
             end
+
+            self.onlineCacheGeneration = (self.onlineCacheGeneration or 0) + 1
 
             local frameStart = debugprofilestop()
             local processedThisFrame = 0
