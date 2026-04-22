@@ -4130,7 +4130,7 @@ local function buildSearchData(self, callback)
         while index <= total do
             local aggItem = self.itemsList[index]
 
-            if aggItem.itemInfo and aggItem.itemInfo.name then
+            if aggItem and aggItem.itemInfo and aggItem.itemInfo.name then
                 local name = aggItem.itemInfo.name
                 if not corpusNamesSeen[name] then
                     corpusNamesSeen[name] = true
