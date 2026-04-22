@@ -2353,6 +2353,9 @@ local function drawLedgerTab(self, container)
     end
 
     local function clearLedgerBottomArea()
+        populateLedgerGen = populateLedgerGen + 1
+        donorsViewGen = donorsViewGen + 1
+
         if ledgerVS then
             ledgerVS:Destroy()
             ledgerVS = nil
