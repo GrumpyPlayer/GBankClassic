@@ -609,33 +609,8 @@ local function onBrowseItemLeave()
     GBCR.UI:HideTooltip()
 end
 
-local function updateVirtualGrid(self)
-    -- print("updateVirtualGrid is called")
-    -- 1. Basic Checks
-    if self.currentTab ~= "browse" then
-        -- print("updateVirtualGrid exit 1")
-        return
-    end
-
-    local scroll = self.grid and self.grid.scroll
-    if not scroll or not scroll.content then
-        -- print("updateVirtualGrid exit 2")
-        return
-    end
-
-    local availableWidth = scroll.frame:GetWidth()
-    local frameHeight = scroll.frame:GetHeight()
-    if availableWidth < 10 or frameHeight < 10 then
-        -- print("updateVirtualGrid exit 3")
-        return
-    end
-
-    if self.isUpdatingScroll then
-        -- print("updateVirtualGrid exit 4")
-        return
-    end
-    self.isUpdatingScroll = true
-
+-- Helper function to contain the grid logic to avoid creating an anonymous closure on every frame/scroll update
+local function doUpdateGridLogic(self, scroll, availableWidth, frameHeight)
     local itemCount = self.filteredCount or 0
     if itemCount == 0 then
         if self.itemPool then
@@ -649,12 +624,9 @@ local function updateVirtualGrid(self)
             scroll.scrollbar:Hide()
         end
 
-        -- print("updateVirtualGrid exit 5")
-        self.isUpdatingScroll = false
         return
     end
 
-    -- 2. Grid Metrics
     local itemSize, itemPadding = 40, 4
     local columnWidth, rowHeight = itemSize + itemPadding, itemSize + itemPadding
 
@@ -668,7 +640,6 @@ local function updateVirtualGrid(self)
     local newTotalHeight = totalRows * rowHeight
     local maxScroll = math_max(0, newTotalHeight - frameHeight)
 
-    -- 3. Sync Content & Scrollbar
     scroll.content:SetHeight(newTotalHeight)
     scroll:FixScroll()
     if scroll.scrollbar then
@@ -679,7 +650,6 @@ local function updateVirtualGrid(self)
         end
     end
 
-    -- 4. Widget Pool Management
     local visibleRows = math_ceil(frameHeight / rowHeight) + 2
     local poolSize = visibleRows * itemsPerRow
 
@@ -703,9 +673,6 @@ local function updateVirtualGrid(self)
         end
     end
 
-    -- Calculate offset proportionally to slider range
-    -- This bypasses AceGUI's internal range scaling (which often defaults to 0-1000 or 0-10000)
-    -- and guarantees a smooth 1:1 mapping to your pixel grid.
     local offset = 0
     if scroll.scrollbar then
         local minVal, maxVal = scroll.scrollbar:GetMinMaxValues()
@@ -717,13 +684,11 @@ local function updateVirtualGrid(self)
     end
     offset = math_min(math_max(0, offset), maxScroll) -- Hard clamp for safety
 
-    -- 5. Calculate Render Window
     local startRow = math_floor(offset / rowHeight)
     local maxStartRow = math_max(0, totalRows - visibleRows)
     local clampedStartRow = math_min(startRow, maxStartRow)
     local startIndex = (clampedStartRow * itemsPerRow) + 1
 
-    -- 6. Positioning Loop
     local poolIndex = 1
     local baseLevel = scroll.content:GetFrameLevel() + 5
     scroll.frame:SetClipsChildren(true)
@@ -759,11 +724,8 @@ local function updateVirtualGrid(self)
                 local x = col * columnWidth
                 local y = -(drawRow * rowHeight)
 
-                -- if slot.lastX ~= x or slot.lastY ~= y then
                 slot.frame:ClearAllPoints()
                 slot.frame:SetPoint("TOPLEFT", scroll.content, "TOPLEFT", x, y)
-                -- slot.lastX, slot.lastY = x, y
-                -- end
                 slot.frame:Show()
             else
                 slot.frame:Hide()
@@ -772,14 +734,42 @@ local function updateVirtualGrid(self)
         end
     end
 
-    -- Hide overflow widgets
     for i = poolIndex, #self.itemPool do
         if self.itemPool[i] then
             self.itemPool[i].frame:Hide()
         end
     end
+end
+
+-- Update the virtual grid used in the browse tab
+local function updateVirtualGrid(self)
+    if self.currentTab ~= "browse" then
+        return
+    end
+
+    local scroll = self.grid and self.grid.scroll
+    if not scroll or not scroll.content then
+        return
+    end
+
+    local availableWidth = scroll.frame:GetWidth()
+    local frameHeight = scroll.frame:GetHeight()
+    if availableWidth < 10 or frameHeight < 10 then
+        return
+    end
+
+    if self.isUpdatingScroll then
+        return
+    end
+    self.isUpdatingScroll = true
+
+    local ok, err = pcall(doUpdateGridLogic, self, scroll, availableWidth, frameHeight)
 
     self.isUpdatingScroll = false
+
+    if not ok then
+        GBCR.Output:Error("updateVirtualGrid error: %s", tostring(err))
+    end
 end
 
 -- Prototype methods for our own button widget
