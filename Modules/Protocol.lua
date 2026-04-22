@@ -2355,7 +2355,9 @@ local function onCommReceived(self, prefix, message, distribution, sender)
     if prefix == "gbc-announce" then
         local altName = message
 
-        setAltProtocolState(self, altName, Constants.STATE.OUTDATED)
+        if self.protocolStates[altName] ~= Constants.STATE.REQUESTING then
+            setAltProtocolState(self, altName, Constants.STATE.OUTDATED)
+        end
 
         After(math_random(Constants.JITTER.ANNOUNCE_MIN, Constants.JITTER.ANNOUNCE_MAX), function()
             queryForGuildBankAltData(Protocol, sender, altName)
