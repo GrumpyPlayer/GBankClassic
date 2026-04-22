@@ -511,12 +511,6 @@ end
 
 -- Helper to scan all mail contents when opening the mailbox
 local function scanMailInventory(self, mailTable)
-    if not Inventory.mailHasUpdated then
-        GBCR.Output:Debug("INVENTORY", "scanMailInventory called but mailHasUpdated=false, returning nil")
-
-        return nil
-    end
-
     wipe(self.cachedMailItemKeys)
     local numItems = GetInboxNumItems()
 
