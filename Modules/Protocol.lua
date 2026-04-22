@@ -2609,6 +2609,7 @@ local function init(self)
     self.bufferParsedLedger = {}
     self.bufferParsedItems = {}
 
+    self.recentDataQueryResponses = {}
     self.uiStatePending = false
 
     self.gossipLoopRunning = false
