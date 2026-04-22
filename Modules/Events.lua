@@ -335,17 +335,11 @@ end
 -- Helper to compress data upon logging out
 local function compressAltField(altData, field, compressedField)
     local data = altData[field]
-    if not data then
+    if not data or type(data) ~= "table" then
         return
     end
 
-    if altData[compressedField] then
-        altData[field] = nil
-
-        return
-    end
-
-    if type(data) == "table" and next(data) then
+    if next(data) ~= nil then
         altData[compressedField] = GBCR.Database.CompressData(data)
     else
         altData[compressedField] = nil
