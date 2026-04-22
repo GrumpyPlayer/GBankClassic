@@ -2319,6 +2319,14 @@ local function processNextIncomingPayload(self)
         end
     end
 
+    if self.queueHead >= self.queueTail then
+        self.queueHead = 1
+        self.queueTail = 1
+        self.isProcessingIncoming = false
+
+        return
+    end
+
     local queueDepth = self.queueTail - self.queueHead
     local delay = 0
     if queueDepth >= 4 then
