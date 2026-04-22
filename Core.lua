@@ -171,6 +171,8 @@ function GBCR.Addon:OnDisable()
         GBCR.UI.Inventory.resizeTimer = nil
     end
 
+    GBCR.UI.Network:Stop()
+
     GBCR.Protocol.isAcceptingIncoming = false
 
     if GBCR.Protocol.requestTimeoutTimers then
@@ -188,8 +190,6 @@ function GBCR.Addon:OnDisable()
     end
 
     GBCR.Protocol.isProcessingQueue = false
-    GBCR.UI.Network.isOpen = false
-    GBCR.UI.Network:Stop()
 end
 
 -- Export functions for other modules
