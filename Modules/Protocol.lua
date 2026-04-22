@@ -1970,6 +1970,31 @@ local function processDebouncedMessageWithMultipleGuildBankAlts(self)
     GBCR.Output:Debug("PROTOCOL", "Processing debounced guild bank alt data (alts=%d)",
                       Globals.Count(self.debounceQueues.multipleAlts))
 
+    local guildName = GBCR.Guild:GetGuildInfo()
+    if guildName then
+        local localRosterVersion = GBCR.Database.savedVariables and GBCR.Database.savedVariables.roster and
+                                       GBCR.Database.savedVariables.roster.version
+
+        local bestRosterVersion = nil
+        local bestRosterSender = nil
+        for _, entry in pairs(self.debounceQueues.multipleAlts) do
+            local senderEntry = entry.sender and self.guildMembersFingerprintData[entry.sender]
+            local rv = senderEntry and senderEntry.rosterVersionTimestamp
+            if rv and (not bestRosterVersion or rv > bestRosterVersion) then
+                bestRosterVersion = rv
+                bestRosterSender = entry.sender
+            end
+        end
+
+        local shouldQueryRoster = bestRosterVersion and (localRosterVersion == nil or bestRosterVersion > localRosterVersion)
+        if shouldQueryRoster then
+            GBCR.Output:Debug("PROTOCOL", "Debounced fingerprint: roster query triggered (local=%s, best incoming=%s, from %s)",
+                              tostring(localRosterVersion), tostring(bestRosterVersion),
+                              GBCR.Guild:ColorPlayerName(bestRosterSender))
+            queryForRosterData(self, bestRosterSender, bestRosterVersion)
+        end
+    end
+
     local queryCount = processFingerprintAltData(self, self.debounceQueues.multipleAlts)
     local pluralQueries = (queryCount ~= 1 and "s" or "")
     GBCR.Output:Debug("PROTOCOL", "Queried data for %d guild bank alt%s from best sources", queryCount, pluralQueries)
