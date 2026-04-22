@@ -148,7 +148,12 @@ local function loadGuild(self, guildName)
         db.realm = db.realm or realmName
         db.roster = db.roster or {}
         db.alts = db.alts or {}
-        db.networkMeta = nil
+        if db.networkMeta then
+            local lastVer = db.networkMeta.lastSharedVersion or 0
+            db.networkMeta = {lastSharedVersion = lastVer}
+        else
+            db.networkMeta = {}
+        end
     end
 
     if db and db.alts then

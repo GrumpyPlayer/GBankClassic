@@ -469,6 +469,15 @@ end
 -- Helper to track metadata from sender
 local function trackSenderMetadata(self, sender, incomingAddonVersionNumber, incomingIsGuildBankAlt,
                                    incomingRosterVersionTimestamp)
+    if not sender or sender == "" then
+        return
+    end
+
+    if GBCR.Guild.cachedOnlineGuildMembers and GBCR.Guild.cachedOnlineGuildMembers[sender] then
+        GBCR.Guild.cachedAddonUsers = GBCR.Guild.cachedAddonUsers or {}
+        GBCR.Guild.cachedAddonUsers[sender] = true
+    end
+
     if not incomingAddonVersionNumber then
         return
     end
@@ -483,11 +492,6 @@ local function trackSenderMetadata(self, sender, incomingAddonVersionNumber, inc
     entry.seen = GetServerTime()
     entry.isGuildBankAlt = incomingIsGuildBankAlt or entry.isGuildBankAlt
     entry.rosterVersionTimestamp = incomingRosterVersionTimestamp or entry.rosterVersionTimestamp
-
-    if GBCR.Guild.cachedOnlineGuildMembers and GBCR.Guild.cachedOnlineGuildMembers[sender] then
-        GBCR.Guild.cachedAddonUsers = GBCR.Guild.cachedAddonUsers or {}
-        GBCR.Guild.cachedAddonUsers[sender] = true
-    end
 
     GBCR.Output:Debug("ROSTER", "Tracking member %s with addon version %s (isGuildBankAlt=%s, rosterVersionTimestamp=%s)",
                       GBCR.Guild:ColorPlayerName(sender), tostring(incomingAddonVersionNumber), tostring(incomingIsGuildBankAlt),
@@ -2353,6 +2357,8 @@ local function onCommReceived(self, prefix, message, distribution, sender)
         return
     end
 
+    trackSenderMetadata(self, sender, nil, nil, nil)
+
     if prefix == "gbc-hash" then
         local incomingAddonVersionNumber, incomingStateHash = string_match(message, "([^:]+):([^:]+)")
         trackSenderMetadata(self, sender, incomingAddonVersionNumber or nil, nil, nil)
@@ -2561,7 +2567,7 @@ local function onCommReceived(self, prefix, message, distribution, sender)
         local versionStr = string_match(message, "version (%d+)")
         if versionStr then
             local incomingAddonVersionNumber = tonumber(versionStr)
-            self.guildMembersFingerprintData[sender] = {addonVersionNumber = incomingAddonVersionNumber, seen = GetServerTime()}
+            trackSenderMetadata(self, sender, incomingAddonVersionNumber, nil, nil)
             GBCR.Output:Debug("ROSTER", "Parsed version %s for %s from hello reply", incomingAddonVersionNumber,
                               GBCR.Guild:ColorPlayerName(sender))
 

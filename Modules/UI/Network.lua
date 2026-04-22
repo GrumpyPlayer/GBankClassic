@@ -44,6 +44,11 @@ function UI_Network:RecordSuccessfulSeed(toPlayer)
     meta.lastSeedTime = GetServerTime()
     meta.lastSeedTarget = toPlayer
     meta.seedCount = (meta.seedCount or 0) + 1
+    local myName = GBCR.Guild:GetNormalizedPlayerName()
+    local sv = GBCR.Database.savedVariables
+    if sv and sv.alts and sv.alts[myName] then
+        meta.lastSharedVersion = sv.alts[myName].version or 0
+    end
     GBCR.UI.Inventory:SetSyncing(false)
     GBCR.UI.Inventory:NotifyStateChanged()
 end
@@ -105,30 +110,43 @@ local function getGuildBankStatusText(s)
 
     local myData = s.savedAlts[s.myName]
     local hasScanned = myData and myData.items and #myData.items > 0
-
     if not hasScanned then
-        return "WARN", "You are a guild bank alt but have no scan data yet.\n" ..
-                   "Open your bank and mailbox to record your inventory, then wait for the data to sync."
+        return "WARN",
+        "You are a guild bank alt but have no scan data yet. Open your bank and mailbox to record your inventory, then wait for the data to sync."
+    end
+
+    local myVersion = myData.version or 0
+    local lastSharedVer = meta.lastSharedVersion or 0
+    local hasUnsharedChanges = myVersion > lastSharedVer
+
+    if s.syncing then
+        return "INFO", "Syncing guild bank data... Please stay online."
+    end
+
+    if hasUnsharedChanges then
+        if s.addonUserCount == 0 then
+            return "WARN", "Your have unshared changes, but no other addon users are online to receive the update."
+        end
+
+        return "INFO", "Data updated locally. Waiting to share with online members."
     end
 
     local seedCount = meta.seedCount or 0
     local lastSeed = meta.lastSeedTime
-    local pluralSeed = (seedCount ~= 1 and "s" or "")
 
     if seedCount > 0 and lastSeed then
+        local pluralSeed = (seedCount ~= 1 and "s" or "")
         return "OK",
                string_format(
-                   "Your data has been shared with %d peer%s this session. Last share: %s to %s.\n" .. "Safe to log off.",
-                   seedCount, pluralSeed, meta.lastSeedTarget or "unknown", formatTimeAgo(lastSeed))
+                   "Your data is up to date and has been shared with %d peer%s this session. Last share: %s to %s.\n" ..
+                       "Safe to log off.", seedCount, pluralSeed, meta.lastSeedTarget or "unknown", formatTimeAgo(lastSeed))
     end
 
     if s.addonUserCount == 0 then
-        return "WARN", "Your inventory is recorded locally.\n" ..
-                   "No other addon users are online to receive it, stay logged in when others are online. They will request it automatically."
+        return "WARN", "Your data is up to date and was previously shared. No peers are currently online."
     end
 
-    return "INFO", "Your inventory is recorded. Waiting to share it with an online addon user.\n" ..
-               "This happens automatically, stay online for a few minutes."
+    return "OK", "Your data is up to date and has been shared. Ready for new changes."
 end
 
 local function getAltRowState(altName, altData, s)
