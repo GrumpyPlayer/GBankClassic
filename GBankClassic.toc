@@ -2,7 +2,7 @@
 ## Title: GBankClassic - Revived
 ## Notes: A simple way to aggregate and view the inventories of multiple guild bank alts.
 ## Author: Dominion-Myzrael, GrumpyPlayers (also known as <SG>Soul), Lothsahn, Huntmehuntme-Myzrael, Pimptasty
-## Version: 3.0.5
+## Version: 3.0.6
 ## SavedVariables: GBCR_DB
 ## OptionalDeps: Ace3
 ## X-Embeds: Ace3

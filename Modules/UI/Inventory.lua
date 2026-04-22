@@ -2263,7 +2263,7 @@ local function drawLedgerTab(self, container)
         populateLedgerGen = populateLedgerGen + 1
         local myGen = populateLedgerGen
 
-        -- Phase 1: collect entries (async for "Show all" due to potential 20k+ entries)
+        -- Phase 1: collect entries (async for "Show all guild banks" due to potential 20k+ entries)
         -- Phase 2: sort once (sync; capped at MAX_ENTRIES)
         -- Phase 3: build VirtualScroll rows via batched FormatEntry (async)
 
@@ -2272,7 +2272,7 @@ local function drawLedgerTab(self, container)
         local COLLECT_BATCH = 1000 -- entries collected per frame
         local ROW_BATCH = 30 -- FormatEntry calls per frame (each may call GetItemInfo)
 
-        if selectedAlt ~= "Show all" then
+        if selectedAlt ~= "Show all guild banks" then
             -- Single alt: small ledger, can collect synchronously
             local altData = sv and sv.alts and sv.alts[selectedAlt]
             local entries = {}
@@ -2296,7 +2296,7 @@ local function drawLedgerTab(self, container)
             return
         end
 
-        -- "Show all": async collection across all alts
+        -- "Show all guild banks": async collection across all alts
         local entries = {}
         local altPairs = {}
         if sv and sv.alts then
@@ -2336,6 +2336,7 @@ local function drawLedgerTab(self, container)
             table_sort(entries, function(a, b)
                 return a.entry[1] > b.entry[1]
             end)
+
             -- Keep only the most recent DISPLAY_CAP entries
             for i = DISPLAY_CAP + 1, #entries do
                 entries[i] = nil
@@ -2397,7 +2398,7 @@ local function drawLedgerTab(self, container)
         end
 
         local altsToExport = {}
-        if altName ~= "Show all" then
+        if altName ~= "Show all guild banks" then
             altsToExport[1] = altName
         else
             if sv and sv.alts then
@@ -2469,7 +2470,7 @@ local function drawLedgerTab(self, container)
         local altPairs = {}
         if sv and sv.alts then
             for name, data in pairs(sv.alts) do
-                if (selectedAlt == "Show all" or name == selectedAlt) and data.ledger and #data.ledger > 0 then
+                if (selectedAlt == "Show all guild banks" or name == selectedAlt) and data.ledger and #data.ledger > 0 then
                     altPairs[#altPairs + 1] = {name = name, ledger = data.ledger}
                 end
             end
@@ -2650,7 +2651,7 @@ local function drawLedgerTab(self, container)
     --         end
     --     end
 
-    --     if selectedAlt == "Show all" then
+    --     if selectedAlt == "Show all guild banks" then
     --         if sv and sv.alts then
     --             for _, altData in pairs(sv.alts) do
     --                 if altData.ledger then
@@ -2739,7 +2740,7 @@ local function drawLedgerTab(self, container)
         ShowExportView(metadataHeader(meta, "Ledger"), selected)
         -- local lines = {metadataHeader(meta, "Ledger")}
 
-        -- if selected ~= "Show all" then
+        -- if selected ~= "Show all guild banks" then
         --     -- Single alt: async export, show view when done
         --     ShowExportView("Building ledger export, please wait...")
         --     GBCR.Ledger:ExportLedger(selected, function(text)
