@@ -3168,8 +3168,11 @@ end
 -- Helper to draw the configuration tab
 local function drawConfigurationTab(self, container)
     container:SetLayout("Fill")
+    if container.SetTitle then
+        container.SetTitle = function()
+        end
+    end
     GBCR.Libs.AceConfigDialog:Open(addonName, container)
-    container:SetTitle("")
 end
 
 -- Helper to build an auction house style filter tree with classes, subclasses, and slots
@@ -4871,8 +4874,8 @@ local function getTabStatusText(self)
         local users = Globals.Count(GBCR.Guild.cachedAddonUsers or {}) or 0
         local members = GBCR.Guild.cachedOnlineGuildMemberCount or 0
 
-        return string_format("%d/%d alts synced  •  %d other addon user%s online  •  %d guild member%s online", synced, #roster,
-                             users, users ~= 1 and "s" or "", members, members ~= 1 and "s" or "")
+        return string_format("%d/%d alts synced  •  %d other addon user%s online  •  %d guild member%s online", synced,
+                             #roster, users, users ~= 1 and "s" or "", members, members ~= 1 and "s" or "")
     elseif tab == "configuration" or tab == "fulfillment" then
         local guildName = sv and sv.guildName or "no guild"
 
