@@ -96,10 +96,10 @@ local function getGlobalStatusText(s)
                          ""
 
     if s.syncing then
-        return "INFO", string_format("Syncing with %d user%s online%s", s.addonUserCount, pluralUsers, activity)
+        return "INFO", string_format("Syncing with %d other addon user%s online%s", s.addonUserCount, pluralUsers, activity)
     end
 
-    return "OK", string_format("Up to date, %d user%s online%s", s.addonUserCount, pluralUsers, activity)
+    return "OK", string_format("Up to date, %d other addon user%s online%s", s.addonUserCount, pluralUsers, activity)
 end
 
 local function getGuildBankStatusText(s)
