@@ -188,7 +188,7 @@ local function buildGlobalItemSourcesIndex(self, dirtyAlts, callback)
                 itemIndex = itemIndex + 1
                 processedThisFrame = processedThisFrame + 1
 
-                if shouldYield(frameStart, processedThisFrame, 100, 2500) then
+                if shouldYield(frameStart, processedThisFrame, 50, 300) then
                     After(0, Resume)
 
                     return
