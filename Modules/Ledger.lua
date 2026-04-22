@@ -154,6 +154,10 @@ local function formatEntry(self, entry, altName)
         desc = string_format("%s %s", IN and "Received" or "Lost", itemRef)
     end
 
+    if not desc then
+        desc = string_format("Unknown transaction (%s)", itemRef or "nil")
+    end
+
     return timeString, iconPath, desc
 end
 
@@ -271,6 +275,7 @@ local function appendLedger(self, altName, itemString, count, actorUid, opCode)
     local dedupeKey = string_format("%d_%s_%d_%d_%s", GetServerTime(), itemString or "", opCode, count or 1, actorUid or "")
     if self.recentAppends and self.recentAppends[dedupeKey] then
         Output:Debug("LEDGER", "Skipping duplicate ledger entry: %s", dedupeKey)
+        print("> Skipping duplicate ledger entry", dedupeKey)
 
         return
     end
@@ -299,6 +304,8 @@ local function appendLedger(self, altName, itemString, count, actorUid, opCode)
 
     local ledgerLen = #ledger + 1
     ledger[ledgerLen] = {GetServerTime(), itemId, enchant, suffix, count or 1, actorUid or "", opCode}
+
+    print(">>> Recording ledger entry", GetServerTime(), itemId, enchant, suffix, count or 1, actorUid or "", opCode) -- TODO: remove
 
     if ledgerLen > ledgerConstants.MAX_ENTRIES then
         table_sort(ledger, function(a, b)
@@ -390,6 +397,8 @@ local function onTakeInboxItem(self, mailId, attachmentIndex, header)
     local opCode = resolveOpCode(header, false)
     local player = GBCR.Guild:GetNormalizedPlayerName()
 
+    print("onTakeInboxItem", mailId, itemStr, opCode, player, "header:", table_concat(header, "|")) -- TODO: remove
+
     Output:Debug("LEDGER", "Logging item: %s x%d from %s (operation: %s)", itemStr, count or 1, header.sender, opCode)
 
     appendLedger(self, player, itemStr, tonumber(count) or 1, header.actorUid, opCode)
@@ -405,6 +414,8 @@ local function onTakeInboxMoney(self, mailId, header)
     local opCode = resolveOpCode(header, true)
     local player = GBCR.Guild:GetNormalizedPlayerName()
 
+    print("onTakeInboxMoney", mailId, opCode, player, "header:", table_concat(header, "|")) -- TODO: remove
+
     Output:Debug("LEDGER", "Logging money: %d copper from %s", header.money, header.sender)
 
     appendLedger(self, player, nil, header.money, header.actorUid, opCode)
@@ -416,6 +427,8 @@ local function onAutoLootMailItem(self, mailId)
     if not header then
         return
     end
+
+    print("onAutoLootMailItem", mailId, "header:", table_concat(header, "|")) -- TODO: remove
 
     onTakeInboxMoney(self, mailId, header)
 
