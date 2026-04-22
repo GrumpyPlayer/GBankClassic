@@ -1716,8 +1716,9 @@ local function updateBottomBar(self)
         btn:SetText("Force sync")
         btn:SetDisabled(false)
         btn:SetCallback("OnClick", function()
-            GBCR.Protocol:PerformSync()
-            GBCR.Output:Response("Checking for missing guild bank data from online members...")
+            if GBCR.Protocol:PerformSync() then
+                GBCR.Output:Response("Checking for missing guild bank data from online members...")
+            end
         end)
         -- btn:Show()
     else
