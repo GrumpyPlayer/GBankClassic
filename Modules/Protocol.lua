@@ -373,6 +373,14 @@ local function cleanupPendingSync(self)
             end
         end
     end
+
+    if self.recentDataQueryResponses then
+        for key, ts in pairs(self.recentDataQueryResponses) do
+            if now - ts > 90 then
+                self.recentDataQueryResponses[key] = nil
+            end
+        end
+    end
 end
 
 -- Helper to mark a sync as pending
@@ -2474,7 +2482,17 @@ local function onCommReceived(self, prefix, message, distribution, sender)
                           "guild bank alt data for", GBCR.Guild:ColorPlayerName(altName), "")
 
         if hasData and isStillAGuildBankAlt then
-            sendData(self, altName, sender)
+            local responseKey = (altName or "?") .. "|" .. (sender or "?")
+            self.recentDataQueryResponses = self.recentDataQueryResponses or {}
+            local lastResponse = self.recentDataQueryResponses[responseKey] or 0
+            local now = GetServerTime()
+            if now - lastResponse < 60 then
+                GBCR.Output:Debug("PROTOCOL", "Query from %s for %s: rate-limited (last response %ds ago)", sender, altName,
+                                  now - lastResponse)
+            else
+                self.recentDataQueryResponses[responseKey] = now
+                sendData(self, altName, sender)
+            end
         end
 
         return
