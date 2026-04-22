@@ -163,7 +163,7 @@ local function determineUidForGuildMemberName(self, name)
     local norm = normalizePlayerName(self, name)
     local info = norm and self.cachedGuildMembers and self.cachedGuildMembers[norm]
 
-    return (info and info.playerUid) or "a player outside the guild"
+    return (info and info.playerUid) or ""
 end
 
 -- Return the player's class, and whether or not they are the are able to view officer notes (consider an authority), based on the cached guild member data

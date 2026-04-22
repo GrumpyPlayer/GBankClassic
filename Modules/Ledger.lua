@@ -73,7 +73,11 @@ local function formatEntry(self, entry, altName)
     local actorName = ""
     if actor and actor ~= "" then
         local name = GBCR.Guild:FindGuildMemberByUid(actor)
-        actorName = name or ("uid:" .. actor)
+        if name then
+            actorName = name
+        else
+            actorName = Globals.ColorizeText(Constants.COLORS.GRAY, "(outside guild)")
+        end
     end
 
     local isMoney = (itemId == Constants.LEDGER_MONEY_ITEM)
@@ -263,6 +267,21 @@ local function appendLedger(self, altName, itemString, count, actorUid, opCode)
     if not sv or not sv.alts or not sv.alts[altName] then
         return
     end
+
+    local dedupeKey = string_format("%d_%s_%d_%d_%s", GetServerTime(), itemString or "", opCode, count or 1, actorUid or "")
+    if self.recentAppends and self.recentAppends[dedupeKey] then
+        Output:Debug("LEDGER", "Skipping duplicate ledger entry: %s", dedupeKey)
+
+        return
+    end
+
+    self.recentAppends = self.recentAppends or {}
+    self.recentAppends[dedupeKey] = true
+    After(2, function()
+        if self.recentAppends then
+            self.recentAppends[dedupeKey] = nil
+        end
+    end)
 
     local alt = sv.alts[altName]
     if not alt.ledger then
