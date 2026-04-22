@@ -3,6 +3,8 @@ local addonName, GBCR = ...
 GBCR.UI.Network = {}
 local UI_Network = GBCR.UI.Network
 
+UI_Network.rosterPool = {}
+
 local Globals = GBCR.Globals
 local ipairs = Globals.ipairs
 local math_max = Globals.math_max
@@ -251,10 +253,9 @@ end
 
 -- Widget pool for the roster grid
 local ROW_H = 20
-local rosterPool = {}
 
 local function ensureRosterPool(self, needed)
-    local pool = rosterPool
+    local pool = self.rosterPool
     local parentContent = self.rowsContainer.content
 
     for i = 1, #pool do
@@ -327,7 +328,7 @@ function UI_Network:DrawNetworkTab(container)
     scroll:SetCallback("OnRelease", function()
         self.isOpen = false
         stopTicker()
-        for _, row in ipairs(rosterPool) do
+        for _, row in ipairs(self.rosterPool) do
             if row.frame then
                 row.frame:Hide()
             end
