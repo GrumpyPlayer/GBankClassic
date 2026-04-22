@@ -310,7 +310,7 @@ local function setAltProtocolState(self, altName, newState)
             local active = false
 
             for _, s in pairs(Protocol.protocolStates) do
-                if s == Constants.STATE.RECEIVING or s == Constants.STATE.DISCOVERING then
+                if s == Constants.STATE.RECEIVING or s == Constants.STATE.DISCOVERING or s == Constants.STATE.REQUESTING then
                     active = true
 
                     break
