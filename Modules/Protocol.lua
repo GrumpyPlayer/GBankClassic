@@ -2251,11 +2251,15 @@ end
 local function performSync(self)
     local now = GetServerTime()
     local last = self.lastSync or 0
-    if now - last > Constants.TIMER_INTERVALS.MANUAL_SYNC_COOLDOWN then
-        self.lastSync = now
-        sendFingerprint(self)
-        requestMissingGuildBankAltData()
+    if now - last <= Constants.TIMER_INTERVALS.MANUAL_SYNC_COOLDOWN then
+        return false
     end
+
+    self.lastSync = now
+    sendFingerprint(self)
+    requestMissingGuildBankAltData()
+
+    return true
 end
 
 -- ================================================================================================
