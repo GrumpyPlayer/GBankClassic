@@ -2588,7 +2588,7 @@ local function drawLedgerTab(self, container)
                 scroll:AddChild(rankLbl)
 
                 local nameLbl = aceGUI:Create("Label")
-                nameLbl:SetText(Globals.ColorizeText(color, d.uid))
+                nameLbl:SetText(Globals.ColorizeText(color, playerName or d.uid))
                 scroll:AddChild(nameLbl)
 
                 local valLbl = aceGUI:Create("Label")
@@ -4015,7 +4015,7 @@ local function getViewStats(self)
 end
 
 -- Update the window status bar with filtered-item count, gold, and sync state
-local function updateStatusText(self) -- TODO
+local function updateStatusText(self)
     if not self.window or self.currentTab ~= "browse" then
         return
     end
@@ -4075,10 +4075,8 @@ local function updateFilterStatus(self)
     if self.filters.resetBtn then
         if active > 0 then
             self.filters.resetBtn:SetDisabled(false)
-            -- self.filters.resetBtn.frame:Show() -- TODO
         else
             self.filters.resetBtn:SetDisabled(true)
-            -- self.filters.resetBtn.frame:Hide() -- TODO
         end
     end
 end
@@ -4998,10 +4996,6 @@ local function updateDynamicTabs(self)
     self.tabs:SetTabs(dynamicTabs)
 
     GBCR.Libs.AceConfigRegistry:NotifyChange(addonName)
-
-    if self.currentTab == "configuration" and self.container then
-        -- GBCR.Libs.AceConfigDialog:Open(addonName, self.container) -- TODO
-    end
 
     -- Apply consistent font objects to all tab buttons
     -- HookScript on Enable/Disable bypasses TSM + Auctioneer font-object overrides which both reset tab text to white when run together
