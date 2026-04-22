@@ -5404,15 +5404,7 @@ local function drawWindow(self)
             for i = 1, #self.itemPool do
                 local btn = self.itemPool[i]
                 if btn then
-                    btn.frame:Hide()
-                    btn.frame:ClearAllPoints()
-                    btn.frame:SetParent(UIParent)
-                    -- btn.lastX           = nil
-                    -- btn.lastY           = nil
-                    btn._parentedToGrid = false
-                    if btn.Release then
-                        btn:Release()
-                    end
+                    aceGUI:Release(btn)
                 end
             end
             wipe(self.itemPool)
