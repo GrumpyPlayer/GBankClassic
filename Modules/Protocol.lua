@@ -2664,6 +2664,8 @@ local function init(self)
     self.lastFingerprintBroadcast = 0
     self.rosterQueryResponded = {}
 
+    self.altDataSources = {}
+
     self.debounceConfig = {
         enabled = true,
         intervals = {["gbc-fp-share"] = 3.0, ["gbc-data-share"] = 2.5, ["gbc-roster-share"] = 2.0}
