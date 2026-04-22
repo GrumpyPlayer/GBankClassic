@@ -5012,13 +5012,13 @@ local function refresh(self)
         return
     end
 
-    self.clockLabel:ClearAllPoints()
-    self.clockLabel:SetPoint("TOPLEFT", self.topBar.content, "TOPLEFT", 20, 0)
-    self.topBar.topBarText:ClearAllPoints()
-    self.topBar.topBarText:SetPoint("TOPLEFT", self.topBar.content, "TOPLEFT", 60, 0)
-    self.topBar.topBarText:SetWidth(750)
-    self.syncDot:ClearAllPoints()
-    self.syncDot:SetPoint("LEFT", self.topBar.content, "LEFT", 0, 0)
+    -- self.clockLabel:ClearAllPoints()
+    -- self.clockLabel:SetPoint("TOPLEFT", self.topBar.content, "TOPLEFT", 20, 0)
+    -- self.topBar.topBarText:ClearAllPoints()
+    -- self.topBar.topBarText:SetPoint("TOPLEFT", self.topBar.content, "TOPLEFT", 60, 0)
+    -- self.topBar.topBarText:SetWidth(750)
+    -- self.syncDot:ClearAllPoints()
+    -- self.syncDot:SetPoint("LEFT", self.topBar.content, "LEFT", 0, 0)
 
     if self.currentTab == "browse" then
         updateStatusText(self)
@@ -5228,23 +5228,15 @@ function UI_Inventory:SetSyncing(active)
     self.isSyncing = active
 
     local label = self.topBar.topBarText.label
-    local currentText = label:GetText() or ""
-    local syncing = Globals.ColorizeText(Constants.COLORS.GREEN, "SYNCING")
-    local prefix = syncing .. "  •  "
-    -- We escape the asterisk with % because it's a special character in Lua patterns
-    local pattern = "^" .. syncing .. "  %•  "
-
     if active then
-        if not string_find(currentText, pattern) then
-            label:SetText(prefix .. currentText)
-        end
+        local syncing = Globals.ColorizeText(Constants.COLORS.GREEN, "SYNCING")
+        label:SetText(syncing .. "  •  " .. (self.topBarBaseText or ""))
         self.syncDot:SetAlpha(1)
         self.syncDot:Show()
         if not self.syncPulseTicker then
             local _pulseHigh = true
             self.syncPulseTicker = NewTicker(0.45, function()
                 if not self.syncDot or not self.syncDot:IsShown() then
-
                     return
                 end
 
@@ -5253,8 +5245,7 @@ function UI_Inventory:SetSyncing(active)
             end)
         end
     else
-        local cleanText = string_gsub(currentText, pattern, "")
-        label:SetText(cleanText)
+        label:SetText(self.topBarBaseText or "")
         if self.syncPulseTicker then
             self.syncPulseTicker:Cancel()
             self.syncPulseTicker = nil
@@ -5295,6 +5286,7 @@ local function drawWindow(self)
     local topBar = aceGUI:Create("SimpleGroup")
     topBar:SetFullWidth(true)
     topBar:SetLayout("Table")
+    topBar:SetHeight(44)
     topBar:SetUserData("table", {columns = {105, 0}, spaceH = 0, spaceV = 0})
     window:AddChild(topBar)
     self.topBar = topBar
@@ -5330,10 +5322,10 @@ local function drawWindow(self)
     end)
 
     -- Sync dot: driven by a ticker inside SetSyncing()
-    local syncDot = topBar.content:CreateTexture(nil, "OVERLAY")
+    local syncDot = clockLabel.content:CreateTexture(nil, "OVERLAY")
     syncDot:SetSize(8, 8)
     syncDot:SetColorTexture(0, 1, 0.4, 1)
-    syncDot:SetPoint("LEFT", topBar.content, "LEFT", 0, 0)
+    syncDot:SetPoint("LEFT", clockLabel.frame, "LEFT", 0, 0)
     syncDot:Hide()
     self.syncDot = syncDot
 
@@ -5348,6 +5340,7 @@ local function drawWindow(self)
     topBarText.label:SetWordWrap(false)
     topBar:AddChild(topBarText)
     self.topBar.topBarText = topBarText
+    self.topBarBaseText = ""
 
     -- Middle: tabs
     local tabs = aceGUI:Create("TabGroup")
@@ -5386,7 +5379,9 @@ local function drawWindow(self)
 
         self.currentTab = group
         if self.topBar and self.topBar.topBarText then
-            self.topBar.topBarText:SetText(getTabTopBarMessage(group))
+            local msg = getTabTopBarMessage(group)
+            self.topBarBaseText = msg
+            self.topBar.topBarText:SetText(msg)
             if self.isSyncing then
                 self:SetSyncing(true)
             end
