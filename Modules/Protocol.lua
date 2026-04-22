@@ -2575,8 +2575,8 @@ local function onCommReceived(self, prefix, message, distribution, sender)
     end
 
     if prefix == "gbc-hr" then
-        local message = tostring(data)
-        local versionStr = string_match(message, "version (%d+)")
+        local helloReply = tostring(data)
+        local versionStr = string_match(helloReply, "version (%d+)")
         if versionStr then
             local incomingAddonVersionNumber = tonumber(versionStr)
             trackSenderMetadata(self, sender, incomingAddonVersionNumber, nil, nil)
