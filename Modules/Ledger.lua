@@ -266,27 +266,21 @@ end
 -- count: positive integer (quantity or copper for money)
 -- actorUid: guild member UID string or "" for world/AH events
 -- opCode: bitmask from ledgerOperations
-local function appendLedger(self, altName, itemString, count, actorUid, opCode)
+local function appendLedger(self, altName, itemString, count, actorUid, opCode, dedupeContext)
     local sv = GBCR.Database.savedVariables
     if not sv or not sv.alts or not sv.alts[altName] then
         return
     end
 
-    local dedupeKey = string_format("%d_%s_%d_%d_%s", GetServerTime(), itemString or "", opCode, count or 1, actorUid or "")
+    local dedupeKey = string_format("%d_%s_%d_%d_%s", dedupeContext or GetServerTime(), itemString or "", opCode, count or 1,
+                                    actorUid or "")
     if self.recentAppends and self.recentAppends[dedupeKey] then
-        Output:Debug("LEDGER", "Skipping duplicate ledger entry: %s", dedupeKey)
-        print("> Skipping duplicate ledger entry", dedupeKey)
+        Output:Debug("LEDGER", "Skipping duplicate ledger entry for %s (key=%s)", altName, dedupeKey)
 
         return
     end
-
     self.recentAppends = self.recentAppends or {}
     self.recentAppends[dedupeKey] = true
-    After(2, function()
-        if self.recentAppends then
-            self.recentAppends[dedupeKey] = nil
-        end
-    end)
 
     local alt = sv.alts[altName]
     if not alt.ledger then
@@ -304,8 +298,9 @@ local function appendLedger(self, altName, itemString, count, actorUid, opCode)
 
     local ledgerLen = #ledger + 1
     ledger[ledgerLen] = {GetServerTime(), itemId, enchant, suffix, count or 1, actorUid or "", opCode}
-
-    print(">>> Recording ledger entry", GetServerTime(), itemId, enchant, suffix, count or 1, actorUid or "", opCode) -- TODO: remove
+    Output:Debug("LEDGER",
+                 "Recorded ledger entry for %s (key=%s, timestamp=%s, itemId=%s, enchant=%s, suffix=%s, count=%s, actorUid=%s, opcode=%s)",
+                 altName, dedupeKey, GetServerTime(), itemId, enchant, suffix, count or 1, actorUid or "", opCode)
 
     if ledgerLen > ledgerConstants.MAX_ENTRIES then
         table_sort(ledger, function(a, b)
@@ -354,7 +349,7 @@ end
 
 -- Helper to fetch and bundle mail context
 local function getMailContext(mailId)
-    local _, _, sender, subject, money, cod, _, itemCount, _, wasReturned, _, _, isGM = GetInboxHeaderInfo(mailId)
+    local _, _, sender, subject, money, cod, daysLeft, itemCount, _, wasReturned, _, _, isGM = GetInboxHeaderInfo(mailId)
     if not sender or wasReturned or isGM then
         return nil
     end
@@ -363,6 +358,7 @@ local function getMailContext(mailId)
         sender = sender,
         money = tonumber(money) or 0,
         cod = tonumber(cod) or 0,
+        daysLeft = daysLeft or 0,
         itemCount = itemCount or 0,
         ahType = getAHMailType(subject),
         actorUid = GBCR.Guild:DetermineUidForGuildMemberName(sender)
@@ -396,12 +392,12 @@ local function onTakeInboxItem(self, mailId, attachmentIndex, header)
     local itemStr = GBCR.Inventory:GetItemKey(link)
     local opCode = resolveOpCode(header, false)
     local player = GBCR.Guild:GetNormalizedPlayerName()
-
-    print("onTakeInboxItem", mailId, itemStr, opCode, player, "header:", table_concat(header, "|")) -- TODO: remove
+    local dedupeContext = string_format("mail_%d_%s_%.12f_%d_%d_%s", mailId, header.sender, header.daysLeft, attachmentIndex,
+                                        header.itemCount, itemStr)
 
     Output:Debug("LEDGER", "Logging item: %s x%d from %s (operation: %s)", itemStr, count or 1, header.sender, opCode)
 
-    appendLedger(self, player, itemStr, tonumber(count) or 1, header.actorUid, opCode)
+    appendLedger(self, player, itemStr, tonumber(count) or 1, header.actorUid, opCode, dedupeContext)
 end
 
 -- Commit taking money from opened mail to the ledger
@@ -413,12 +409,11 @@ local function onTakeInboxMoney(self, mailId, header)
 
     local opCode = resolveOpCode(header, true)
     local player = GBCR.Guild:GetNormalizedPlayerName()
-
-    print("onTakeInboxMoney", mailId, opCode, player, "header:", table_concat(header, "|")) -- TODO: remove
+    local dedupeContext = string_format("mail_%s_money", tostring(mailId))
 
     Output:Debug("LEDGER", "Logging money: %d copper from %s", header.money, header.sender)
 
-    appendLedger(self, player, nil, header.money, header.actorUid, opCode)
+    appendLedger(self, player, nil, header.money, header.actorUid, opCode, dedupeContext)
 end
 
 -- Commit taking an item or money from opened mail to the ledger
@@ -427,8 +422,6 @@ local function onAutoLootMailItem(self, mailId)
     if not header then
         return
     end
-
-    print("onAutoLootMailItem", mailId, "header:", table_concat(header, "|")) -- TODO: remove
 
     onTakeInboxMoney(self, mailId, header)
 
@@ -441,25 +434,23 @@ end
 
 -- Commit outgoing mail to the ledger
 local function onSendMail(self, recipient)
-    if not GBCR.Guild.weAreGuildBankAlt then
-        return
-    end
-
     local player = GBCR.Guild:GetNormalizedPlayerName()
     local actorUid = GBCR.Guild:DetermineUidForGuildMemberName(recipient)
 
     for i = 1, attachmentsMaxSend do
         local link = GetSendMailItemLink(i)
         if link then
-            local _, _, count = GetSendMailItem(i)
-
-            appendLedger(self, player, GBCR.Inventory:GetItemKey(link), tonumber(count) or 1, actorUid, ledgerOperations.MAIL_OUT)
+            local _, _, _, count = GetSendMailItem(i)
+            local dedupeContext = string_format("mail_%s_item_%s", tostring(GetServerTime()), tostring(i))
+            appendLedger(self, player, GBCR.Inventory:GetItemKey(link), tonumber(count) or 1, actorUid, ledgerOperations.MAIL_OUT,
+                         dedupeContext)
         end
     end
 
     local money = GetSendMailMoney() or 0
     if money > 0 then
-        appendLedger(self, player, nil, money, actorUid, ledgerOperations.MAIL_OUT)
+        local dedupeContext = string_format("mail_%s_money", tostring(GetServerTime()))
+        appendLedger(self, player, nil, money, actorUid, ledgerOperations.MAIL_OUT, dedupeContext)
     end
 
     Output:Debug("LEDGER", "onSendMail: logged outgoing mail to %s", recipient or "?")
@@ -537,10 +528,6 @@ end
 -- ================================================================================================
 -- Commit vendor purchase to the ledger 
 local function onBuyMerchantItem(self, index, quantity)
-    if not GBCR.Guild.weAreGuildBankAlt then
-        return
-    end
-
     quantity = tonumber(quantity) or 1
     local link = GetMerchantItemLink(index)
     if not link then
@@ -561,12 +548,6 @@ end
 
 -- Commit vendor sale to the ledger 
 local function onSellCursorItem(self)
-    if not GBCR.Guild.weAreGuildBankAlt then
-        GBCR.Events.pendingVendorSellItem = nil
-
-        return
-    end
-
     local item = GBCR.Events.pendingVendorSellItem
     if not item then
         return
@@ -582,12 +563,6 @@ end
 
 -- Commit item destroy to the ledger 
 local function onDeleteCursorItem(self)
-    if not GBCR.Guild.weAreGuildBankAlt then
-        GBCR.Events.pendingCursorItem = nil
-
-        return
-    end
-
     local item = GBCR.Events.pendingCursorItem
     if not item then
         return

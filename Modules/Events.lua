@@ -506,6 +506,9 @@ end
 function Events:MAIL_CLOSED()
     GBCR.Output:Debug("EVENTS", "MAIL_CLOSED event fired")
 
+    if GBCR.Ledger.recentAppends then
+        wipe(GBCR.Ledger.recentAppends)
+    end
     self.isMailOpen = false
     GBCR.Inventory:OnUpdateStart()
     GBCR.Inventory:OnUpdateStop()
