@@ -119,13 +119,9 @@ local function getGuildBankStatusText(s)
     local lastSharedVer = meta.lastSharedVersion or 0
     local hasUnsharedChanges = myVersion > lastSharedVer
 
-    if s.syncing then
-        return "INFO", "Syncing guild bank data... Please stay online."
-    end
-
     if hasUnsharedChanges then
         if s.addonUserCount == 0 then
-            return "WARN", "Your have unshared changes, but no other addon users are online to receive the update."
+            return "WARN", "You have unshared changes, but no other addon users are online to receive the update."
         end
 
         return "INFO", "Data updated locally. Waiting to share with online members."
@@ -143,7 +139,7 @@ local function getGuildBankStatusText(s)
     end
 
     if s.addonUserCount == 0 then
-        return "WARN", "Your data is up to date and was previously shared. No peers are currently online."
+        return "WARN", "Your data is up to date and was previously shared. No other addon users are currently online."
     end
 
     return "OK", "Your data is up to date and has been shared. Ready for new changes."
