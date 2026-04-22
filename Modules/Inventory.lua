@@ -68,6 +68,10 @@ local function buildGlobalItemSourcesIndex(self, dirtyAlts, callback)
                 local altData = savedVariables.alts[altName]
                 local items = altData and altData.items
 
+                if not items and altData and altData.itemsCompressed then
+                    items = GBCR.Database.DecompressData(altData.itemsCompressed)
+                end
+
                 if items then
                     for i = 1, #items do
                         local item = items[i]
@@ -93,6 +97,10 @@ local function buildGlobalItemSourcesIndex(self, dirtyAlts, callback)
             for altName in pairs(dirtyAlts) do
                 local altData = savedVariables.alts[altName]
                 local items = altData and altData.items
+
+                if not items and altData and altData.itemsCompressed then
+                    items = GBCR.Database.DecompressData(altData.itemsCompressed)
+                end
 
                 if items then
                     for i = 1, #items do
@@ -363,6 +371,8 @@ local function recalculateAggregatedItems(self, bankData, bagData, mailData, alt
     end
 
     GBCR.Output:Debug("INVENTORY", "Aggregation finished: %d unique items found across bank, bags, and mail", #alt.items)
+
+    alt.itemsCompressed = nil
 
     After(0, function()
         alt.itemsCompressed = GBCR.Database.CompressData(alt.items)
