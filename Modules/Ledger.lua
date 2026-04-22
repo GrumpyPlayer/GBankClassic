@@ -33,6 +33,7 @@ local GetInboxItemLink = Globals.GetInboxItemLink
 local GetItemInfo = Globals.GetItemInfo
 local GetMerchantItemInfo = Globals.GetMerchantItemInfo
 local GetMerchantItemLink = Globals.GetMerchantItemLink
+local GetMoney = Globals.GetMoney
 local GetSendMailItem = Globals.GetSendMailItem
 local GetSendMailItemLink = Globals.GetSendMailItemLink
 local GetSendMailMoney = Globals.GetSendMailMoney
@@ -272,16 +273,6 @@ local function appendLedger(self, altName, itemString, count, actorUid, opCode, 
         return
     end
 
-    local dedupeKey = string_format("%d_%s_%d_%d_%s", dedupeContext or GetServerTime(), itemString or "", opCode, count or 1,
-                                    actorUid or "")
-    if self.recentAppends and self.recentAppends[dedupeKey] then
-        Output:Debug("LEDGER", "Skipping duplicate ledger entry for %s (key=%s)", altName, dedupeKey)
-
-        return
-    end
-    self.recentAppends = self.recentAppends or {}
-    self.recentAppends[dedupeKey] = true
-
     local alt = sv.alts[altName]
     if not alt.ledger then
         alt.ledger = {}
@@ -299,8 +290,8 @@ local function appendLedger(self, altName, itemString, count, actorUid, opCode, 
     local ledgerLen = #ledger + 1
     ledger[ledgerLen] = {GetServerTime(), itemId, enchant, suffix, count or 1, actorUid or "", opCode}
     Output:Debug("LEDGER",
-                 "Recorded ledger entry for %s (key=%s, timestamp=%s, itemId=%s, enchant=%s, suffix=%s, count=%s, actorUid=%s, opcode=%s)",
-                 altName, dedupeKey, GetServerTime(), itemId, enchant, suffix, count or 1, actorUid or "", opCode)
+                 "Recorded ledger entry for %s (timestamp=%s, itemId=%s, enchant=%s, suffix=%s, count=%s, actorUid=%s, opcode=%s)",
+                 altName, GetServerTime(), itemId, enchant, suffix, count or 1, actorUid or "", opCode)
 
     if ledgerLen > ledgerConstants.MAX_ENTRIES then
         table_sort(ledger, function(a, b)
@@ -392,12 +383,29 @@ local function onTakeInboxItem(self, mailId, attachmentIndex, header)
     local itemStr = GBCR.Inventory:GetItemKey(link)
     local opCode = resolveOpCode(header, false)
     local player = GBCR.Guild:GetNormalizedPlayerName()
-    local dedupeContext = string_format("mail_%d_%s_%.12f_%d_%d_%s", mailId, header.sender, header.daysLeft, attachmentIndex,
-                                        header.itemCount, itemStr)
 
-    Output:Debug("LEDGER", "Logging item: %s x%d from %s (operation: %s)", itemStr, count or 1, header.sender, opCode)
+    local dedupeKey = string_format("mail_%s_%.12f_%d_%d_%s", header.sender, header.daysLeft or 0, attachmentIndex,
+                                    tonumber(count) or 1, itemStr)
+    if self.mailRegistry[dedupeKey] then
+        Output:Debug("LEDGER", "Prevented tracking for key: %s", dedupeKey)
 
-    appendLedger(self, player, itemStr, tonumber(count) or 1, header.actorUid, opCode, dedupeContext)
+        return
+    end
+
+    Output:Debug("LEDGER", "Queueing incoming item from mail: x%d %s from %s (opCode=%s, key=%s)", count or 1, itemStr,
+                 header.sender, opCode, dedupeKey)
+
+    self.mailRegistry[dedupeKey] = true
+    table.insert(self.mailItemQueue, {
+        sender = header.sender,
+        actorUid = header.actorUid,
+        itemStr = itemStr,
+        link = link,
+        qty = tonumber(count) or 1,
+        opCode = opCode,
+        dedupeContext = dedupeKey,
+        player = player
+    })
 end
 
 -- Commit taking money from opened mail to the ledger
@@ -409,11 +417,26 @@ local function onTakeInboxMoney(self, mailId, header)
 
     local opCode = resolveOpCode(header, true)
     local player = GBCR.Guild:GetNormalizedPlayerName()
-    local dedupeContext = string_format("mail_%s_money", tostring(mailId))
 
-    Output:Debug("LEDGER", "Logging money: %d copper from %s", header.money, header.sender)
+    local dedupeKey = string_format("mail_%.12f_money", header.daysLeft or 0)
+    if self.mailRegistry[dedupeKey] then
+        Output:Debug("LEDGER", "Prevented tracking for key: %s", dedupeKey)
 
-    appendLedger(self, player, nil, header.money, header.actorUid, opCode, dedupeContext)
+        return
+    end
+
+    Output:Debug("LEDGER", "Queueing incoming money from mail: %d copper from %s (key=%s)", header.money, header.sender, dedupeKey)
+
+    self.mailRegistry[dedupeKey] = true
+    self.mailMoneyQueue[#self.mailMoneyQueue + 1] = {
+        sender = header.sender,
+        actorUid = header.actorUid,
+        amount = header.money,
+        opCode = opCode,
+        dedupeContext = dedupeKey,
+        player = player,
+        moneySnapshot = GetMoney()
+    }
 end
 
 -- Commit taking an item or money from opened mail to the ledger
@@ -425,8 +448,8 @@ local function onAutoLootMailItem(self, mailId)
 
     onTakeInboxMoney(self, mailId, header)
 
-    if header and header.itemCount and header.itemCount > 0 then
-        for i = 1, attachmentsMaxReceive do
+    if header.itemCount > 0 then
+        for i = 1, math_min(header.itemCount, attachmentsMaxReceive) do
             onTakeInboxItem(self, mailId, i, header)
         end
     end
@@ -441,9 +464,7 @@ local function onSendMail(self, recipient)
         local link = GetSendMailItemLink(i)
         if link then
             local _, _, _, count = GetSendMailItem(i)
-            local dedupeContext = string_format("mail_%s_item_%s", tostring(GetServerTime()), tostring(i))
-            appendLedger(self, player, GBCR.Inventory:GetItemKey(link), tonumber(count) or 1, actorUid, ledgerOperations.MAIL_OUT,
-                         dedupeContext)
+            appendLedger(self, player, GBCR.Inventory:GetItemKey(link), tonumber(count) or 1, actorUid, ledgerOperations.MAIL_OUT)
         end
     end
 
@@ -590,6 +611,9 @@ local function init(self)
     self.tradeMoney = {giving = 0, receiving = 0}
     self.tradePartner = ""
     self.tradePartnerUid = ""
+    self.mailRegistry = {}
+    self.mailItemQueue = {}
+    self.mailMoneyQueue = nil
 end
 
 -- ================================================================================================

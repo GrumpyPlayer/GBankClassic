@@ -9,7 +9,9 @@ local Globals = GBCR.Globals
 local hooksecurefunc = Globals.hooksecurefunc
 local next = Globals.next
 local pairs = Globals.pairs
+local string_gsub = Globals.string_gsub
 local string_match = Globals.string_match
+local table_remove = Globals.table_remove
 local table_sort = Globals.table_sort
 local tonumber = Globals.tonumber
 local tostring = Globals.tostring
@@ -18,6 +20,7 @@ local wipe = Globals.wipe
 local After = Globals.After
 local GameTooltip = Globals.GameTooltip
 local GetContainerItemInfo = Globals.GetContainerItemInfo
+local GetMoney = Globals.GetMoney
 local GetPlayerTradeMoney = Globals.GetPlayerTradeMoney
 local GetTargetTradeMoney = Globals.GetTargetTradeMoney
 local GuildRoster = Globals.GuildRoster
@@ -31,6 +34,10 @@ local MailFrame = Globals.MailFrame
 local NewTimer = Globals.NewTimer
 local UnitName = Globals.UnitName
 
+local lootItemPushedSelf = Globals.LOOT_ITEM_PUSHED_SELF
+local lootItemPushedSelfMultiple = Globals.LOOT_ITEM_PUSHED_SELF_MULTIPLE
+local lootItemSelf = Globals.LOOT_ITEM_SELF
+local lootItemSelfMultiple = Globals.LOOT_ITEM_SELF_MULTIPLE
 local tradeBagFull = Globals.ERR_TRADE_BAG_FULL
 local tradeCancelled = Globals.ERR_TRADE_CANCELLED
 local tradeComplete = Globals.ERR_TRADE_COMPLETE
@@ -172,6 +179,10 @@ local function registerGuildBankAltEvents(self)
     registerEvent(self, "BAG_UPDATE_DELAYED")
     registerEvent(self, "BANKFRAME_OPENED")
     registerEvent(self, "BANKFRAME_CLOSED")
+    registerEvent(self, "MAIL_SHOW")
+    registerEvent(self, "MAIL_CLOSED")
+    registerEvent(self, "CHAT_MSG_LOOT")
+    registerEvent(self, "PLAYER_MONEY")
     registerEvent(self, "AUCTION_HOUSE_SHOW")
     registerEvent(self, "AUCTION_HOUSE_CLOSED")
     registerEvent(self, "MERCHANT_SHOW")
@@ -222,9 +233,8 @@ local function registerGuildBankAltEvents(self)
     -- Destroy: step 2
     hookLedgerEvent("DeleteCursorItem", "OnDeleteCursorItem")
 
-    Events.guildBankAltEventsRegistered = true
-
     Events.myGuildRosterIndex = nil
+    Events.guildBankAltEventsRegistered = true
 end
 
 -- Register all event listeners when enabling the addon
@@ -244,8 +254,6 @@ local function registerEvents(self)
     registerEvent(self, "PLAYER_REGEN_DISABLED")
     registerEvent(self, "PLAYER_REGEN_ENABLED")
     registerEvent(self, "ZONE_CHANGED_NEW_AREA")
-    registerEvent(self, "MAIL_SHOW")
-    registerEvent(self, "MAIL_CLOSED")
     registerEvent(self, "MODIFIER_STATE_CHANGED")
 
     -- Drag an item into search
@@ -273,6 +281,10 @@ local function unregisterGuildBankAltEvents()
     unregisterEvent("BAG_UPDATE_DELAYED")
     unregisterEvent("BANKFRAME_OPENED")
     unregisterEvent("BANKFRAME_CLOSED")
+    unregisterEvent("MAIL_SHOW")
+    unregisterEvent("MAIL_CLOSED")
+    unregisterEvent("CHAT_MSG_LOOT")
+    unregisterEvent("PLAYER_MONEY")
     unregisterEvent("AUCTION_HOUSE_SHOW")
     unregisterEvent("AUCTION_HOUSE_CLOSED")
     unregisterEvent("MERCHANT_SHOW")
@@ -307,8 +319,6 @@ local function unregisterEvents(self)
     unregisterEvent("PLAYER_REGEN_DISABLED")
     unregisterEvent("PLAYER_REGEN_ENABLED")
     unregisterEvent("ZONE_CHANGED_NEW_AREA")
-    unregisterEvent("MAIL_SHOW")
-    unregisterEvent("MAIL_CLOSED")
     unregisterEvent("MODIFIER_STATE_CHANGED")
 
     -- For guild bank alts
@@ -486,34 +496,6 @@ function Events:ZONE_CHANGED_NEW_AREA()
     GBCR.Protocol:UpdateSafetyLockout()
 end
 
-function Events:MAIL_SHOW()
-    GBCR.Output:Debug("EVENTS", "MAIL_SHOW event fired")
-
-    GBCR.Inventory:OnUpdateStart()
-    GBCR.Inventory.mailHasUpdated = true
-    self.isMailOpen = true
-    GBCR.Ledger:Check()
-    if not MailFrame.isGBCRHooked then
-        MailFrame:HookScript("OnHide", function()
-            GBCR.Output:Debug("INVENTORY", "MailFrame OnHide function fired (mailbox closed)")
-            Events:MAIL_CLOSED()
-        end)
-        MailFrame.isGBCRHooked = true
-        GBCR.Output:Debug("INVENTORY", "Hooked MailFrame OnHide function")
-    end
-end
-
-function Events:MAIL_CLOSED()
-    GBCR.Output:Debug("EVENTS", "MAIL_CLOSED event fired")
-
-    if GBCR.Ledger.recentAppends then
-        wipe(GBCR.Ledger.recentAppends)
-    end
-    self.isMailOpen = false
-    GBCR.Inventory:OnUpdateStart()
-    GBCR.Inventory:OnUpdateStop()
-end
-
 function Events:MODIFIER_STATE_CHANGED()
     if not GameTooltip:IsShown() then
         return
@@ -587,6 +569,113 @@ function Events:BANKFRAME_CLOSED()
     GBCR.Output:Debug("EVENTS", "BANKFRAME_CLOSED event fired")
 
     GBCR.Inventory:OnUpdateStop()
+end
+
+function Events:MAIL_SHOW()
+    GBCR.Output:Debug("EVENTS", "MAIL_SHOW event fired")
+
+    GBCR.Inventory:OnUpdateStart()
+    GBCR.Inventory.mailHasUpdated = true
+    self.isMailOpen = true
+    GBCR.Ledger:Check()
+    if not MailFrame.isGBCRHooked then
+        MailFrame:HookScript("OnHide", function()
+            GBCR.Output:Debug("INVENTORY", "MailFrame OnHide function fired (mailbox closed)")
+            Events:MAIL_CLOSED()
+        end)
+        MailFrame.isGBCRHooked = true
+        GBCR.Output:Debug("INVENTORY", "Hooked MailFrame OnHide function")
+    end
+end
+
+function Events:MAIL_CLOSED()
+    GBCR.Output:Debug("EVENTS", "MAIL_CLOSED event fired")
+
+    if GBCR.Ledger.mailItemQueue then
+        wipe(GBCR.Ledger.mailItemQueue)
+    end
+    if GBCR.Ledger.mailRegistry then
+        wipe(GBCR.Ledger.mailRegistry)
+    end
+    if GBCR.Ledger.mailMoneyQueue then
+        wipe(GBCR.Ledger.mailMoneyQueue)
+    end
+    self.isMailOpen = false
+    GBCR.Inventory:OnUpdateStart()
+    GBCR.Inventory:OnUpdateStop()
+end
+
+function Events:CHAT_MSG_LOOT(_, message)
+    GBCR.Output:Debug("EVENTS", "CHAT_MSG_LOOT event fired")
+
+    local queue = GBCR.Ledger.mailItemQueue
+    if not queue or #queue == 0 then
+        return
+    end
+
+    local itemID = tonumber(string_match(message, "|Hitem:(%d+):"))
+    local itemLink, amountString = string_match(message,
+                                                string_gsub(string_gsub(lootItemSelfMultiple, "%%s", "(.+)"), "%%d", "(%%d+)"))
+
+    if not itemLink then
+        itemLink = string_match(message, string_gsub(lootItemSelf, "%%s", "(.+)"))
+        if not itemLink then
+            itemLink, amountString = string_match(message, string_gsub(string_gsub(lootItemPushedSelfMultiple, "%%s", "(.+)"),
+                                                                       "%%d", "(%%d+)"))
+            if not itemLink then
+                itemLink = string_match(message, string_gsub(lootItemPushedSelf, "%%s", "(.+)"))
+            end
+        end
+    end
+
+    local amount = tonumber(amountString) or 1
+    if not itemLink then
+        return
+    end
+
+    for i = 1, #queue do
+        local pending = queue[i]
+        local pendingID = tonumber(string_match(pending.link, "item:(%d+)"))
+        local idMatch = pendingID and itemID and pendingID == itemID
+        local linkMatch = pending.link == itemLink
+
+        if (idMatch or linkMatch) and pending.qty == amount then
+            GBCR.Output:Debug("LEDGER", "Confirmed item from mail! Appending ledger for %sx %s from %s (key=%s)", pending.qty,
+                              pending.link, pending.sender, pending.dedupeContext)
+
+            GBCR.Ledger:AppendLedger(pending.player, pending.itemStr, pending.qty, pending.actorUid, pending.opCode,
+                                     pending.dedupeContext)
+
+            table.remove(queue, i)
+
+            return
+        end
+    end
+end
+
+function Events:PLAYER_MONEY()
+    GBCR.Output:Debug("EVENTS", "PLAYER_MONEY event fired")
+
+    local queue = GBCR.Ledger.mailMoneyQueue
+    if not queue or #queue == 0 then
+        return
+    end
+
+    local currentMoney = GetMoney()
+    local i = 1
+    while i <= #queue do
+        local pending = queue[i]
+        if currentMoney > pending.moneySnapshot then
+            GBCR.Output:Debug("LEDGER", "Confirmed money from mail! Appending ledger for %d copper from %s (key=%s)",
+                              pending.amount, pending.sender or "?", pending.dedupeContext)
+
+            GBCR.Ledger:AppendLedger(pending.player, nil, pending.amount, pending.actorUid, pending.opCode, pending.dedupeContext)
+
+            table_remove(queue, i)
+        else
+            i = i + 1
+        end
+    end
 end
 
 function Events:AUCTION_HOUSE_SHOW()
