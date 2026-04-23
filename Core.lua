@@ -71,7 +71,7 @@ function GBCR.Addon:OnInitialize()
         },
         global = {guilds = {}}
     }
-    GBCR.db = GBCR.Libs.AceDB:New("GBCR_DB", defaults, true)
+    GBCR.db = GBCR.Libs.AceDB:New("GBCR_DB_V30009", defaults, true)
 
     GBCR.Database:Init()
     GBCR.Options:Init()

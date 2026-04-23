@@ -287,11 +287,12 @@ local function appendLedger(self, altName, itemString, count, actorUid, opCode, 
         suffix = tonumber(p3) or 0
     end
 
+    local now = GetServerTime()
     local ledgerLen = #ledger + 1
-    ledger[ledgerLen] = {GetServerTime(), itemId, enchant, suffix, count or 1, actorUid or "", opCode}
+    ledger[ledgerLen] = {now, itemId, enchant, suffix, count or 1, actorUid or "", opCode}
     Output:Debug("LEDGER",
                  "Recorded ledger entry for %s (timestamp=%s, itemId=%s, enchant=%s, suffix=%s, count=%s, actorUid=%s, opcode=%s)",
-                 altName, GetServerTime(), itemId, enchant, suffix, count or 1, actorUid or "", opCode)
+                 altName, now, itemId, enchant, suffix, count or 1, actorUid or "", opCode)
 
     if ledgerLen > ledgerConstants.MAX_ENTRIES then
         table_sort(ledger, function(a, b)
@@ -308,6 +309,13 @@ local function appendLedger(self, altName, itemString, count, actorUid, opCode, 
     end
 
     self.timerLedgerUpdateBroadcast = NewTimer(timerIntervals.LEDGER_UPDATE_QUIET_TIME, function()
+        local sv = GBCR.Database.savedVariables
+        if not sv or not sv.alts or sv.alts[altName] ~= alt then
+            self.timerLedgerUpdateBroadcast = nil
+
+            return
+        end
+
         alt.version = GetServerTime()
 
         local networkMeta = GBCR.Database.savedVariables and GBCR.Database.savedVariables.networkMeta
@@ -418,7 +426,7 @@ local function onTakeInboxMoney(self, mailId, header)
     local opCode = resolveOpCode(header, true)
     local player = GBCR.Guild:GetNormalizedPlayerName()
 
-    local dedupeKey = string_format("mail_%.12f_money", header.daysLeft or 0)
+    local dedupeKey = string_format("mail_%s_%.12f_money", header.sender or "", header.daysLeft or 0)
     if self.mailRegistry[dedupeKey] then
         Output:Debug("LEDGER", "Prevented tracking for key: %s", dedupeKey)
 
@@ -613,7 +621,7 @@ local function init(self)
     self.tradePartnerUid = ""
     self.mailRegistry = {}
     self.mailItemQueue = {}
-    self.mailMoneyQueue = nil
+    self.mailMoneyQueue = {}
 end
 
 -- ================================================================================================

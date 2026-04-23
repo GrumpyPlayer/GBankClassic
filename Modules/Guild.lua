@@ -413,6 +413,9 @@ local function rebuildGuildRosterInfo(self)
 
         local overallStart = debugprofilestop()
 
+        self.onlineCacheGeneration = (self.onlineCacheGeneration or 0) + 1
+        local myOnlineCacheGen = self.onlineCacheGeneration
+
         local function resumeGuildRosterRebuild()
             if self.guildRosterGeneration ~= myGeneration then
                 GBCR.Output:Debug("ROSTER", "Aborting stale guild roster rebuild (generation %d vs %d)", myGeneration,
@@ -420,8 +423,6 @@ local function rebuildGuildRosterInfo(self)
 
                 return
             end
-
-            self.onlineCacheGeneration = (self.onlineCacheGeneration or 0) + 1
 
             local frameStart = debugprofilestop()
             local processedThisFrame = 0
@@ -487,7 +488,9 @@ local function rebuildGuildRosterInfo(self)
                 end
             end
 
-            self.cachedOnlineGuildMemberCount = numOnline
+            if self.onlineCacheGeneration == myOnlineCacheGen then
+                self.cachedOnlineGuildMemberCount = numOnline
+            end
 
             if weCanViewOfficerNotes and not self.areOfficerNotesUsedToDefineGuildBankAlts then
                 self.areOfficerNotesUsedToDefineGuildBankAlts = false
@@ -552,24 +555,19 @@ local function rebuildGuildRosterInfo(self)
                 GBCR.Database.savedVariables.roster.manualAlts = GBCR.Database.savedVariables.roster.manualAlts or {}
 
                 if anyoneIsAuthority then
-                    -- If all ranks can view officer notes, then everyone is authority and rosters do not need to be synced
                     GBCR.Database.savedVariables.roster.version = nil
                 elseif selfIsAuthority then
                     local rosterChanged = (#removedAlts > 0) or (#guildBankAlts > previousRosterCount)
 
-                    -- Only some ranks can view officer notes, and we're an authority
-                    -- Only broadcast if something actually changed if officer notes are used to define guild banks
                     if rosterChanged then
                         GBCR.Database.savedVariables.roster.version = GetServerTime()
-
-                        local hasManualAlts = savedManualAlts and #savedManualAlts > 0
-
-                        if self.areOfficerNotesUsedToDefineGuildBankAlts or hasManualAlts then
-                            After(0, function()
-                                GBCR.Protocol.SendRoster()
-                            end)
-                            GBCR.Output:Debug("ROSTER", "Authority broadcast: roster changed, pushing to guild immediately")
-                        end
+                        After(0, function()
+                            GBCR.Protocol.SendRoster()
+                        end)
+                        GBCR.Output:Debug("ROSTER",
+                                          "Authority broadcast: roster changed (officerNotes=%s, manualAlts=%s), pushing to guild",
+                                          tostring(self.areOfficerNotesUsedToDefineGuildBankAlts),
+                                          tostring(savedManualAlts and #savedManualAlts > 0))
                     end
                 end
 
@@ -579,21 +577,16 @@ local function rebuildGuildRosterInfo(self)
                                   tostring(GBCR.Database.savedVariables.roster.areOfficerNotesUsed), tostring(anyoneIsAuthority),
                                   tostring(selfIsAuthority))
             else
-                -- We're unable to view officer notes and don't know if they're used
-                -- Our roster may be incomplete (unless officer notes are irrelevant)
                 local officerNotesConfirmedNotUsed = GBCR.Database.savedVariables.roster.areOfficerNotesUsed == false
 
                 local rosterAlts = GBCR.Database.savedVariables.roster.alts or {}
                 GBCR.Database.savedVariables.roster.alts = rosterAlts
 
-                -- Verify if there's a change in the roster of guild bank alts
-                -- Preserve the existing roster and only add newly detected guild bank alts (preserve existing entries)
                 local existingSet = {}
                 for i = 1, #rosterAlts do
                     existingSet[rosterAlts[i]] = true
                 end
 
-                -- If we identified a new guild bank, add it to our local roster
                 local addedCount = 0
                 local rosterPos = #rosterAlts + 1
                 for i = 1, #guildBankAlts do
@@ -606,8 +599,6 @@ local function rebuildGuildRosterInfo(self)
                     end
                 end
 
-                -- Remove guild bank alts whose public notes no longer contain "gbank"
-                -- Only do this when we are certain the public scan is complete (no officer notes used)
                 if officerNotesConfirmedNotUsed then
                     local scannedSet = {}
                     for i = 1, #guildBankAlts do
@@ -628,6 +619,11 @@ local function rebuildGuildRosterInfo(self)
                                               "Non-authority removing %s from local roster (public notes only, note cleared)",
                                               name)
                             removed = removed + 1
+                            if GBCR.Database.savedVariables.alts and GBCR.Database.savedVariables.alts[name] then
+                                GBCR.Database.savedVariables.alts[name] = nil
+                                GBCR.Output:Debug("ROSTER", "Non-authority wiped data for removed guild bank alt: %s", name)
+                                GBCR.UI.Inventory:MarkAllDirty()
+                            end
                         end
                     end
 
@@ -639,9 +635,6 @@ local function rebuildGuildRosterInfo(self)
                     end
                 end
 
-                -- Ensure our version is set to nil to avoid broadcasting this to others
-                -- We do not know if officer notes are used to define guild bank alts
-                -- We may have an incomplete roster
                 GBCR.Database.savedVariables.roster.version = nil
 
                 GBCR.Output:Debug("ROSTER",
@@ -673,7 +666,6 @@ local function rebuildGuildRosterInfo(self)
                 end
             end
 
-            self.guildRosterRefreshNeeded = false
             self.isGuildRosterRebuilding = false
 
             GBCR.Output:Debug("ROSTER", "Roster operations complete after %.2fms", debugprofilestop() - overallStart)
@@ -688,8 +680,9 @@ local function rebuildGuildRosterInfo(self)
 
             self.timerRebuildGuildRosterInfo = NewTimer(GBCR.Constants.TIMER_INTERVALS.REBUILD_ROSTER, function()
                 self.timerRebuildGuildRosterInfo = nil
-                if self.guildRosterRefreshNeeded then
-                    self.guildRosterRefreshNeeded = false
+                local needed = self.guildRosterRefreshNeeded
+                self.guildRosterRefreshNeeded = false
+                if needed then
                     rebuildGuildRosterInfo(self)
                 end
             end)
@@ -721,12 +714,11 @@ local function areWeGuildBankAlt(self)
         end
     end
 
-    if (hasGbank and hasGbank == self.weAreGuildBankAlt) or
-        (isManuallyDefinedGuildBankAlt and isManuallyDefinedGuildBankAlt == self.weAreGuildBankAlt) then
+    local weAreGuildBankAlt = hasGbank or isManuallyDefinedGuildBankAlt
+    if weAreGuildBankAlt == self.weAreGuildBankAlt then
         return
     end
 
-    local weAreGuildBankAlt = hasGbank or isManuallyDefinedGuildBankAlt
     self.weAreGuildBankAlt = weAreGuildBankAlt
     GBCR.Output:Debug("GUILD", "areWeGuildBankAlt: guild bank alt status changed to %s", tostring(weAreGuildBankAlt))
 

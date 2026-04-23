@@ -318,13 +318,11 @@ local function invalidateDataCache(self, isFullRebuild)
     self.pendingCorpusBuild = false
     self.lastAggregatedView = nil
     self.filteredCount = 0
-    wipe(self.itemInfoCache)
     wipe(self.corpus)
     wipe(self.aggregatedMap)
     wipe(self.itemsList)
-    if GBCR.Inventory then
-        wipe(GBCR.Inventory.cachedItemKeys)
-        wipe(GBCR.Inventory.cachedSourcesPerItem)
+    if isFullRebuild then
+        wipe(self.itemInfoCache)
     end
 end
 
@@ -2258,7 +2256,7 @@ local function drawLedgerTab(self, container)
         -- Phase 2: sort once (sync; capped at MAX_ENTRIES)
         -- Phase 3: build VirtualScroll rows via batched FormatEntry (async)
 
-        local MAX_ENTRIES = 5000 -- cap before sort to keep sort < 5ms
+        local MAX_ENTRIES = 300 -- cap before sort to keep sort < 5ms
         local DISPLAY_CAP = 300 -- rows shown in live view
         local COLLECT_BATCH = 1000 -- entries collected per frame
         local ROW_BATCH = 30 -- FormatEntry calls per frame (each may call GetItemInfo)
@@ -2272,7 +2270,6 @@ local function drawLedgerTab(self, container)
                     entries[#entries + 1] = {entry = e, altName = selectedAlt}
                 end
             end
-            -- Single alt ledger is at most LEDGER.MAX_ENTRIES=200, sort is instant
             table_sort(entries, function(a, b)
                 return a.entry[1] > b.entry[1]
             end)
@@ -2300,6 +2297,13 @@ local function drawLedgerTab(self, container)
 
         local altIndex = 1
         local entryIndex = 1
+
+        table_sort(altPairs, function(a, b)
+            local la = a.ledger[1] and a.ledger[1][1] or 0 -- ledgers are sorted newest-first
+            local lb = b.ledger[1] and b.ledger[1][1] or 0
+
+            return la > lb
+        end)
 
         local function collectBatch()
             if myGen ~= populateLedgerGen then
@@ -5173,7 +5177,82 @@ local function refresh(self)
     end
 
     if inventoryChanged then
-        -- Raw data changed: rebuild aggregation AND the search corpus, then render (buildSearchData is only ever called from this branch)
+        -- Fast path: single dirty alt, aggregate already populated
+        local dirtyCount = 0
+        local singleDirtyAlt
+        for k in pairs(self.dirtyAlts) do
+            dirtyCount = dirtyCount + 1
+            singleDirtyAlt = k
+            if dirtyCount > 1 then
+                break
+            end
+        end
+
+        if not self.needsFullRebuild and dirtyCount == 1 and self.lastAggregatedView == self.currentView and
+            next(self.aggregatedMap) then
+
+            -- Patch only the dirty alt in-place, skip full re-aggregation
+            -- Remove old contributions
+            local sv = GBCR.Database.savedVariables
+            local oldAltData = sv and sv.alts and sv.alts[singleDirtyAlt]
+            for _, aggItem in pairs(self.aggregatedMap) do
+                local contrib = aggItem.sources[singleDirtyAlt]
+                if contrib then
+                    aggItem.itemCount = aggItem.itemCount - contrib
+                    aggItem.sources[singleDirtyAlt] = nil
+                end
+            end
+
+            -- Re-add new contributions
+            local items = oldAltData and
+                              (oldAltData.items or
+                                  (oldAltData.itemsCompressed and GBCR.Database.DecompressData(oldAltData.itemsCompressed)))
+
+            local requiresFullRebuild = false
+
+            if items then
+                for i = 1, #items do
+                    local item = items[i]
+                    local key = item.itemString
+                    if key then
+                        local aggItem = self.aggregatedMap[key]
+                        if not aggItem then
+                            -- new item — flag for full rebuild and break the loop
+                            requiresFullRebuild = true
+
+                            break
+                        end
+                        local cnt = item.itemCount or 1
+                        aggItem.itemCount = aggItem.itemCount + cnt
+                        aggItem.sources[singleDirtyAlt] = (aggItem.sources[singleDirtyAlt] or 0) + cnt
+                    end
+                end
+            end
+
+            -- If the fast path succeeded without finding new items, finalize and return
+            if not requiresFullRebuild then
+                -- Prune zero-count entries and rebuild the array in-place to avoid GC churn
+                wipe(self.itemsList)
+                local n = 0
+                for key, aggItem in pairs(self.aggregatedMap) do
+                    if next(aggItem.sources) then
+                        n = n + 1
+                        self.itemsList[n] = aggItem
+                    else
+                        -- Item no longer exists in any alt's bank, prune from map
+                        self.aggregatedMap[key] = nil
+                    end
+                end
+
+                self.pendingCorpusBuild = true
+                wipe(self.dirtyAlts)
+                self.needsFullRebuild = false
+                proceedToRender()
+
+                return
+            end
+        end
+
         updateItemsList(self, function()
             self.lastAggregatedView = self.currentView
             self.pendingCorpusBuild = true

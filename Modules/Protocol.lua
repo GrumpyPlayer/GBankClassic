@@ -1281,6 +1281,7 @@ local function receiveData(self, incomingData, sender)
     end
 
     altData.itemsCompressed = GBCR.Database.CompressData(altData.items)
+    altData.compressedVersion = altData.version
 
     GBCR.Output:Debug("SYNC", "receiveData: accepted and saved guild bank alt data for %s", incomingAltName)
 
@@ -1833,7 +1834,7 @@ local function processFingerprintAltData(self, fingerprintAltData, sender)
 
     for altName, altData in pairs(fingerprintAltData) do
         if altName ~= ourPlayer then
-            local incomingVersion = type(altData) == "table" and altData.version or 0
+            local incomingVersion = altData.version or 0
             local actualSender = sender or altData.sender
 
             self.altDataSources[altName] = self.altDataSources[altName] or {}
@@ -1926,6 +1927,18 @@ local function processRosterData(self, data, sender)
 
     if removedAny then
         GBCR.UI.Inventory:MarkAllDirty()
+        local guildBankAlts = GBCR.Guild.cachedGuildBankAlts
+        local onlineGuildBankAlts = GBCR.Guild.cachedOnlineGuildBankAlts
+        for _, name in ipairs(oldAlts) do
+            if not newSet[name] then
+                if guildBankAlts then
+                    guildBankAlts[name] = nil
+                end
+                if onlineGuildBankAlts then
+                    onlineGuildBankAlts[name] = nil
+                end
+            end
+        end
     end
 
     sv.roster = sv.roster or {}
@@ -2526,7 +2539,6 @@ local function onCommReceived(self, prefix, message, distribution, sender)
 
         if hasData and isStillAGuildBankAlt then
             local responseKey = (altName or "?") .. "|" .. (sender or "?")
-            self.recentDataQueryResponses = self.recentDataQueryResponses or {}
             local lastResponse = self.recentDataQueryResponses[responseKey] or 0
             local now = GetServerTime()
             if now - lastResponse < 60 then

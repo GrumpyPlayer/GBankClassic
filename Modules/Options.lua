@@ -170,9 +170,17 @@ end
 
 -- Initialize configuration defaults and configuration options specifically for guild bank alts
 local function initGuildBankAltOptions()
-    GBCR.Libs.AceConfigRegistry:NotifyChange(addonName)
+    local isBankAlt = GBCR.Guild.weAreGuildBankAlt and true or false
+    local isOfficer = GBCR.Guild.weCanEditOfficerNotes and true or false
+    if Options.lastBankAltState == isBankAlt and Options.lastOfficerState == isOfficer then
+        return
+    end
 
-    if GBCR.Guild.weAreGuildBankAlt and not GBCR.Guild.isGuildRosterRebuilding then
+    Options.lastBankAltState = isBankAlt
+    Options.lastOfficerState = isOfficer
+
+    GBCR.Libs.AceConfigRegistry:NotifyChange(addonName)
+    if isBankAlt and not GBCR.Guild.isGuildRosterRebuilding then
         GBCR.Protocol.SendRosterIfAuthority()
     end
 end

@@ -376,6 +376,7 @@ local function recalculateAggregatedItems(self, bankData, bagData, mailData, alt
 
     After(0, function()
         alt.itemsCompressed = GBCR.Database.CompressData(alt.items)
+        alt.compressedVersion = alt.version or 0
 
         GBCR.Output:Debug("INVENTORY", "Async compression finished (%d items)", #alt.items)
     end)
@@ -560,10 +561,6 @@ end
 
 -- Helper total scan all items in bags, bank, and mail
 local function scanInventory(self)
-    if self.eventsRegistered and not self.hasUpdated then
-        return
-    end
-
     local info = GBCR.Database.savedVariables
     if not info then
         return

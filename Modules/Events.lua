@@ -349,10 +349,18 @@ local function compressAltField(altData, field, compressedField)
         return
     end
 
+    if altData[compressedField] and altData.compressedVersion and altData.compressedVersion == (altData.version or 0) then
+        altData[field] = nil
+
+        return
+    end
+
     if next(data) ~= nil then
         altData[compressedField] = GBCR.Database.CompressData(data)
+        altData.compressedVersion = altData.version or 0
     else
         altData[compressedField] = nil
+        altData.compressedVersion = nil
     end
     altData[field] = nil
 end
@@ -440,6 +448,7 @@ function Events:GUILD_ROSTER_UPDATE(_, importantChange)
         return
     end
 
+    GBCR.Guild.guildRosterRefreshNeeded = true
     GBCR.Guild:AreWeGuildBankAlt()
     GBCR.Guild:RebuildGuildRosterInfo()
     GBCR.UI:QueueUIRefresh()
@@ -597,9 +606,11 @@ function Events:MAIL_CLOSED()
     if GBCR.Ledger.mailRegistry then
         wipe(GBCR.Ledger.mailRegistry)
     end
-    if GBCR.Ledger.mailMoneyQueue then
-        wipe(GBCR.Ledger.mailMoneyQueue)
-    end
+    After(0, function()
+        if GBCR.Ledger.mailMoneyQueue then
+            wipe(GBCR.Ledger.mailMoneyQueue)
+        end
+    end)
     self.isMailOpen = false
     GBCR.Inventory:OnUpdateStart()
     GBCR.Inventory:OnUpdateStop()
