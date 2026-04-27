@@ -14,6 +14,7 @@ local time = Globals.time
 local tonumber = Globals.tonumber
 
 local GetClassColor = Globals.GetClassColor
+local GetServerTime = Globals.GetServerTime
 
 local Constants = GBCR.Constants
 local colorGold = Constants.COLORS.GOLD
@@ -24,7 +25,7 @@ local helpInstructions = Constants.HELP_INSTRUCTIONS
 
 -- Print all tracked addon versions from other guild members in respone to /bank versions
 local function printVersions()
-    local now = time()
+    local now = GetServerTime()
     local myPlayer = GBCR.Guild:GetNormalizedPlayerName()
     local versions = {}
     local position = 1
@@ -67,9 +68,12 @@ local function printVersions()
             end
         end
 
-        GBCR.Output:Response("  %s: %s%s%s", Globals.ColorizeText(
-                                 select(4, GetClassColor(GBCR.Guild:GetGuildMemberInfo(entry.playerName))), entry.playerName),
-                             entry.addonVersionNumber, entry.isSelf and Globals.ColorizeText(colorGold, " (you)") or "", age)
+        local playerClass = GBCR.Guild:GetGuildMemberInfo(entry.playerName)
+        local classHex = playerClass and select(4, GetClassColor(playerClass))
+        local coloredName = classHex and Globals.ColorizeText(classHex, entry.playerName) or entry.playerName
+
+        GBCR.Output:Response("  %s: %s%s%s", coloredName, entry.addonVersionNumber,
+                             entry.isSelf and Globals.ColorizeText(Constants.COLORS.GOLD, " (you)") or "", age)
     end
 end
 

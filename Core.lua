@@ -8,7 +8,6 @@ GBCR.Addon = GBCR.Libs.AceAddon:NewAddon(addonName, "AceComm-3.0", "AceConsole-3
 local Globals = GBCR.Globals
 local string_match = Globals.string_match
 local tonumber = Globals.tonumber
-local wipe = Globals.wipe
 
 local GetAddOnMetadata = Globals.GetAddOnMetadata
 
@@ -71,7 +70,7 @@ function GBCR.Addon:OnInitialize()
         },
         global = {guilds = {}}
     }
-    GBCR.db = GBCR.Libs.AceDB:New("GBCR_DB_V30009", defaults, true)
+    GBCR.db = GBCR.Libs.AceDB:New("GBCR_DB_V30010", defaults, true)
 
     GBCR.Database:Init()
     GBCR.Options:Init()
@@ -114,6 +113,7 @@ function GBCR.Addon:OnDisable()
 
     cancelTimer(GBCR.Protocol, "timerLoginHashBroadcast")
     cancelTimer(GBCR.Protocol, "printVersionsTimer")
+    cancelTimer(GBCR.Protocol, "itemLoadWatchdog")
     cancelTimer(GBCR.Guild, "timerRebuildGuildRosterInfo")
     cancelTimer(GBCR.Events, "timerRefreshOnlineMembersCache")
     cancelTimer(GBCR.Events, "timerBagUpdateDelayedScanInventory")

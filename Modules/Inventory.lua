@@ -60,38 +60,35 @@ local function buildGlobalItemSourcesIndex(self, dirtyAlts, callback)
         end
 
         if dirtyCount <= 8 then
+            if self.isFullRebuildRunning then
+                GBCR.Output:Debug("INVENTORY", "buildGlobalItemSourcesIndex: partial rebuild deferred (full rebuild in progress)")
+                if callback then
+                    callback()
+                end
+
+                return
+            end
+
             self.sourcesIndexGeneration = (self.sourcesIndexGeneration or 0) + 1
 
             GBCR.Output:Debug("INVENTORY", "buildGlobalItemSourcesIndex: partial rebuild (%d dirty)", dirtyCount)
 
-            for altName in pairs(dirtyAlts) do
-                local altData = savedVariables.alts[altName]
-                local items = altData and altData.items
-
-                if not items and altData and altData.itemsCompressed then
-                    items = GBCR.Database.DecompressData(altData.itemsCompressed)
-                end
-
-                if items then
-                    for i = 1, #items do
-                        local item = items[i]
-                        local id = item.itemId
-
-                        if not id and item.itemString then
-                            id = tonumber(string_match(item.itemString, "^(%d+)")) or 0
-                        end
-
-                        if id and id > 0 then
-                            local sources = self.cachedSourcesPerItem[id]
-                            if sources then
-                                sources[altName] = nil
-                                if not next(sources) then
-                                    self.cachedSourcesPerItem[id] = nil
-                                end
-                            end
-                        end
+            local emptyIds = {}
+            for id, sources in pairs(self.cachedSourcesPerItem) do
+                local changed = false
+                for altName in pairs(dirtyAlts) do
+                    if sources[altName] then
+                        sources[altName] = nil
+                        changed = true
                     end
                 end
+                if changed and not next(sources) then
+                    emptyIds[#emptyIds + 1] = id
+                end
+            end
+
+            for i = 1, #emptyIds do
+                self.cachedSourcesPerItem[emptyIds[i]] = nil
             end
 
             for altName in pairs(dirtyAlts) do
@@ -100,6 +97,9 @@ local function buildGlobalItemSourcesIndex(self, dirtyAlts, callback)
 
                 if not items and altData and altData.itemsCompressed then
                     items = GBCR.Database.DecompressData(altData.itemsCompressed)
+                    if items then
+                        altData.items = items
+                    end
                 end
 
                 if items then
@@ -146,6 +146,9 @@ local function buildGlobalItemSourcesIndex(self, dirtyAlts, callback)
             local items = altData.items
             if not items and altData.itemsCompressed then
                 items = GBCR.Database.DecompressData(altData.itemsCompressed)
+                if items then
+                    altData.items = items
+                end
             end
 
             if items and #items > 0 then
@@ -211,16 +214,18 @@ local function buildGlobalItemSourcesIndex(self, dirtyAlts, callback)
             return
         end
 
+        self.isFullRebuildRunning = false
+
         if callback then
             callback()
         end
     end
 
+    self.isFullRebuildRunning = true
     After(0, Resume)
 end
 
 -- Get normalized item key for deduplication
--- Format: itemId:enchant:suffix (3 parts)
 local function getItemKey(self, itemLink)
     if not itemLink or itemLink == "" then
         return ""
@@ -376,6 +381,7 @@ local function recalculateAggregatedItems(self, bankData, bagData, mailData, alt
 
     After(0, function()
         alt.itemsCompressed = GBCR.Database.CompressData(alt.items)
+        alt.itemsCompressedVersion = alt.version or 0
         alt.compressedVersion = alt.version or 0
 
         GBCR.Output:Debug("INVENTORY", "Async compression finished (%d items)", #alt.items)
@@ -456,11 +462,11 @@ local function scanBag(self, bag, slots, targetTable)
             if key then
                 local existing = targetTable[key]
                 if existing then
-                    existing.itemCount = existing.itemCount + itemInfo.stackCount
+                    existing.itemCount = existing.itemCount + (itemInfo.stackCount or 1)
                 else
                     if select(14, GetItemInfo(itemInfo.itemID)) ~= itemBindOnAcquire then
                         local entry = {}
-                        entry.itemCount = itemInfo.stackCount
+                        entry.itemCount = itemInfo.stackCount or 1
 
                         if type(key) == "string" and string_find(key, ":", 1, true) then
                             entry.itemString = key
@@ -530,7 +536,10 @@ local function scanMailInventory(self, mailTable)
                         itemLink = select(2, GetItemInfo(itemId))
                     end
 
-                    local key = getItemKey(self, itemLink) or tostring(itemId)
+                    local key = getItemKey(self, itemLink)
+                    if not key or key == "" then
+                        key = tostring(itemId)
+                    end
                     local existing = self.cachedMailItemKeys[key]
 
                     if existing then

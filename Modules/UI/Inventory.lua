@@ -76,10 +76,38 @@ local aceGUI = GBCR.Libs.AceGUI
 local VirtualScroll = {}
 VirtualScroll.__index = VirtualScroll
 
-function VirtualScroll:New(aceParent, rowHeight, renderFn)
+local _vsFramePools = {}
+
+local function _acquireVSFrame(parent, poolKey)
+    _vsFramePools[poolKey] = _vsFramePools[poolKey] or {}
+    local pool = _vsFramePools[poolKey]
+
+    local f = table.remove(pool)
+    if f then
+        f:SetParent(parent)
+        f:ClearAllPoints()
+        f:Show()
+        return f
+    end
+
+    return CreateFrame("Frame", nil, parent)
+end
+
+local function _releaseVSFrame(f, poolKey)
+    f:Hide()
+    f:SetParent(UIParent)
+    f:ClearAllPoints()
+    f:SetScript("OnEnter", nil)
+    f:SetScript("OnLeave", nil)
+
+    _vsFramePools[poolKey][#_vsFramePools[poolKey] + 1] = f
+end
+
+function VirtualScroll:New(aceParent, rowHeight, renderFn, poolKey)
     local vs = setmetatable({}, VirtualScroll)
     vs.rowHeight = rowHeight or 20
     vs.renderFn = renderFn
+    vs.poolKey = poolKey or tostring(renderFn)
     vs.data = {}
     vs.pool = {}
 
@@ -127,9 +155,9 @@ function VirtualScroll:New(aceParent, rowHeight, renderFn)
         vs:_repaint()
     end)
 
-    sf:SetScript("OnVerticalScroll", function(_, offset)
-        vs:_repaint()
-    end)
+    -- sf:SetScript("OnVerticalScroll", function(_, offset)
+    --     vs:_repaint()
+    -- end)
 
     sf:SetScript("OnSizeChanged", function(_, w)
         content:SetWidth(w)
@@ -157,8 +185,7 @@ function VirtualScroll:Destroy()
         self.content:SetParent(nil)
     end
     for _, f in ipairs(self.pool) do
-        f:Hide()
-        f:SetParent(nil)
+        _releaseVSFrame(f, self.poolKey)
     end
     self.pool = {}
     self.data = {}
@@ -177,6 +204,10 @@ function VirtualScroll:Refresh()
     local total = #self.data
     local rowH = self.rowHeight
     local sfH = self.sf:GetHeight()
+    if sfH < 1 then
+        return
+    end
+
     local totalH = math_max(1, total * rowH)
 
     self.content:SetHeight(totalH)
@@ -206,9 +237,8 @@ end
 -- Ensures the pool has at least `needed` frames
 function VirtualScroll:_ensurePool(needed)
     while #self.pool < needed do
-        local f = CreateFrame("Frame", nil, self.content)
+        local f = _acquireVSFrame(self.content, self.poolKey)
         f:SetHeight(self.rowHeight)
-        f:Hide()
         self.pool[#self.pool + 1] = f
     end
 end
@@ -318,6 +348,7 @@ local function invalidateDataCache(self, isFullRebuild)
     self.pendingCorpusBuild = false
     self.lastAggregatedView = nil
     self.filteredCount = 0
+    self.cachedLedgerStatus = nil
     wipe(self.corpus)
     wipe(self.aggregatedMap)
     wipe(self.itemsList)
@@ -494,6 +525,7 @@ local function populateCustomTooltip()
 
     -- 2. Fetch the actual data (Modern API)
     UI_Inventory.tooltipScanner:SetOwner(UIParent, "ANCHOR_NONE")
+    UI_Inventory.tooltipScanner:ClearLines()
     UI_Inventory.tooltipScanner:SetHyperlink(itemLink)
 
     local yOffset = -10
@@ -505,6 +537,10 @@ local function populateCustomTooltip()
     for i = 1, numLines do
         local leftTextObj = _G["GBCR_TooltipScannerTextLeft" .. i]
         local rightTextObj = _G["GBCR_TooltipScannerTextRight" .. i]
+
+        if not leftTextObj then
+            break
+        end
 
         if not frame.lines[i] then
             frame.lines[i] = {
@@ -2256,10 +2292,8 @@ local function drawLedgerTab(self, container)
         -- Phase 2: sort once (sync; capped at MAX_ENTRIES)
         -- Phase 3: build VirtualScroll rows via batched FormatEntry (async)
 
-        local MAX_ENTRIES = 300 -- cap before sort to keep sort < 5ms
-        local DISPLAY_CAP = 300 -- rows shown in live view
+        local MAX_ENTRIES = Constants.LEDGER.MAX_ENTRIES -- cap before sort to keep sort < 5ms
         local COLLECT_BATCH = 1000 -- entries collected per frame
-        local ROW_BATCH = 30 -- FormatEntry calls per frame (each may call GetItemInfo)
 
         if selectedAlt ~= "Show all guild banks" then
             -- Single alt: small ledger, can collect synchronously
@@ -2299,8 +2333,8 @@ local function drawLedgerTab(self, container)
         local entryIndex = 1
 
         table_sort(altPairs, function(a, b)
-            local la = a.ledger[1] and a.ledger[1][1] or 0 -- ledgers are sorted newest-first
-            local lb = b.ledger[1] and b.ledger[1][1] or 0
+            local la = math_max((a.ledger[1] and a.ledger[1][1]) or 0, (a.ledger[#a.ledger] and a.ledger[#a.ledger][1]) or 0)
+            local lb = math_max((b.ledger[1] and b.ledger[1][1]) or 0, (b.ledger[#b.ledger] and b.ledger[#b.ledger][1]) or 0)
 
             return la > lb
         end)
@@ -2327,15 +2361,10 @@ local function drawLedgerTab(self, container)
                 entryIndex = 1
             end
 
-            -- Collection done, sort once (<5000 entries, fast in C)
+            -- Collection done, sort once
             table_sort(entries, function(a, b)
                 return a.entry[1] > b.entry[1]
             end)
-
-            -- Keep only the most recent DISPLAY_CAP entries
-            for i = DISPLAY_CAP + 1, #entries do
-                entries[i] = nil
-            end
 
             -- Async row build
             startBuildLedgerRows(entries, function()
@@ -2450,11 +2479,11 @@ local function drawLedgerTab(self, container)
     end
 
     local function ShowDonorsView()
-        donorsViewGen = donorsViewGen + 1
-        local myDonorsGen = donorsViewGen
-
         currentView = "donors"
         clearLedgerBottomArea()
+
+        donorsViewGen = donorsViewGen + 1
+        local myDonorsGen = donorsViewGen
 
         local priceCache = {}
         local donations = {}
@@ -3383,7 +3412,7 @@ local function getItems(self, itemsArray, callback)
     local totalItems = #itemsArray
     local currentIndex = 1
     local callbackFired = false
-    local newFallbacks = 0
+    local totalFallbacks = 0
     local resolved = 0
 
     local function processBatch()
@@ -3397,7 +3426,7 @@ local function getItems(self, itemsArray, callback)
                 local key = item.itemString
                 local cached = UI_Inventory.itemInfoCache[key]
 
-                local needsFetch = not cached or (cached.isFallback and not cached.fetchAttempted)
+                local needsFetch = not cached or cached.isFallback
 
                 if needsFetch then
                     local name, link, rarity, level, minLevel, itemType, itemSubType, _, equipLoc, icon, price, itemClassId,
@@ -3446,15 +3475,15 @@ local function getItems(self, itemsArray, callback)
                                 subTypeLower = "",
                                 equipLower = "",
                                 realLink = nil,
-                                isFallback = true,
-                                fetchAttempted = true
+                                isFallback = true
                             }
-                            newFallbacks = newFallbacks + 1
 
-                            if numId and numId > 0 then
+                            if numId and numId > 0 and not GBCR.Inventory.pendingItemInfoLoads[numId] then
                                 GBCR.Inventory.pendingItemInfoLoads[numId] = true
+                                GetItemInfo(numId)
                             end
                         end
+                        totalFallbacks = totalFallbacks + 1
                     end
                 end
 
@@ -3475,6 +3504,7 @@ local function getItems(self, itemsArray, callback)
 
         if not callbackFired then
             callbackFired = true
+            self.fallbackCount = totalFallbacks
 
             if resolved > 0 then
                 self.pendingCorpusBuild = true
@@ -4276,6 +4306,17 @@ local function buildFilteredList(self, callback)
             return
         end
 
+        for i = 1, #list do
+            local item = list[i]
+            if item and item.itemString then
+                item.itemInfo = UI_Inventory.itemInfoCache[item.itemString] or item.itemInfo
+                if item.itemInfo then
+                    item.lowerName = item.itemInfo.name and string_lower(item.itemInfo.name) or ""
+                    item.itemLink = item.itemInfo.realLink or item.itemLink
+                end
+            end
+        end
+
         local function startFilterBatch()
             if currentGen ~= self.renderGeneration then
                 -- print("buildFilteredList exit 3")
@@ -4393,6 +4434,9 @@ local function buildFilteredList(self, callback)
                     capturedDirty[k] = true
                 end
             end
+
+            wipe(self.dirtyAlts)
+
             local genAtBuild = currentGen
             buildSearchData(self, function()
                 if genAtBuild ~= self.renderGeneration then
@@ -4614,7 +4658,7 @@ local function drawBrowsePanel(self, container, group)
         input:ClearFocus()
     end)
     searchInput:SetScript("OnReceiveDrag", handleSearchDrop)
-    searchInput:HookScript("OnMouseDown", handleSearchDrop)
+    searchInput:SetScript("OnMouseDown", handleSearchDrop)
     searchWrapper:SetCallback("OnRelease", function()
         if self.searchField then
             self.searchField:Hide()
@@ -4828,27 +4872,28 @@ local function getTabStatusText(self)
 
         return string_format("%d item%s  •  %d total quantity", uniqueCount, uniqueCount ~= 1 and "s" or "", totalQty)
     elseif tab == "ledger" then
-        if not sv or not sv.alts then
-            return "No data"
+        if not self.cachedLedgerStatus then
+            local entries, newest = 0, 0
+            if sv and sv.alts then
+                for _, alt in pairs(sv.alts) do
+                    if alt.ledger then
+                        entries = entries + #alt.ledger
+                    end
+                    if (alt.version or 0) > newest then
+                        newest = alt.version
+                    end
+                end
+            end
+            self.cachedLedgerStatus = {entries = entries, newest = newest}
         end
 
-        local entries = 0
-        local newest = 0
-        for _, alt in pairs(sv.alts) do
-            if alt.ledger then
-                entries = entries + #alt.ledger
-            end
-            if (alt.version or 0) > newest then
-                newest = alt.version
-            end
-        end
-
-        local age = newest > 0 and formatTimeAgo(newest) or "never"
+        local s = self.cachedLedgerStatus
+        local age = s.newest > 0 and formatTimeAgo(s.newest) or "never"
         if age == "never" then
             age = Globals.ColorizeText(colorGray, age)
         end
 
-        return string_format("%d ledger entries  •  last guild bank update %s", entries, age)
+        return string_format("showing %d recent ledger entries  •  last guild bank update %s", s.entries, age)
     elseif tab == "export" then
         local items = self.itemsList and #self.itemsList or 0
         local alts = sv and sv.alts and Globals.Count(sv.alts) or 0
@@ -5144,7 +5189,7 @@ local function refresh(self)
                 self.loadingOverlay:Show()
             end
             if self.loadingOverlayText then
-                self.loadingOverlayText:SetText("Waiting for guild roster...")
+                self.loadingOverlayText:SetText("Loading data, please wait...")
             end
         end
 
@@ -5245,7 +5290,6 @@ local function refresh(self)
                 end
 
                 self.pendingCorpusBuild = true
-                wipe(self.dirtyAlts)
                 self.needsFullRebuild = false
                 proceedToRender()
 

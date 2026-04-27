@@ -22,8 +22,8 @@ Constants.LIMITS = {
     MAX_CONCURRENT_ASYNC = 3, -- Limit concurrent async operations for item link reconstruction
     MAX_CONCURRENT_OUTBOUND = 3, -- Limit concurrent outbound data share whispers
     BATCH_SIZE_GETITEMINFO = 50, -- How many items to cache per frame
-    MAX_BUFFER_SIZE = 4096, -- Maximum amount of messages for the /chat debuglog
-    DISCORD_MAX = 1900 -- Maximum character length for Discord message export
+    MAX_BUFFER_SIZE = 16000, -- Maximum amount of messages for the /chat debuglog
+    DISCORD_MAX = 2000 -- Maximum character length for Discord message export
 }
 
 -- Timer intervals (in seconds)
@@ -37,7 +37,7 @@ Constants.TIMER_INTERVALS = {
     DEBUG_LOG_REFRESH = 2.5, -- Runs 2.5s after the first event (fixed delay)
     BUILD_DONATION_CACHE = 2.5, -- Runs 2.5s after the last event (trailing debouce, stays quiet until activity is done)
     GRM_WAIT = 2, -- Wait 2 seconds for GRM's GuildRoster() call to complete
-    REBUILD_ROSTER = 30, -- Only rebuild the full roster once every 30 seconds
+    REBUILD_ROSTER = 60, -- Only rebuild the full roster once every 60 seconds
     BAG_UPDATE_QUIET_TIME = 5, -- 5 seconds: scan the updated inventory after 5 seconds without BAG_UPDATE_DELAYED events
     LEDGER_UPDATE_QUIET_TIME = 5, -- 5 seconds: update version + announce after 5 seconds without ledger appends
     SEARCH_DEBOUNCE = 0.2, -- Wait until the user stops typing for a few seconds before firing the expensive search
@@ -125,7 +125,7 @@ local commandRegistry = {
                 return
             end
             GBCR.Protocol.lastManualShare = now
-            GBCR.Protocol:SendFingerprint()
+            GBCR.Protocol:SendFingerprint(nil, true)
             GBCR.Output:Response(
                 "Notifying online guild members that your bank data is available. Anyone who is missing it will request it automatically.")
         end
@@ -359,7 +359,7 @@ Constants.ADOPTION_STATUS = {
 }
 
 -- For logging operations in the ledger
-Constants.LEDGER = {MAX_ENTRIES = 200, PRUNE_TO = 150, SYNC_WINDOW = 50}
+Constants.LEDGER = {MAX_ENTRIES = 2500, SYNC_WINDOW = 250}
 Constants.LEDGER_OPERATION = {
     IN = 0x01,
     OUT = 0x02,
@@ -369,6 +369,7 @@ Constants.LEDGER_OPERATION = {
     LOOT = 0x20,
     COD = 0x40,
     DESTROY = 0x80,
+    BUYBACK = 0x100,
     AH = 0x200,
     AH_BUYER = 0x400
 }
@@ -379,6 +380,7 @@ Constants.LEDGER_OPERATION.TRADE_IN = 0x01 + 0x08 -- 0x09
 Constants.LEDGER_OPERATION.TRADE_OUT = 0x02 + 0x08 -- 0x0A
 Constants.LEDGER_OPERATION.VENDOR_SELL = 0x01 + 0x10 -- 0x11 (money in, item out)
 Constants.LEDGER_OPERATION.VENDOR_BUY = 0x02 + 0x10 -- 0x12 (money out, item in)
+Constants.LEDGER_OPERATION.VENDOR_BUYBACK = 0x01 + 0x10 + 0x100 -- 0x111 (money out, item in)
 Constants.LEDGER_OPERATION.LOOT_IN = 0x01 + 0x20 -- 0x21 (not currently used)
 Constants.LEDGER_OPERATION.DESTROY_OUT = 0x02 + 0x80 -- 0x82
 Constants.LEDGER_OPERATION.AH_SOLD = 0x001 + 0x004 + 0x200 -- 0x205

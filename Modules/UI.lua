@@ -13,7 +13,7 @@ local GameFontHighlightSmall = Globals.GameFontHighlightSmall
 local GameFontNormal = Globals.GameFontNormal
 local GameTooltip = Globals.GameTooltip
 local GameTooltip_SetDefaultAnchor = Globals.GameTooltip_SetDefaultAnchor
-local GetTime = Globals.GetTime
+local GetServerTime = Globals.GetServerTime
 local UIParent = Globals.UIParent
 local WorldFrame = Globals.WorldFrame
 
@@ -62,7 +62,7 @@ local function queueUIRefresh(self)
 
     -- Hard cap: if we haven't rendered in 3 seconds, force one now regardless of how many events are still arriving
     -- Prevents stale UI during high-traffic syncs
-    local now = GetTime and GetTime() or 0
+    local now = GetServerTime()
     self._lastForcedRefresh = self._lastForcedRefresh or 0
 
     if now - self._lastForcedRefresh >= Constants.TIMER_INTERVALS.UI_REFRESH_FORCE_AGE then
@@ -82,7 +82,7 @@ local function queueUIRefresh(self)
         if self.uiRefreshGeneration ~= currentGen then
             return -- A newer call superseded this one
         end
-        self._lastForcedRefresh = GetTime and GetTime() or 0
+        self._lastForcedRefresh = GetServerTime()
         forceDraw(self)
     end)
 end

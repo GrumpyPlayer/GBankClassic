@@ -47,11 +47,14 @@ Globals.CanViewOfficerNote = CanViewOfficerNote or C_GuildInfo.CanViewOfficerNot
 Globals.ChatEdit_InsertLink = ChatEdit_InsertLink
 Globals.CheckInbox = CheckInbox
 Globals.ClearCursor = ClearCursor
+Globals.ClickSendMailItemButton = ClickSendMailItemButton
 Globals.CreateFrame = CreateFrame
 Globals.DeleteCursorItem = DeleteCursorItem
 Globals.DressUpItemLink = DressUpItemLink
 Globals.GameTooltip_SetDefaultAnchor = GameTooltip_SetDefaultAnchor
 Globals.GetAddOnMetadata = GetAddOnMetadata or C_AddOns.GetAddOnMetadata
+Globals.GetBuybackItemInfo = GetBuybackItemInfo
+Globals.GetBuybackItemLink = GetBuybackItemLink
 Globals.GetClassColor = GetClassColor or C_ClassColor.GetClassColor
 Globals.GetCoinTextureString = GetCoinTextureString or C_CurrencyInfo.GetCoinTextureString
 Globals.GetContainerItemInfo = GetContainerItemInfo or C_Container.GetContainerItemInfo
@@ -84,7 +87,6 @@ Globals.GetSendMailMoney = GetSendMailMoney
 Globals.GetServerTime = GetServerTime or C_DateAndTime.GetServerTime
 Globals.GetPlayerTradeMoney = GetPlayerTradeMoney
 Globals.GetTargetTradeMoney = GetTargetTradeMoney
-Globals.GetTime = GetTime
 Globals.GetTradePlayerItemInfo = GetTradePlayerItemInfo
 Globals.GetTradePlayerItemLink = GetTradePlayerItemLink
 Globals.GetTradeTargetItemInfo = GetTradeTargetItemInfo
@@ -108,6 +110,7 @@ Globals.PickupContainerItem = PickupContainerItem or C_Container.PickupContainer
 Globals.PickupItem = PickupItem or C_Container.PickupItem
 Globals.SearchBoxTemplate_OnTextChanged = SearchBoxTemplate_OnTextChanged
 Globals.SellCursorItem = SellCursorItem
+Globals.SplitContainerItem = SplitContainerItem or C_Container.SplitContainerItem
 Globals.TakeInboxItem = TakeInboxItem
 Globals.TakeInboxMoney = TakeInboxMoney
 Globals.UnitGUID = UnitGUID
@@ -179,9 +182,14 @@ GBCR.Libs = {
     LibSerialize = LibSerialize
 }
 
-local pairs = Globals.pairs
+-- ================================================================================================
+
+local math_floor = Globals.math_floor
 local ipairs = Globals.ipairs
+local pairs = Globals.pairs
 local type = Globals.type
+
+local GetServerTime = Globals.GetServerTime
 
 -- Helper function to count entries in tables
 local function countTableEntries(tbl)
@@ -229,6 +237,10 @@ local function createSortHandler(rules)
     local numRules = #rules
 
     return function(a, b)
+        if not a or not b then
+            return false
+        end
+
         local infoA = a.itemInfo
         local infoB = b.itemInfo
 
@@ -281,8 +293,31 @@ local function shouldYield(frameStart, processedThisFrame, checkInterval, fallba
     return false
 end
 
+-- Helper to format elapsed time
+local function formatTimeAgo(timestamp)
+    if not timestamp or timestamp == 0 then
+        return "never"
+    end
+
+    local diff = GetServerTime() - timestamp
+    if diff < 60 then
+        return "just now"
+    end
+
+    if diff < 3600 then
+        return math_floor(diff / 60) .. "m ago"
+    end
+
+    if diff < 86400 then
+        return math_floor(diff / 3600) .. "h ago"
+    end
+
+    return math_floor(diff / 86400) .. "d ago"
+end
+
 -- Export functions for other modules
 Globals.Count = countEntries
 Globals.CreateSortHandler = createSortHandler
 Globals.ColorizeText = colorizeText
 Globals.ShouldYield = shouldYield
+Globals.FormatTimeAgo = formatTimeAgo

@@ -21,7 +21,6 @@ local GuildControlGetRankName = Globals.GuildControlGetRankName
 local Constants = GBCR.Constants
 local colorGold = Constants.COLORS.GOLD
 local colorGreen = Constants.COLORS.GREEN
-local colorOrange = Constants.COLORS.ORANGE
 local logLevelDescriptions = Constants.LOG_LEVEL_BY_VALUE
 local logLevels = Constants.LOG_LEVEL
 
@@ -135,7 +134,7 @@ end
 -- Helper to retrieve guild ranks for guild bank fulfillment rule configuration
 local function getRankArgs()
     local args = {}
-    local MAX_RANKS = 10
+    local MAX_RANKS = 10 -- TODO
 
     for i = 1, MAX_RANKS do
         local rankIndex = i
@@ -288,30 +287,15 @@ local function init(self)
 
     local debugCategoryDefs = {
         {key = "CHUNK", order = 10, name = "CHUNK: data synchronization operations specific to chunk sending"},
-        {
-            key = "COMMS",
-            order = 11,
-            name = string_format("COMMS: all addon communication traffic (%s)",
-                                 Globals.ColorizeText(colorOrange, "use with caution: causes frame stutter"))
-        },
+        {key = "COMMS", order = 11, name = string_format("COMMS: all addon communication traffic")},
         {key = "DATABASE", order = 12, name = "DATABASE: database operations"},
         {key = "EVENTS", order = 13, name = "EVENTS: event handling"},
         {key = "LEDGER", order = 14, name = "LEDGER: buy, sell, trade, destroy, and mail logging"},
         {key = "INVENTORY", order = 15, name = "INVENTORY: bank, bag, and mail scanning"},
-        {
-            key = "ITEM",
-            order = 16,
-            name = string_format("ITEM: item information caching (%s)",
-                                 Globals.ColorizeText(colorOrange, "use with caution: causes frame stutter"))
-        },
+        {key = "ITEM", order = 16, name = string_format("ITEM: item information caching")},
         {key = "PROTOCOL", order = 17, name = "PROTOCOL: protocol version negotiation and debouncing"},
         {key = "ROSTER", order = 18, name = "ROSTER: guild roster and status tracking"},
-        {
-            key = "SEARCH",
-            order = 19,
-            name = string_format("SEARCH: search operations (%s)",
-                                 Globals.ColorizeText(colorOrange, "use with caution: causes frame stutter"))
-        },
+        {key = "SEARCH", order = 19, name = string_format("SEARCH: search operations")},
         {key = "SYNC", order = 20, name = "SYNC: data synchronization operations"},
         {key = "UI", order = 21, name = "UI: user interface operations"},
         {key = "WHISPER", order = 22, name = "WHISPER: player to player addon communication"}
@@ -591,10 +575,18 @@ local function init(self)
                                 end
                             end
                             sv.roster.manualAlts[#sv.roster.manualAlts + 1] = foundName
-
                             GBCR.Guild.cachedGuildBankAlts[foundName] = true
-                            GBCR.Output:Response("Added %s. Rebuilding roster and broadcasting...", foundName)
+                            GBCR.Guild.guildRosterRefreshNeeded = true
+
+                            local wasThrottled = GBCR.Guild.timerRebuildGuildRosterInfo ~= nil
                             GBCR.Guild:RebuildGuildRosterInfo()
+
+                            if wasThrottled then
+                                GBCR.Output:Response("Added %s. Roster update queued (broadcasting shortly).", foundName)
+                            else
+                                GBCR.Output:Response("Added %s. Rebuilding roster and broadcasting...", foundName)
+                            end
+
                             GBCR.Libs.AceConfigRegistry:NotifyChange(addonName)
                         end,
                         get = function()

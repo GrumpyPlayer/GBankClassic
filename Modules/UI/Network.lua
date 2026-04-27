@@ -24,9 +24,6 @@ local colorRed = Constants.COLORS.RED
 local colorBlue = Constants.COLORS.BLUE
 local colorGray = Constants.COLORS.GRAY
 
--- Helpers
-local formatTimeAgo = GBCR.UI.Inventory.FormatTimeAgo
-
 -- Persistent state (survives /reload)
 local function getSyncMeta()
     local sv = GBCR.Database.savedVariables
@@ -112,7 +109,7 @@ local function getGuildBankStatusText(s)
     local hasScanned = myData and myData.items and #myData.items > 0
     if not hasScanned then
         return "WARN",
-        "You are a guild bank alt but have no scan data yet. Open your bank and mailbox to record your inventory, then wait for the data to sync."
+               "You are a guild bank alt but have no scan data yet. Open your bank and mailbox to record your inventory, then wait for the data to sync."
     end
 
     local myVersion = myData.version or 0
@@ -135,7 +132,7 @@ local function getGuildBankStatusText(s)
         return "OK",
                string_format(
                    "Your data is up to date and has been shared with %d peer%s this session. Last share: %s to %s.\n" ..
-                       "Safe to log off.", seedCount, pluralSeed, meta.lastSeedTarget or "unknown", formatTimeAgo(lastSeed))
+                       "Safe to log off.", seedCount, pluralSeed, meta.lastSeedTarget or "unknown", GBCR.UI.Inventory.FormatTimeAgo(lastSeed))
     end
 
     if s.addonUserCount == 0 then
@@ -468,7 +465,7 @@ function UI_Network:Populate()
         local row = pool[index]
 
         row.name:SetText(GBCR.Guild:ColorPlayerName(altName))
-        local ageText = formatTimeAgo(version)
+        local ageText = GBCR.UI.Inventory.FormatTimeAgo(version)
         local ageColor = version > 0 and colorGray or colorRed
         row.age:SetText(Globals.ColorizeText(ageColor, ageText))
         row.state:SetText(getAltRowState(altName, altData, s))
@@ -485,7 +482,7 @@ function UI_Network:Populate()
     if activeDl > 0 then
         self.footer:SetText(string_format("Downloading data for %d alt(s)…", activeDl))
     elseif meta.lastReceiveTime then
-        local ageText = formatTimeAgo(meta.lastReceiveTime)
+        local ageText = GBCR.UI.Inventory.FormatTimeAgo(meta.lastReceiveTime)
         self.footer:SetText(string_format("Last received: %s for %s from %s", Globals.ColorizeText(colorGray, ageText),
                                           meta.lastReceiveAlt or "?", meta.lastReceiveSource or "?"))
     else
@@ -511,7 +508,7 @@ function UI_Network:UpdateDynamicLabels()
             local version = altData and altData.version or 0
 
             row.state:SetText(getAltRowState(altName, altData, s))
-            local ageText = formatTimeAgo(version)
+            local ageText = GBCR.UI.Inventory.FormatTimeAgo(version)
             local ageColor = version > 0 and colorGray or colorRed
             row.age:SetText(Globals.ColorizeText(ageColor, ageText))
         end

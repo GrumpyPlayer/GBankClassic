@@ -25,7 +25,6 @@ local tonumber = Globals.tonumber
 local wipe = Globals.wipe
 
 local After = Globals.After
-local CheckInbox = Globals.CheckInbox
 local GetCoinTextureString = Globals.GetCoinTextureString
 local GetInboxHeaderInfo = Globals.GetInboxHeaderInfo
 local GetInboxItem = Globals.GetInboxItem
@@ -56,6 +55,7 @@ local timerIntervals = Constants.TIMER_INTERVALS
 local Output = GBCR.Output
 
 -- ================================================================================================
+
 -- Format a single ledger entry for display
 local function formatEntry(self, entry, altName)
     local opCode = entry[self.indexOperation]
@@ -91,7 +91,7 @@ local function formatEntry(self, entry, altName)
     else
         local name, _, _, _, _, _, _, _, _, icon = GetItemInfo(itemId)
         if not name and itemId > 0 then
-            if GBCR.Inventory and GBCR.Inventory.pendingItemInfoLoads then
+            if GBCR.Inventory.pendingItemInfoLoads then
                 if not GBCR.Inventory.pendingItemInfoLoads[itemId] then
                     GBCR.Inventory.pendingItemInfoLoads[itemId] = true
                     GetItemInfo(itemId)
@@ -113,6 +113,7 @@ local function formatEntry(self, entry, altName)
     local isLoot = bit_band(opCode, ledgerOperations.LOOT) ~= 0
     local isCOD = bit_band(opCode, ledgerOperations.COD) ~= 0
     local isDestroy = bit_band(opCode, ledgerOperations.DESTROY) ~= 0
+    local isBuyback = bit_band(opCode, ledgerOperations.BUYBACK) ~= 0
     local isAH = bit_band(opCode, ledgerOperations.AH) ~= 0
     local isAHBuyer = bit_band(opCode, ledgerOperations.AH_BUYER) ~= 0
 
@@ -143,6 +144,8 @@ local function formatEntry(self, entry, altName)
         desc = string_format("Received %s from %s via trade", itemRef, actorName)
     elseif isTrade and OUT then
         desc = string_format("Gave %s to %s via trade", itemRef, actorName)
+    elseif isVendor and isBuyback then
+        desc = string_format("Bought back %s from vendor", itemRef)
     elseif isVendor and IN then
         desc = string_format("Sold %s to vendor", itemRef)
     elseif isVendor and OUT then
@@ -214,10 +217,12 @@ local function exportLedger(self, altName, callback)
 end
 
 -- ================================================================================================
+
 -- Helper to define the ledger key
 local function makeLedgerEntryKey(self, entry)
-    return entry[self.indexTimestamp] .. "_" .. entry[self.indexItemId] .. "_" .. entry[self.indexOperation] .. "_" ..
-               (entry[self.indexCount] or 0) .. "_" .. (entry[self.indexActor] or "")
+    return entry[self.indexTimestamp] .. "_" .. entry[self.indexItemId] .. "_" .. (entry[self.indexEnchant] or 0) .. "_" ..
+               (entry[self.indexSuffix] or 0) .. "_" .. entry[self.indexOperation] .. "_" .. (entry[self.indexCount] or 0) .. "_" ..
+               (entry[self.indexActor] or "")
 end
 
 -- Merge received ledger entries into local ledger (dedup by timestamp + itemId + opCode)
@@ -233,7 +238,11 @@ local function mergeLedger(self, altName, incomingSlice)
 
     local alt = sv.alts[altName]
     if not alt.ledger then
-        alt.ledger = {}
+        if alt.ledgerCompressed then
+            alt.ledger = GBCR.Database.DecompressData(alt.ledgerCompressed) or {}
+        else
+            alt.ledger = {}
+        end
     end
     local ledger = alt.ledger
 
@@ -256,17 +265,13 @@ local function mergeLedger(self, altName, incomingSlice)
         table_sort(ledger, function(a, b)
             return a[self.indexTimestamp] > b[self.indexTimestamp]
         end)
-        for i = ledgerConstants.PRUNE_TO + 1, #ledger do
+        for i = ledgerConstants.MAX_ENTRIES + 1, #ledger do
             ledger[i] = nil
         end
     end
 end
 
 -- Append a ledger entry to the current player's ledger
--- itemString: "id" or "id:enchant:suffix" or nil for money (money uses itemId=LEDGER_MONEY_ITEM=0)
--- count: positive integer (quantity or copper for money)
--- actorUid: guild member UID string or "" for world/AH events
--- opCode: bitmask from ledgerOperations
 local function appendLedger(self, altName, itemString, count, actorUid, opCode, dedupeContext)
     local sv = GBCR.Database.savedVariables
     if not sv or not sv.alts or not sv.alts[altName] then
@@ -274,8 +279,13 @@ local function appendLedger(self, altName, itemString, count, actorUid, opCode, 
     end
 
     local alt = sv.alts[altName]
+
     if not alt.ledger then
-        alt.ledger = {}
+        if alt.ledgerCompressed then
+            alt.ledger = GBCR.Database.DecompressData(alt.ledgerCompressed) or {}
+        else
+            alt.ledger = {}
+        end
     end
     local ledger = alt.ledger
 
@@ -290,18 +300,22 @@ local function appendLedger(self, altName, itemString, count, actorUid, opCode, 
     local now = GetServerTime()
     local ledgerLen = #ledger + 1
     ledger[ledgerLen] = {now, itemId, enchant, suffix, count or 1, actorUid or "", opCode}
+    alt.ledgerCompressedVersion = nil
+
     Output:Debug("LEDGER",
-                 "Recorded ledger entry for %s (timestamp=%s, itemId=%s, enchant=%s, suffix=%s, count=%s, actorUid=%s, opcode=%s)",
-                 altName, now, itemId, enchant, suffix, count or 1, actorUid or "", opCode)
+                 "Recorded ledger entry for %s (timestamp=%s, itemId=%s, enchant=%s, suffix=%s, count=%s, actorUid=%s, opcode=%s, key=%s)",
+                 altName, now, itemId, enchant, suffix, count or 1, actorUid or "", opCode, dedupeContext or "")
 
     if ledgerLen > ledgerConstants.MAX_ENTRIES then
         table_sort(ledger, function(a, b)
             return a[self.indexTimestamp] > b[self.indexTimestamp]
         end)
-        for i = ledgerConstants.PRUNE_TO + 1, #ledger do
+        for i = ledgerConstants.MAX_ENTRIES + 1, #ledger do
             ledger[i] = nil
         end
     end
+
+    alt.version = now
 
     if self.timerLedgerUpdateBroadcast and not self.timerLedgerUpdateBroadcast:IsCancelled() then
         self.timerLedgerUpdateBroadcast:Cancel()
@@ -315,8 +329,6 @@ local function appendLedger(self, altName, itemString, count, actorUid, opCode, 
 
             return
         end
-
-        alt.version = GetServerTime()
 
         local networkMeta = GBCR.Database.savedVariables and GBCR.Database.savedVariables.networkMeta
         if networkMeta then
@@ -404,7 +416,7 @@ local function onTakeInboxItem(self, mailId, attachmentIndex, header)
                  header.sender, opCode, dedupeKey)
 
     self.mailRegistry[dedupeKey] = true
-    table.insert(self.mailItemQueue, {
+    self.mailItemQueue[#self.mailItemQueue + 1] = {
         sender = header.sender,
         actorUid = header.actorUid,
         itemStr = itemStr,
@@ -413,7 +425,7 @@ local function onTakeInboxItem(self, mailId, attachmentIndex, header)
         opCode = opCode,
         dedupeContext = dedupeKey,
         player = player
-    })
+    }
 end
 
 -- Commit taking money from opened mail to the ledger
@@ -486,6 +498,7 @@ local function onSendMail(self, recipient)
 end
 
 -- ================================================================================================
+
 -- Reset the trading state
 local function resetTradeState()
     wipe(Ledger.tradeGiving)
@@ -532,6 +545,13 @@ local function commitTradeToLedger(self)
 
     local player = GBCR.Guild:GetNormalizedPlayerName()
     local actorUid = self.tradePartnerUid
+    local givingCount = Globals.Count(self.tradeGiving)
+    local givingMoney = self.tradeMoney.giving
+    local receivingCount = Globals.Count(self.tradeReceiving)
+    local receivingMoney = self.tradeMoney.receiving
+
+    Output:Debug("LEDGER", "commitTradeToLedger: trading with %s and giving %d items + %d money, receiving %d items + %d money",
+                 self.tradePartner, givingCount, givingMoney, receivingCount, receivingMoney)
 
     for _, item in ipairs(self.tradeGiving) do
         appendLedger(self, player, item.itemString, item.count, actorUid, ledgerOperations.TRADE_OUT)
@@ -549,12 +569,11 @@ local function commitTradeToLedger(self)
         appendLedger(self, player, nil, self.tradeMoney.receiving, actorUid, ledgerOperations.TRADE_IN)
     end
 
-    Output:Debug("LEDGER", "commitTradeToLedger: %d given + %d received for %s", #self.tradeGiving, #self.tradeReceiving, player)
-
     resetTradeState()
 end
 
 -- ================================================================================================
+
 -- Commit vendor purchase to the ledger 
 local function onBuyMerchantItem(self, index, quantity)
     quantity = tonumber(quantity) or 1
@@ -564,15 +583,29 @@ local function onBuyMerchantItem(self, index, quantity)
     end
 
     local player = GBCR.Guild:GetNormalizedPlayerName()
+    local _, _, price, batchSize = GetMerchantItemInfo(index)
+    local cost = (tonumber(price) or 0) * quantity
+    if batchSize > 1 then
+        quantity = quantity * batchSize
+    end
     appendLedger(self, player, GBCR.Inventory:GetItemKey(link), quantity, "", ledgerOperations.VENDOR_BUY)
 
-    local _, _, price = GetMerchantItemInfo(index)
-    local cost = (tonumber(price) or 0) * quantity
-    if cost > 0 then
-        appendLedger(self, player, nil, cost, "", ledgerOperations.VENDOR_BUY)
+    Output:Debug("LEDGER", "onBuyMerchantItem: %s x%d (%d copper)", link, quantity, cost)
+end
+
+-- Commit vendor buyback to the ledger
+local function onBuybackItem(self)
+    local item = GBCR.Events.pendingVendorBuyback
+    if not item then
+        return
     end
 
-    Output:Debug("LEDGER", "onBuyMerchantItem: %s x%d (%d copper)", link, quantity, cost)
+    local player = GBCR.Guild:GetNormalizedPlayerName()
+    appendLedger(self, player, item.itemString, item.count, "", ledgerOperations.VENDOR_BUYBACK)
+
+    GBCR.Events.pendingVendorBuyback = nil
+
+    Output:Debug("LEDGER", "onBuybackItem: %s x%d (%d copper)", item.itemString, item.count, item.price)
 end
 
 -- Commit vendor sale to the ledger 
@@ -606,12 +639,7 @@ local function onDeleteCursorItem(self)
 end
 
 -- ================================================================================================
--- Calls a game API that populates client's inbox with messages so that mailbox information can be accessed from anywhere in the world
-local function checkInbox()
-    CheckInbox()
-end
 
--- ================================================================================================
 -- Initiate state tracking
 local function init(self)
     self.tradeGiving = {}
@@ -625,6 +653,7 @@ local function init(self)
 end
 
 -- ================================================================================================
+
 -- Export functions for other modules
 Ledger.FormatEntry = formatEntry
 Ledger.ExportLedger = exportLedger
@@ -642,9 +671,8 @@ Ledger.RefreshTradeItems = refreshTradeItems
 Ledger.CommitTradeToLedger = commitTradeToLedger
 
 Ledger.OnBuyMerchantItem = onBuyMerchantItem
+Ledger.OnBuybackItem = onBuybackItem
 Ledger.OnSellCursorItem = onSellCursorItem
 Ledger.OnDeleteCursorItem = onDeleteCursorItem
-
-Ledger.Check = checkInbox
 
 Ledger.Init = init

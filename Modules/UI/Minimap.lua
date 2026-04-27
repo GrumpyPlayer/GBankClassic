@@ -10,6 +10,7 @@ local IsControlKeyDown = Globals.IsControlKeyDown
 local IsShiftKeyDown = Globals.IsShiftKeyDown
 local WorldFrame = Globals.WorldFrame
 
+-- Initialize
 local function init()
     local iconDB = GBCR.Libs.LibDataBroker:NewDataObject("GBankClassicIcon", {
         type = "data source",

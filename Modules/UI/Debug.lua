@@ -7,6 +7,7 @@ local Globals = GBCR.Globals
 local string_len = Globals.string_len
 local table_concat = Globals.table_concat
 
+-- Helper to close the window
 local function onClose()
     UI_Debug.isOpen = false
 
@@ -15,6 +16,7 @@ local function onClose()
     end
 end
 
+-- Update the content
 local function drawContent(self)
     if not self.window or not self.window:IsVisible() then
         return
@@ -33,6 +35,7 @@ local function drawContent(self)
     end
 end
 
+-- Helper to create the window
 local function drawWindow(self)
     local aceGUI = GBCR.Libs.AceGUI
     local optionsDB = GBCR.Options:GetOptionsDB()
@@ -56,6 +59,7 @@ local function drawWindow(self)
     self.content = debugEditBox
 end
 
+-- Open the window
 local function openWindow(self)
     if self.isOpen then
         return
@@ -72,6 +76,7 @@ local function openWindow(self)
     drawContent(self)
 end
 
+-- Close the window
 local function closeWindow(self)
     if not self.isOpen or not self.window then
         return
@@ -80,6 +85,7 @@ local function closeWindow(self)
     onClose()
 end
 
+-- Toggle the visibility of the window
 local function toggleWindow(self)
     if self.isOpen then
         closeWindow(self)
@@ -98,6 +104,7 @@ local function toggleWindow(self)
     end
 end
 
+-- Initialize
 local function init(self)
     GBCR.Output.debugMessageBuffer = GBCR.Output.debugMessageBuffer or {}
 

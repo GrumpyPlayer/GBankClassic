@@ -4,6 +4,7 @@ GBCR.Events = {}
 local Events = GBCR.Events
 
 Events.tooltipSortBuffer = {}
+Events.ledgerEventsHooked = false
 
 local Globals = GBCR.Globals
 local hooksecurefunc = Globals.hooksecurefunc
@@ -18,7 +19,10 @@ local tostring = Globals.tostring
 local wipe = Globals.wipe
 
 local After = Globals.After
+local CheckInbox = Globals.CheckInbox
 local GameTooltip = Globals.GameTooltip
+local GetBuybackItemInfo = Globals.GetBuybackItemInfo
+local GetBuybackItemLink = Globals.GetBuybackItemLink
 local GetContainerItemInfo = Globals.GetContainerItemInfo
 local GetMoney = Globals.GetMoney
 local GetPlayerTradeMoney = Globals.GetPlayerTradeMoney
@@ -50,6 +54,7 @@ local timerIntervals = Constants.TIMER_INTERVALS
 local C_Container = Globals.C_Container
 
 -- ================================================================================================
+
 -- Register the hook to reset our custom state flag when no longer displaying the tooltip
 GameTooltip:HookScript("OnTooltipCleared", function(self)
     GBCR.Output:Debug("EVENTS", "OnTooltipCleared function fired")
@@ -119,6 +124,7 @@ GameTooltip:HookScript("OnTooltipSetItem", function(self)
 end)
 
 -- ================================================================================================
+
 -- Helper to register event listeners
 local function registerEvent(self, event, callback)
     GBCR.Addon:RegisterEvent(event, function(...)
@@ -167,6 +173,83 @@ local function captureContainerItem(bag, slot)
     }
 end
 
+-- Helper to hook ledger events once, surviving disable/re-enabling because hooksecurefunc cannot be undone
+local function hookLedgerEventsOnce(self)
+    if self.ledgerEventsHooked then
+        return
+    end
+
+    self.ledgerEventsHooked = true
+
+    -- When you shift-click a mail from the inbox
+    hookLedgerEvent("AutoLootMailItem", "OnAutoLootMailItem")
+
+    -- When you manually click on a single mail attachment
+    -- When you click "Open All" from the inbox
+    hookLedgerEvent("TakeInboxItem", "OnTakeInboxItem")
+
+    -- Any time money is taken from mails
+    hookLedgerEvent("TakeInboxMoney", "OnTakeInboxMoney")
+
+    -- Mail send
+    hookLedgerEvent("SendMail", "OnSendMail")
+
+    -- Vendor buy
+    hookLedgerEvent("BuyMerchantItem", "OnBuyMerchantItem")
+
+    -- Vendor buyback
+    hookLedgerEvent("BuybackItem", function(index)
+        if not GBCR.Events.isMerchantOpen then
+            return
+        end
+
+        local itemLink = GetBuybackItemLink(index)
+        local _, _, price, quantity = GetBuybackItemInfo(index)
+
+        if itemLink and price then
+            GBCR.Events.pendingVendorBuyback = {
+                itemString = GBCR.Inventory:GetItemKey(itemLink),
+                count = quantity or 1,
+                price = price,
+                index = index
+            }
+            GBCR.Ledger:OnBuybackItem()
+        end
+    end)
+
+    -- Vendor sell: right-click in bags
+    hookLedgerEvent(C_Container, "UseContainerItem", function(bag, slot)
+        if not Events.isMerchantOpen then
+            return
+        end
+
+        Events.pendingVendorSellItem = captureContainerItem(bag, slot)
+        GBCR.Ledger:OnSellCursorItem()
+    end)
+
+    -- Vendor sell: drag and drop to vendor
+    hookLedgerEvent("PickupMerchantItem", function(index)
+        if Events.isMerchantOpen and Events.pendingCursorItem then
+            Events.pendingVendorSellItem = Events.pendingCursorItem
+            GBCR.Ledger:OnSellCursorItem()
+            Events.pendingCursorItem = nil
+        end
+    end)
+
+    -- Vendor sell: explicit API call
+    hookLedgerEvent("SellCursorItem", "OnSellCursorItem")
+
+    -- Destroy: step 1
+    hookLedgerEvent(C_Container, "PickupContainerItem", function(bag, slot)
+        Events.pendingCursorItem = captureContainerItem(bag, slot)
+    end)
+
+    -- Destroy: step 2
+    hookLedgerEvent("DeleteCursorItem", "OnDeleteCursorItem")
+
+    GBCR.Output:Debug("EVENTS", "Ledger hooks installed (one-time)")
+end
+
 -- Register event listeners specific to guild bank alts when enabling the addon
 local function registerGuildBankAltEvents(self)
     GBCR.Output:Debug("EVENTS", "RegisterGuildBankAltEvents called (guildBankAltEventsRegistered=%s)",
@@ -194,47 +277,13 @@ local function registerGuildBankAltEvents(self)
     registerEvent(self, "TRADE_TARGET_ITEM_CHANGED")
     registerEvent(self, "TRADE_REQUEST_CANCEL")
     registerEvent(self, "TRADE_CLOSED")
+    registerEvent(self, "UI_INFO_MESSAGE")
     registerEvent(self, "UI_ERROR_MESSAGE")
-    registerEvent(self, "GET_ITEM_INFO_RECEIVED")
 
-    -- When you shift-click a mail from the inbox
-    hookLedgerEvent("AutoLootMailItem", "OnAutoLootMailItem")
+    hookLedgerEventsOnce(self)
 
-    -- When you manually click on a single mail attachment
-    -- When you click "Open All" from the inbox
-    hookLedgerEvent("TakeInboxItem", "OnTakeInboxItem")
-
-    -- Any time money is taken from mails
-    hookLedgerEvent("TakeInboxMoney", "OnTakeInboxMoney")
-
-    -- Mail send
-    hookLedgerEvent("SendMail", "OnSendMail")
-
-    -- Vendor buy
-    hookLedgerEvent("BuyMerchantItem", "OnBuyMerchantItem")
-
-    -- Vendor sell: step 1
-    hookLedgerEvent(C_Container, "UseContainerItem", function(bag, slot)
-        if not Events.isMerchantOpen then
-            return
-        end
-
-        Events.pendingVendorSellItem = captureContainerItem(bag, slot)
-    end)
-
-    -- Vendor sell: step 2
-    hookLedgerEvent("SellCursorItem", "OnSellCursorItem")
-
-    -- Destroy: step 1
-    hookLedgerEvent(C_Container, "PickupContainerItem", function(bag, slot)
-        Events.pendingCursorItem = captureContainerItem(bag, slot)
-    end)
-
-    -- Destroy: step 2
-    hookLedgerEvent("DeleteCursorItem", "OnDeleteCursorItem")
-
-    Events.myGuildRosterIndex = nil
-    Events.guildBankAltEventsRegistered = true
+    self.myGuildRosterIndex = nil
+    self.guildBankAltEventsRegistered = true
 end
 
 -- Register all event listeners when enabling the addon
@@ -255,6 +304,7 @@ local function registerEvents(self)
     registerEvent(self, "PLAYER_REGEN_ENABLED")
     registerEvent(self, "ZONE_CHANGED_NEW_AREA")
     registerEvent(self, "MODIFIER_STATE_CHANGED")
+    registerEvent(self, "GET_ITEM_INFO_RECEIVED")
 
     -- Drag an item into search
     hooksecurefunc("ChatEdit_InsertLink", function(itemLink)
@@ -296,8 +346,8 @@ local function unregisterGuildBankAltEvents()
     unregisterEvent("TRADE_TARGET_ITEM_CHANGED")
     unregisterEvent("TRADE_REQUEST_CANCEL")
     unregisterEvent("TRADE_CLOSED")
+    unregisterEvent("UI_INFO_MESSAGE")
     unregisterEvent("UI_ERROR_MESSAGE")
-    unregisterEvent("GET_ITEM_INFO_RECEIVED")
 end
 
 -- Unregister all event listeners when disabling the addon
@@ -320,6 +370,7 @@ local function unregisterEvents(self)
     unregisterEvent("PLAYER_REGEN_ENABLED")
     unregisterEvent("ZONE_CHANGED_NEW_AREA")
     unregisterEvent("MODIFIER_STATE_CHANGED")
+    unregisterEvent("GET_ITEM_INFO_RECEIVED")
 
     -- For guild bank alts
     unregisterGuildBankAltEvents()
@@ -329,6 +380,7 @@ end
 local function shouldSkipGuildEvent(eventName)
     if not IsInGuild() then
         GBCR.Guild:ClearGuildCaches()
+        GBCR.Events:UnregisterGuildBankAltEvents()
 
         return true
     end
@@ -349,29 +401,52 @@ local function compressAltField(altData, field, compressedField)
         return
     end
 
-    if altData[compressedField] and altData.compressedVersion and altData.compressedVersion == (altData.version or 0) then
-        altData[field] = nil
+    if field == "items" then
+        local compressedVersion = altData.itemsCompressedVersion
+        if compressedVersion and compressedVersion == (altData.version or 0) and altData[compressedField] then
+            altData[field] = nil
 
-        return
+            return
+        end
+    end
+    if field == "ledger" then
+        local compressedVersion = altData.ledgerCompressedVersion
+        if compressedVersion and compressedVersion == (altData.version or 0) and altData[compressedField] then
+            altData[field] = nil
+
+            return
+        end
     end
 
     if next(data) ~= nil then
         altData[compressedField] = GBCR.Database.CompressData(data)
-        altData.compressedVersion = altData.version or 0
+        if field == "items" then
+            altData.itemsCompressedVersion = altData.version or 0
+        end
+        if field == "ledger" then
+            altData.ledgerCompressedVersion = altData.version or 0
+        end
     else
         altData[compressedField] = nil
-        altData.compressedVersion = nil
+        if field == "items" then
+            altData.itemsCompressedVersion = nil
+        end
+        if field == "ledger" then
+            altData.ledgerCompressedVersion = nil
+        end
     end
     altData[field] = nil
 end
 
 -- ================================================================================================
+
 -- Export functions for other modules
 Events.RegisterGuildBankAltEvents = registerGuildBankAltEvents
 Events.RegisterEvents = registerEvents
 Events.UnregisterEvents = unregisterEvents
 
 -- ================================================================================================
+
 -- Events for all players
 function Events:PLAYER_ENTERING_WORLD(_, isInitialLogin, isReloadingUi)
     GBCR.Output:Debug("EVENTS", "PLAYER_ENTERING_WORLD event fired (isInitialLogin=%s, isReloadingUi=%s)",
@@ -441,8 +516,8 @@ function Events:PLAYER_GUILD_UPDATE()
     GuildRoster()
 end
 
-function Events:GUILD_ROSTER_UPDATE(_, importantChange)
-    GBCR.Output:Debug("EVENTS", "GUILD_ROSTER_UPDATE event fired (importantChange=%s)", tostring(importantChange))
+function Events:GUILD_ROSTER_UPDATE()
+    GBCR.Output:Debug("EVENTS", "GUILD_ROSTER_UPDATE event fired")
 
     if shouldSkipGuildEvent("GUILD_ROSTER_UPDATE") then
         return
@@ -531,7 +606,47 @@ function Events:MODIFIER_STATE_CHANGED()
     GameTooltip:SetHyperlink(link)
 end
 
+function Events:GET_ITEM_INFO_RECEIVED(_, itemID, success)
+    GBCR.Output:Debug("EVENTS", "GET_ITEM_INFO_RECEIVED event fired (itemID=%s, success=%s)", tostring(itemID), tostring(success))
+
+    local pending = GBCR.Inventory.pendingItemInfoLoads
+    if not pending or not pending[itemID] then
+        GBCR.Output:Debug("EVENTS", "GET_ITEM_INFO_RECEIVED: early exit (pendingItemInfoLoads=%s, itemID=%s)",
+                          pending and Globals:Count(pending) or "nil", itemID)
+
+        return
+    end
+
+    pending[itemID] = nil
+
+    if not success then
+        return
+    end
+
+    GBCR.Output:Debug("EVENTS", "GET_ITEM_INFO_RECEIVED: data resolved for %d, queuing icon refresh", itemID)
+
+    GBCR.UI.Inventory.itemsHydrated = false
+    GBCR.UI:QueueUIRefresh()
+
+    if GBCR.Guild.weAreGuildBankAlt then
+        if self.timerGetItemInfoReceivedScanInventory then
+            self.timerGetItemInfoReceivedScanInventory:Cancel()
+        end
+
+        self.timerGetItemInfoReceivedScanInventory = NewTimer(Constants.TIMER_INTERVALS.ITEM_INFO_RESCAN, function()
+            self.timerGetItemInfoReceivedScanInventory = nil
+            GBCR.Inventory:OnUpdateStart()
+            GBCR.Inventory:OnUpdateStop()
+        end)
+    end
+
+    if success and GBCR.UI.Inventory.currentTab == "ledger" and GBCR.UI.Inventory.refreshLedger then
+        GBCR.UI.Inventory.refreshLedger()
+    end
+end
+
 -- ================================================================================================
+
 -- Events for guild bank alts
 function Events:BAG_UPDATE_DELAYED()
     GBCR.Output:Debug("EVENTS", "BAG_UPDATE_DELAYED (timerBagUpdateDelayedScanInventory=%s, isMailOpen=%s, isAHClosed=%s)",
@@ -586,7 +701,7 @@ function Events:MAIL_SHOW()
     GBCR.Inventory:OnUpdateStart()
     GBCR.Inventory.mailHasUpdated = true
     self.isMailOpen = true
-    GBCR.Ledger:Check()
+    CheckInbox()
     if not MailFrame.isGBCRHooked then
         MailFrame:HookScript("OnHide", function()
             GBCR.Output:Debug("INVENTORY", "MailFrame OnHide function fired (mailbox closed)")
@@ -600,20 +715,27 @@ end
 function Events:MAIL_CLOSED()
     GBCR.Output:Debug("EVENTS", "MAIL_CLOSED event fired")
 
-    if GBCR.Ledger.mailItemQueue then
-        wipe(GBCR.Ledger.mailItemQueue)
+    if not self.isMailOpen then
+        return
     end
-    if GBCR.Ledger.mailRegistry then
-        wipe(GBCR.Ledger.mailRegistry)
-    end
-    After(0, function()
+
+    self.isMailOpen = false
+    GBCR.Inventory:OnUpdateStart()
+    GBCR.Inventory:OnUpdateStop()
+
+    After(0.15, function()
+        if GBCR.Ledger.mailItemQueue then
+            wipe(GBCR.Ledger.mailItemQueue)
+        end
+        if GBCR.Ledger.mailRegistry then
+            wipe(GBCR.Ledger.mailRegistry)
+        end
+    end)
+    After(0.2, function()
         if GBCR.Ledger.mailMoneyQueue then
             wipe(GBCR.Ledger.mailMoneyQueue)
         end
     end)
-    self.isMailOpen = false
-    GBCR.Inventory:OnUpdateStart()
-    GBCR.Inventory:OnUpdateStop()
 end
 
 function Events:CHAT_MSG_LOOT(_, message)
@@ -657,7 +779,7 @@ function Events:CHAT_MSG_LOOT(_, message)
             GBCR.Ledger:AppendLedger(pending.player, pending.itemStr, pending.qty, pending.actorUid, pending.opCode,
                                      pending.dedupeContext)
 
-            table.remove(queue, i)
+            table_remove(queue, i)
 
             return
         end
@@ -722,11 +844,13 @@ end
 function Events:TRADE_SHOW()
     GBCR.Output:Debug("EVENTS", "TRADE_SHOW event fired")
 
-    GBCR.Ledger:ResetTradeState()
-    local partnerName = UnitName("npc") or UnitName("target")
-    GBCR.Ledger.tradePartner = partnerName or ""
-    GBCR.Ledger.tradePartnerUid = GBCR.Guild:DetermineUidForGuildMemberName(GBCR.Ledger.tradePartner)
-    GBCR.Inventory:OnUpdateStart()
+    local partnerName, partnerRealm = UnitName("npc")
+    GBCR.Ledger.tradePartner = partnerName and
+                                   (partnerRealm and partnerName .. "-" .. partnerRealm or
+                                       GBCR.Guild:NormalizePlayerName(partnerName)) or ""
+    GBCR.Ledger.tradePartnerUid = GBCR.Guild:DetermineUidForGuildMemberName(GBCR.Ledger.tradePartner) or ""
+    GBCR.Output:Debug("EVENTS", "TRADE_SHOW event: partnerName=%s, partnerRealm=%s, tradePartner=%s, tradePartnerUid=%s",
+                      partnerName, partnerRealm, GBCR.Ledger.tradePartner, GBCR.Ledger.tradePartnerUid)
 end
 
 function Events:TRADE_MONEY_CHANGED()
@@ -764,49 +888,27 @@ end
 function Events:TRADE_CLOSED()
     GBCR.Output:Debug("EVENTS", "TRADE_CLOSED event fired")
 
-    GBCR.Inventory:OnUpdateStop()
+    if GBCR.Ledger.tradePendingCommit then
+        GBCR.Ledger:CommitTradeToLedger()
+        GBCR.Ledger.tradePendingCommit = false
+    end
 end
 
-function Events:UI_ERROR_MESSAGE(_, errorType, message)
+function Events:UI_INFO_MESSAGE(event, type, message)
+    GBCR.Output:Debug("EVENTS", "%s event fired (type=%s, message=%s)", event, type, message)
+
     if message == tradeComplete then
-        GBCR.Output:Debug("EVENTS", "UI_ERROR_MESSAGE event fired, message tradeComplete: committing trade to ledger")
+        GBCR.Output:Debug("EVENTS", "%s event fired, message tradeComplete: committing trade to ledger", event)
+        GBCR.Ledger.tradePendingCommit = true
         GBCR.Ledger:CommitTradeToLedger()
     elseif message == tradeBagFull or message == tradeTargetBagFull or message == tradeCancelled or message ==
         tradeTargetMaxExceeded then
-        GBCR.Output:Debug("EVENTS", "UI_ERROR_MESSAGE event fired, trade failed (%s): discarding", tostring(message))
+        GBCR.Output:Debug("EVENTS", "%s event fired, trade failed (%s): discarding", event, tostring(message))
+        GBCR.Ledger.tradePendingCommit = false
         GBCR.Ledger:ResetTradeState()
     end
 end
 
-function Events:GET_ITEM_INFO_RECEIVED(_, itemID, success)
-    GBCR.Output:Debug("EVENTS", "GET_ITEM_INFO_RECEIVED event fired (itemID=%s, success=%s)", tostring(itemID), tostring(success))
-
-    local pending = GBCR.Inventory.pendingItemInfoLoads
-    if not pending or not pending[itemID] then
-        return
-    end
-
-    pending[itemID] = nil
-
-    if not success then
-        return
-    end
-
-    GBCR.Output:Debug("EVENTS", "GET_ITEM_INFO_RECEIVED: data resolved for %d, queuing rescan", itemID)
-
-    if self.timerGetItemInfoReceivedScanInventory then
-        self.timerGetItemInfoReceivedScanInventory:Cancel()
-    end
-
-    self.timerGetItemInfoReceivedScanInventory = NewTimer(Constants.TIMER_INTERVALS.ITEM_INFO_RESCAN, function()
-        self.timerGetItemInfoReceivedScanInventory = nil
-        GBCR.Inventory:OnUpdateStart()
-        GBCR.Inventory:OnUpdateStop()
-        GBCR.UI.Inventory:MarkAllDirty()
-        GBCR.UI:QueueUIRefresh()
-    end)
-
-    if success and GBCR.UI.Inventory.currentTab == "ledger" and GBCR.UI.Inventory.refreshLedger then
-        GBCR.UI.Inventory.refreshLedger()
-    end
+function Events:UI_ERROR_MESSAGE(event, type, message)
+    self:UI_INFO_MESSAGE(event, type, message)
 end

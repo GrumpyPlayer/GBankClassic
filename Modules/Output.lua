@@ -27,15 +27,17 @@ local function bufferContent(self, message)
     debugMessageBuffer[#debugMessageBuffer + 1] = message
 
     local limit = Constants.LIMITS.MAX_BUFFER_SIZE
-    if #debugMessageBuffer > limit + 100 then
+    local bufLen = #debugMessageBuffer
+
+    if bufLen > limit + 100 then
         local keep = limit - 50
-        local overflow = #debugMessageBuffer - keep
+        local start = bufLen - keep + 1
 
         for i = 1, keep do
-            debugMessageBuffer[i] = debugMessageBuffer[i + overflow]
+            debugMessageBuffer[i] = debugMessageBuffer[start + i - 1]
         end
 
-        for i = keep + 1, #debugMessageBuffer do
+        for i = keep + 1, bufLen do
             debugMessageBuffer[i] = nil
         end
     end
@@ -100,7 +102,7 @@ end
 
 -- Potocol communication details (controlled by COMMS category)
 local function debugComm(self, fmt, ...)
-    if GBCR.Options:GetLogLevel() < logLevels.DEBUG.level then
+    if GBCR.Options:GetLogLevel() > logLevels.DEBUG.level then
         return false
     end
 

@@ -36,6 +36,7 @@ local shouldYield = Globals.ShouldYield
 local Constants = GBCR.Constants
 
 -- ================================================================================================
+
 -- Helper to cache the normalized realm name
 local function getCachedNormalizedRealm(self)
     if not self.cachedNormalizedRealmName then
@@ -68,8 +69,11 @@ local function normalizePlayerName(self, name, noRealm)
     local currentRealm = getCachedNormalizedRealm(self)
 
     if not playerName or not playerRealm then
-        playerRealm = currentRealm
+        playerRealm = currentRealm or ""
         playerName = trimmed
+    end
+    if playerRealm == "" then
+        return playerName
     end
 
     if noRealm then
@@ -135,6 +139,7 @@ local function getNormalizedPlayerName(self)
 end
 
 -- ================================================================================================
+
 -- Returns the guild info (guildName, guildRankName, guildRankIndex, realm) for the current player if they are in a guild
 local function getGuildInfo()
     return IsInGuild("player") and GetGuildInfo("player") or nil
@@ -199,6 +204,12 @@ end
 
 -- Rebuild the local cache of online member from the current guild roster, called whenever the GUILD_ROSTER_UPDATE event fires
 local function refreshOnlineMembersCache(self, force)
+    if self.isGuildRosterRebuilding and not force then
+        GBCR.Output:Debug("ROSTER", "refreshOnlineMembersCache: skipped (full rebuild in progress)")
+
+        return
+    end
+
     local numTotal, numOnline = GetNumGuildMembers()
 
     if not force and numOnline == self.cachedOnlineGuildMemberCount then
@@ -372,6 +383,11 @@ local function rebuildGuildRosterInfo(self)
     self.timerRebuildGuildRosterInfo = NewTimer(Constants.TIMER_INTERVALS.GRM_WAIT, function()
         GBCR.Output:Debug("ROSTER", "Executing throttled rebuildGuildRosterInfo")
 
+        if GBCR.Events.timerRefreshOnlineMembersCache then
+            GBCR.Events.timerRefreshOnlineMembersCache:Cancel()
+            GBCR.Events.timerRefreshOnlineMembersCache = nil
+        end
+
         self.isGuildRosterRebuilding = true
         self.guildRosterGeneration = (self.guildRosterGeneration or 0) + 1
         local myGeneration = self.guildRosterGeneration
@@ -488,9 +504,8 @@ local function rebuildGuildRosterInfo(self)
                 end
             end
 
-            if self.onlineCacheGeneration == myOnlineCacheGen then
-                self.cachedOnlineGuildMemberCount = numOnline
-            end
+            self.cachedOnlineGuildMemberCount = numOnline
+            self.onlineCacheGeneration = (self.onlineCacheGeneration or 0) + 1
 
             if weCanViewOfficerNotes and not self.areOfficerNotesUsedToDefineGuildBankAlts then
                 self.areOfficerNotesUsedToDefineGuildBankAlts = false
@@ -693,6 +708,7 @@ local function rebuildGuildRosterInfo(self)
 end
 
 -- ================================================================================================
+
 -- Fast self-detection of own guild bank status
 local function areWeGuildBankAlt(self)
     self.weCanViewOfficerNotes = Globals.CanViewOfficerNote()
@@ -720,7 +736,7 @@ local function areWeGuildBankAlt(self)
     end
 
     self.weAreGuildBankAlt = weAreGuildBankAlt
-    GBCR.Output:Debug("GUILD", "areWeGuildBankAlt: guild bank alt status changed to %s", tostring(weAreGuildBankAlt))
+    GBCR.Output:Debug("ROSTER", "areWeGuildBankAlt: guild bank alt status changed to %s", tostring(weAreGuildBankAlt))
 
     if weAreGuildBankAlt then
         if self.cachedGuildBankAlts then
@@ -739,13 +755,13 @@ local function areWeGuildBankAlt(self)
 
             if not found then
                 sv.roster.alts[#sv.roster.alts + 1] = normName
-                GBCR.Output:Debug("GUILD", "areWeGuildBankAlt: added %s to roster", normName)
+                GBCR.Output:Debug("ROSTER", "areWeGuildBankAlt: added %s to roster", normName)
             end
         end
 
         if sv and sv.alts and not sv.alts[normName] then
             sv.alts[normName] = {name = normName, version = 0, money = 0, items = {}, ledger = {}}
-            GBCR.Output:Debug("GUILD", "areWeGuildBankAlt: created stub data for %s", normName)
+            GBCR.Output:Debug("ROSTER", "areWeGuildBankAlt: created stub data for %s", normName)
         end
 
         GBCR.Events:RegisterGuildBankAltEvents()
@@ -760,14 +776,14 @@ local function areWeGuildBankAlt(self)
             for i = #alts, 1, -1 do
                 if alts[i] == normName then
                     table_remove(alts, i)
-                    GBCR.Output:Debug("GUILD", "areWeGuildBankAlt: removed %s from roster", normName)
+                    GBCR.Output:Debug("ROSTER", "areWeGuildBankAlt: removed %s from roster", normName)
 
                     break
                 end
             end
         end
     else
-        GBCR.Output:Debug("GUILD",
+        GBCR.Output:Debug("ROSTER",
                           "areWeGuildBankAlt: weAreGuildBankAlt=false but no officer-note access, deferring to async rebuild")
     end
 
@@ -807,6 +823,7 @@ local function isGuildBankAlt(self, playerName)
 end
 
 -- ================================================================================================
+
 -- Color player names in messages
 local function colorPlayerName(self, name)
     if not name or name == "" then
@@ -836,6 +853,7 @@ local function colorPlayerName(self, name)
 end
 
 -- ================================================================================================
+
 -- Wipe your guild data via AddOn config "Reset database", /bank reset, /bank wipe, /bank wipeall, GUILD_RANKS_UPDATE event via Guild:Init(guildName)
 local function resetGuild(self)
     local guildName = getGuildInfo()
@@ -848,7 +866,6 @@ local function resetGuild(self)
     GBCR.Database.savedVariables = GBCR.Database:Load(guildName)
 
     self.isGuildRosterReady = nil
-    self.lastRosterRebuildTime = nil
     rebuildGuildRosterInfo(self)
 
     GBCR.UI.Inventory:MarkAllDirty()
@@ -874,6 +891,7 @@ local function clearGuildCaches(self)
         self.timerRebuildGuildRosterInfo = nil
     end
 
+    self.weAreGuildBankAlt = nil
     self.cachedNormalizedRealmName = nil
     self.cachedPlayerName = nil
     self.retryScheduled = false
@@ -931,6 +949,7 @@ local function init(self, guildName)
 end
 
 -- ================================================================================================
+
 -- Export functions for other modules
 Guild.NormalizePlayerName = normalizePlayerName
 Guild.GetNormalizedPlayerName = getNormalizedPlayerName

@@ -31,7 +31,6 @@ local Enum = Globals.Enum
 local GetClassColor = Globals.GetClassColor
 local GetItemInfo = Globals.GetItemInfo
 local GetServerTime = Globals.GetServerTime
-local GetTime = Globals.GetTime
 local InCombatLockdown = Globals.InCombatLockdown
 local IsInGuild = Globals.IsInGuild
 local IsInInstance = Globals.IsInInstance
@@ -48,6 +47,7 @@ local ledgerConstants = Constants.LEDGER
 local prefixDescriptions = Constants.COMM_PREFIX_DESCRIPTIONS
 
 -- ================================================================================================
+
 -- Helper to make payloads smaller and encoded prior to transmission
 local function serializePayload(data)
     local serializedData = GBCR.Libs.LibSerialize:Serialize(data)
@@ -111,6 +111,7 @@ local function sendWhisper(prefix, text, target, prio, callbackFn, callbackArg)
 end
 
 -- ================================================================================================
+
 -- Helper to create a temporary link, required for caching
 local function createTemporaryItemLink(encoded)
     if not encoded or encoded == "" then
@@ -182,13 +183,17 @@ local function processItemQueue(self)
                         if not itemObj:GetItemID() then
                             GBCR.Output:Debug("ITEM", "Item %s has a nil internal ID, skipping",
                                               tostring(tempLink) or tostring(itemId))
-                            self.pendingAsyncLoads = self.pendingAsyncLoads - 1
+                            self.pendingAsyncLoads = math_max(0, self.pendingAsyncLoads - 1)
                             needsRefresh = true
                         else
                             GBCR.Output:Debug("ITEM", "Item %d passed validation, calling ContinueOnItemLoad", itemId)
                             local success, err = pcall(function()
                                 itemObj:ContinueOnItemLoad(function()
-                                    self.pendingAsyncLoads = self.pendingAsyncLoads - 1
+                                    self.pendingAsyncLoads = math_max(0, self.pendingAsyncLoads - 1)
+                                    if self.pendingAsyncLoads == 0 and self.itemLoadWatchdog then
+                                        self.itemLoadWatchdog:Cancel()
+                                        self.itemLoadWatchdog = nil
+                                    end
                                     local name, link
                                     if tempLink then
                                         name, link = GetItemInfo(tempLink)
@@ -201,6 +206,7 @@ local function processItemQueue(self)
                                         item.itemLink = nil
                                     end
 
+                                    GBCR.UI.Inventory.itemsHydrated = false
                                     GBCR.UI:QueueUIRefresh()
 
                                     if not Protocol.isProcessingQueue and Protocol.itemQueueHead < Protocol.itemQueueTail then
@@ -215,12 +221,34 @@ local function processItemQueue(self)
 
                             if not success then
                                 GBCR.Output:Debug("ITEM", "ContinueOnItemLoad crashed for item %d: %s", itemId, tostring(err))
-                                self.pendingAsyncLoads = self.pendingAsyncLoads - 1
+                                self.pendingAsyncLoads = math_max(0, self.pendingAsyncLoads - 1)
+                            else
+                                if not self.itemLoadWatchdog then
+                                    self.itemLoadWatchdog = NewTimer(20, function()
+                                        self.itemLoadWatchdog = nil
+
+                                        if self.pendingAsyncLoads > 0 then
+                                            GBCR.Output:Debug("ITEM",
+                                                              "processItemQueue watchdog: resetting %d stalled item loads",
+                                                              self.pendingAsyncLoads)
+
+                                            self.pendingAsyncLoads = 0
+
+                                            if Protocol.itemQueueHead < Protocol.itemQueueTail then
+                                                Protocol.isProcessingQueue = true
+
+                                                After(0, function()
+                                                    processItemQueue(Protocol)
+                                                end)
+                                            end
+                                        end
+                                    end)
+                                end
                             end
                         end
                     else
                         GBCR.Output:Debug("ITEM", "Item %d failed validation, skipping", itemId or -1)
-                        self.pendingAsyncLoads = self.pendingAsyncLoads - 1
+                        self.pendingAsyncLoads = math_max(0, self.pendingAsyncLoads - 1)
                     end
                     needsRefresh = true
                 end
@@ -284,6 +312,7 @@ local function reconstructItemLinks(self, items)
 end
 
 -- ================================================================================================
+
 -- Helper for protocol state changes
 local function setAltProtocolState(self, altName, newState)
     if not altName then
@@ -333,7 +362,47 @@ local function pruneStaleProtocolStates(self)
     for altName in pairs(self.protocolStates) do
         if not cachedGuildBankAlts[altName] then
             self.protocolStates[altName] = nil
-            GBCR.Output:Debug("PROTOCOL", "Pruned protocolStates for %s", altName)
+            GBCR.Output:Debug("PROTOCOL", "Pruned protocolStates for guild bank alt %s", altName)
+        end
+    end
+
+    for altName in pairs(self.requestTimeoutTimers) do
+        if not cachedGuildBankAlts[altName] then
+            self.requestTimeoutTimers[altName]:Cancel()
+            self.requestTimeoutTimers[altName] = nil
+            GBCR.Output:Debug("PROTOCOL", "Cancelled stale requestTimeoutTimer for guild bank alt %s", altName)
+        end
+    end
+
+    for altName in pairs(self.requestRetryTimers) do
+        if not cachedGuildBankAlts[altName] then
+            self.requestRetryTimers[altName]:Cancel()
+            self.requestRetryTimers[altName] = nil
+            GBCR.Output:Debug("PROTOCOL", "Cancelled stale requestRetryTimer for guild bank alt %s", altName)
+        end
+    end
+
+    if self.altDataSources then
+        for altName in pairs(self.altDataSources) do
+            if not cachedGuildBankAlts[altName] then
+                self.altDataSources[altName] = nil
+                GBCR.Output:Debug("PROTOCOL", "Pruned altDataSources for guild bank alt %s", altName)
+            end
+        end
+    end
+
+    local cachedOnlineMembers = GBCR.Guild.cachedOnlineGuildMembers
+    if self.altDataSources then
+        for altName, sources in pairs(self.altDataSources) do
+            if cachedGuildBankAlts[altName] then
+                for sender in pairs(sources) do
+                    if not cachedOnlineMembers or not cachedOnlineMembers[sender] then
+                        sources[sender] = nil
+                        GBCR.Output:Debug("PROTOCOL", "Pruned altDataSources for guild bank alt %s from sender %s", altName,
+                                          sender)
+                    end
+                end
+            end
         end
     end
 end
@@ -346,6 +415,13 @@ local function cleanupPendingSync(self)
 
     local now = GetServerTime()
     local cutoff = Constants.TIMER_INTERVALS.FINGERPRINT_BROADCAST
+
+    local fingerprintStaleCutoff = cutoff * 10
+    for sender, entry in pairs(self.guildMembersFingerprintData) do
+        if now - (entry.seen or 0) > fingerprintStaleCutoff then
+            self.guildMembersFingerprintData[sender] = nil
+        end
+    end
 
     local roster = self.pendingSync.roster
     if roster then
@@ -539,31 +615,8 @@ local function isQueryAllowed()
     return false
 end
 
--- Detect when the player enters combat or an instance or a raid group and immediately lock the protocol
-local function updateSafetyLockout(self)
-    if not IsInGuild() then
-        GBCR.Guild:ClearGuildCaches()
-
-        return
-    end
-
-    local wasLockedOut = self.isLockedOut
-    local shouldLock = InCombatLockdown() or IsInInstance() or IsInRaid()
-    if shouldLock == wasLockedOut then
-        return
-    end
-
-    self.isLockedOut = shouldLock
-    if shouldLock then
-        GBCR.Output:Debug("PROTOCOL", "Safety lockout engaged, synchronization paused")
-    else
-        GBCR.Output:Debug("PROTOCOL", "Safety lockout lifted, synchronization resumed")
-    end
-
-    GBCR.UI:QueueUIRefresh()
-end
-
 -- ================================================================================================
+
 -- Helper to encode fingerprint data for sharing (gbc-fp-share)
 local function craftFingerprintPayload()
     local db = GBCR.Database.savedVariables
@@ -677,7 +730,7 @@ local function parseFingerprintPayload(payload)
 end
 
 -- Send a fingerprint representing our guild bank state
-local function sendFingerprint(self, target)
+local function sendFingerprint(self, target, force)
     local guildName = GBCR.Guild:GetGuildInfo()
     if not guildName then
         GBCR.Output:Debug("PROTOCOL", "sendFingerprint early exit because of missing guild information")
@@ -688,7 +741,7 @@ local function sendFingerprint(self, target)
     if not target then
         local now = GetServerTime()
         local sinceLastBroadcast = now - (self.lastFingerprintBroadcast or 0)
-        if sinceLastBroadcast < Constants.TIMER_INTERVALS.FINGERPRINT_COOLDOWN then
+        if not force and sinceLastBroadcast < Constants.TIMER_INTERVALS.FINGERPRINT_COOLDOWN then
             GBCR.Output:Debug("PROTOCOL", "sendFingerprint broadcast suppressed (last was %ds ago, cooldown %ds)",
                               sinceLastBroadcast, Constants.TIMER_INTERVALS.FINGERPRINT_COOLDOWN)
 
@@ -815,7 +868,11 @@ local function craftDataPayload(self, altName, altData)
         return uidIndex[uid]
     end
 
-    local sourceLedger = altData.ledger or {}
+    local sourceLedger = altData.ledger
+    if not sourceLedger and altData.ledgerCompressed then
+        sourceLedger = GBCR.Database.DecompressData(altData.ledgerCompressed) or {}
+    end
+    sourceLedger = sourceLedger or {}
     local numLedgerEntries = #sourceLedger
     for i = 1, numLedgerEntries do
         local actorUid = sourceLedger[i][6]
@@ -1019,14 +1076,11 @@ end
 
 -- Helper to create a per-send callback with its own stats tracking
 local function createOnChunkSentCallback(altName, destination)
-    local sendStats = {startTime = GetTime(), failures = 0, throttled = 0}
+    local sendStats = {failures = 0, throttled = 0}
 
     return function(arg, bytesSent, totalBytes, sendResult)
         if bytesSent > 0 then
             sendStats.abort = false
-            sendStats.startTime = GetTime()
-            sendStats.failures = 0
-            sendStats.throttled = 0
         end
 
         if sendStats.abort then
@@ -1053,8 +1107,7 @@ local function createOnChunkSentCallback(altName, destination)
         end
 
         if bytesSent >= totalBytes then
-            local elapsed = GetTime() - sendStats.startTime
-            local summary = string_format("Send complete: ~%d chunks, %d bytes in %.1fs", totalChunks, totalBytes, elapsed)
+            local summary = string_format("Send complete: ~%d chunks, %d bytes", totalChunks, totalBytes)
             if sendStats.failures > 0 or sendStats.throttled > 0 then
                 summary = summary .. string_format(" | failures: %d, throttled: %d", sendStats.failures, sendStats.throttled)
             end
@@ -1073,7 +1126,6 @@ local function createOnChunkSentCallback(altName, destination)
             end
 
             sendStats.abort = false
-            sendStats.startTime = nil
             sendStats.failures = 0
             sendStats.throttled = 0
         end
@@ -1139,13 +1191,19 @@ local function sendData(self, name, target)
     end
 
     local onChunkSent = createOnChunkSentCallback(norm, dest)
+    local hookedDone = false
     local hookedCallback = function(arg, bytesSent, totalBytes, sendResult)
         onChunkSent(arg, bytesSent, totalBytes, sendResult)
+
+        if hookedDone then
+            return
+        end
 
         local isComplete = (bytesSent >= totalBytes)
         local isFailed = not (sendResult == Enum.SendAddonMessageResult.Success or sendResult == true or sendResult == nil)
 
         if (isComplete or isFailed) and channel == "WHISPER" and dest then
+            hookedDone = true
             self.activeOutboundWhispers = math_max(0, self.activeOutboundWhispers - 1)
 
             if isComplete and norm == GBCR.Guild:GetNormalizedPlayerName() then
@@ -1281,11 +1339,13 @@ local function receiveData(self, incomingData, sender)
     end
 
     altData.itemsCompressed = GBCR.Database.CompressData(altData.items)
+    altData.itemsCompressedVersion = altData.version
     altData.compressedVersion = altData.version
 
     GBCR.Output:Debug("SYNC", "receiveData: accepted and saved guild bank alt data for %s", incomingAltName)
 
     GBCR.UI.Inventory:MarkAltDirty(incomingAltName)
+    self.cachedStateHash = nil
 
     if self.requestTimeoutTimers[incomingAltName] then
         self.requestTimeoutTimers[incomingAltName]:Cancel()
@@ -1299,6 +1359,11 @@ local function receiveData(self, incomingData, sender)
 
     if incomingItems then
         reconstructItemLinks(self, incomingItems)
+    end
+
+    if self.pendingQueryTimers[incomingAltName] then
+        self.pendingQueryTimers[incomingAltName]:Cancel()
+        self.pendingQueryTimers[incomingAltName] = nil
     end
 
     setAltProtocolState(self, incomingAltName, Constants.STATE.UPDATED)
@@ -1585,6 +1650,15 @@ end
 
 -- Helper to generate a tiny, 1-chunk representation of the entire guild bank state (gbc-hash) to broadcast upon logging in
 local function getStateHash()
+    local sv = GBCR.Database.savedVariables
+    local myName = GBCR.Guild:GetNormalizedPlayerName()
+    local myAlt = sv and sv.alts and sv.alts[myName]
+    local myVersion = myAlt and myAlt.version or 0
+
+    if Protocol.cachedStateHash and Protocol.cachedStateHashVersion == myVersion then
+        return Protocol.cachedStateHash
+    end
+
     local fp = craftFingerprintPayload()
     local hash = 5381
 
@@ -1603,12 +1677,19 @@ local function getStateHash()
         end
     end
 
-    return tostring(hash)
+    Protocol.cachedStateHash = tostring(hash)
+    Protocol.cachedStateHashVersion = myVersion
+
+    return Protocol.cachedStateHash
 end
 
 -- Helper to broadcast our guild bank state (gbc-hash)
-local function gossipLoop()
+local function gossipLoop(generation)
     if not Protocol.gossipLoopRunning then
+        return
+    end
+
+    if generation ~= Protocol.gossipGeneration then
         return
     end
 
@@ -1622,7 +1703,19 @@ local function gossipLoop()
         sendCommMessage("gbc-hash", GBCR.Core.addonVersionNumber .. ":" .. getStateHash(), "GUILD", nil, "NORMAL")
     end
 
-    After(Constants.TIMER_INTERVALS.GOSSIP_CYCLE or 900, gossipLoop)
+    After(Constants.TIMER_INTERVALS.GOSSIP_CYCLE or 900, function()
+        gossipLoop(generation)
+    end)
+end
+
+-- Helper to start exactly one gossip loop
+local function startGossipLoop(self)
+    self.gossipLoopRunning = true
+    self.gossipGeneration = (self.gossipGeneration or 0) + 1
+
+    After(Constants.TIMER_INTERVALS.GOSSIP_CYCLE or 900, function()
+        gossipLoop(self.gossipGeneration)
+    end)
 end
 
 -- Helper to determine what the login broadcast (gbc-hash) jitter should be based on online member count
@@ -1653,13 +1746,25 @@ local function sendStateHash(self)
     GBCR.Output:Debug("PROTOCOL", "Login detected, scheduled hash broadcast in %d seconds", jitter)
 
     self.timerLoginHashBroadcast = NewTimer(jitter, function()
+        if GBCR.Guild.isGuildRosterRebuilding then
+            GBCR.Output:Debug("PROTOCOL", "Login hash broadcast deferred: roster rebuild still in progress")
+            self.timerLoginHashBroadcast = NewTimer(5, function()
+                Protocol.timerLoginHashBroadcast = nil
+                if not Protocol.isLockedOut then
+                    sendCommMessage("gbc-hash", GBCR.Core.addonVersionNumber .. ":" .. getStateHash(), "GUILD", nil, "NORMAL")
+                end
+                startGossipLoop(Protocol)
+            end)
+
+            return
+        end
+
         if not self.isLockedOut then
             sendCommMessage("gbc-hash", GBCR.Core.addonVersionNumber .. ":" .. getStateHash(), "GUILD", nil, "NORMAL")
         end
-        self.timerLoginHashBroadcast = nil
 
-        self.gossipLoopRunning = true
-        After(Constants.TIMER_INTERVALS.GOSSIP_CYCLE or 900, gossipLoop)
+        self.timerLoginHashBroadcast = nil
+        startGossipLoop(self)
     end)
 end
 
@@ -1669,10 +1774,13 @@ local function sendAnnounce(self, altName)
         return
     end
 
+    self.cachedStateHash = nil
+
     sendCommMessage("gbc-announce", altName, "GUILD", nil, "NORMAL")
 end
 
 -- ================================================================================================
+
 -- Helper for the sync status
 local function formatSyncStatus(status)
     if status == Constants.ADOPTION_STATUS.ADOPTED then
@@ -1753,6 +1861,13 @@ local function cancelAllDebounceTimers(self)
             timer:Cancel()
         end
         wipe(self.requestRetryTimers)
+    end
+
+    if self.pendingQueryTimers then
+        for _, timer in pairs(self.pendingQueryTimers) do
+            timer:Cancel()
+        end
+        wipe(self.pendingQueryTimers)
     end
 end
 
@@ -1863,11 +1978,21 @@ local function processFingerprintAltData(self, fingerprintAltData, sender)
             if shouldQuery then
                 setAltProtocolState(self, altName, Constants.STATE.OUTDATED)
 
-                After(math_random(Constants.JITTER.QUERY_MIN, Constants.JITTER.QUERY_MAX), function()
+                if self.pendingQueryTimers[altName] then
+                    self.pendingQueryTimers[altName]:Cancel()
+                    self.pendingQueryTimers[altName] = nil
+                end
+                self.pendingQueryTimers[altName] = NewTimer(math_random(Constants.JITTER.QUERY_MIN, Constants.JITTER.QUERY_MAX),
+                                                            function()
+                    self.pendingQueryTimers[altName] = nil
                     queryForGuildBankAltData(Protocol, sender or altData.sender, altName)
                 end)
-
                 queryCount = queryCount + 1
+            else
+                local currentState = self.protocolStates[altName]
+                if currentState == Constants.STATE.DISCOVERING then
+                    setAltProtocolState(self, altName, Constants.STATE.IDLE)
+                end
             end
         end
     end
@@ -2010,6 +2135,14 @@ local function processDebouncedMessageWithMultipleGuildBankAlts(self)
                               GBCR.Guild:ColorPlayerName(bestRosterSender))
             queryForRosterData(self, bestRosterSender, bestRosterVersion)
         end
+
+        for _, entry in pairs(self.debounceQueues.multipleAlts) do
+            if entry.areOfficerNotesUsed ~= nil then
+                GBCR.Guild.areOfficerNotesUsedToDefineGuildBankAlts = entry.areOfficerNotesUsed
+
+                break
+            end
+        end
     end
 
     local queryCount = processFingerprintAltData(self, self.debounceQueues.multipleAlts)
@@ -2113,7 +2246,12 @@ local function queueDebouncedMessageWithMultipleGuildBankAlts(self, sender, payl
             local existing = self.debounceQueues.multipleAlts[altNorm]
 
             if shouldReplaceQueuedData(existing, incomingVersion) then
-                self.debounceQueues.multipleAlts[altNorm] = {version = incomingVersion, sender = sender, queuedAt = now}
+                self.debounceQueues.multipleAlts[altNorm] = {
+                    version = incomingVersion,
+                    sender = sender,
+                    queuedAt = now,
+                    areOfficerNotesUsed = incomingData.areOfficerNotesUsedToDefineGuildBankAlts
+                }
                 GBCR.Output:Debug("PROTOCOL", "Best sender for %s is now %s (incomingVersion=%s)",
                                   GBCR.Guild:ColorPlayerName(altNorm), GBCR.Guild:ColorPlayerName(sender),
                                   tostring(incomingVersion))
@@ -2197,7 +2335,6 @@ local function queueDebouncedMessageWithSingularGuildBankAlt(self, prefix, messa
 
     self.debounceQueues.singularAlt[key] = {
         prefix = prefix,
-        message = message,
         distribution = distribution,
         sender = sender,
         data = data,
@@ -2264,18 +2401,19 @@ end
 local function performSync(self)
     local now = GetServerTime()
     local last = self.lastSync or 0
-    if now - last <= Constants.TIMER_INTERVALS.MANUAL_SYNC_COOLDOWN then
+    if now - last < Constants.TIMER_INTERVALS.MANUAL_SYNC_COOLDOWN then
         return false
     end
 
     self.lastSync = now
-    sendFingerprint(self)
+    sendFingerprint(self, nil, true)
     requestMissingGuildBankAltData()
 
     return true
 end
 
 -- ================================================================================================
+
 -- Helper to queue incoming heavy payloads that need deserialization
 local function processNextIncomingPayload(self)
     if self.queueHead >= self.queueTail then
@@ -2291,6 +2429,17 @@ local function processNextIncomingPayload(self)
         self.queueTail = 1
         wipe(self.incomingPayloadQueue)
         self.isProcessingIncoming = false
+
+        return
+    end
+
+    if self.isLockedOut then
+        self.isProcessingIncoming = false
+        After(1.0, function()
+            if Protocol.queueHead < Protocol.queueTail then
+                processNextIncomingPayload(Protocol)
+            end
+        end)
 
         return
     end
@@ -2357,13 +2506,41 @@ local function processNextIncomingPayload(self)
     end)
 end
 
+-- Detect when the player enters combat or an instance or a raid group and immediately lock the protocol
+local function updateSafetyLockout(self)
+    if not IsInGuild() then
+        GBCR.Guild:ClearGuildCaches()
+
+        return
+    end
+
+    local wasLockedOut = self.isLockedOut
+    local shouldLock = InCombatLockdown() or IsInInstance() or IsInRaid()
+    if shouldLock == wasLockedOut then
+        return
+    end
+
+    self.isLockedOut = shouldLock
+    if shouldLock then
+        GBCR.Output:Debug("PROTOCOL", "Safety lockout engaged, synchronization paused")
+    else
+        GBCR.Output:Debug("PROTOCOL", "Safety lockout lifted, synchronization resumed")
+
+        if self.queueHead < self.queueTail and not self.isProcessingIncoming then
+            processNextIncomingPayload(self)
+        end
+    end
+
+    GBCR.UI:QueueUIRefresh()
+end
+
 -- Main handler for processing incomming addon communications
 local function onCommReceived(self, prefix, message, distribution, sender)
     local prefixDesc = prefixDescriptions[prefix] or "(Unknown)"
     local player = GBCR.Guild:GetNormalizedPlayerName()
     sender = GBCR.Guild:NormalizePlayerName(sender)
 
-    if not GBCR.Guild.cachedPlayerName and not GBCR.Core.addonVersionNumber then
+    if not GBCR.Guild.cachedPlayerName or not GBCR.Core.addonVersionNumber then
         GBCR.Output:Debug("COMMS", "<", "(ignoring)", prefix, prefixDesc, "(not ready yet)")
 
         return
@@ -2394,8 +2571,7 @@ local function onCommReceived(self, prefix, message, distribution, sender)
                 self.timerLoginHashBroadcast:Cancel()
                 self.timerLoginHashBroadcast = nil
                 GBCR.Output:Debug("PROTOCOL", "Login hash boadcast suppressed given that %s has the same state hash", sender)
-                self.gossipLoopRunning = true
-                After(Constants.TIMER_INTERVALS.GOSSIP_CYCLE or 900, gossipLoop)
+                startGossipLoop(self)
             end
         else
             if not self.isLockedOut then
@@ -2423,7 +2599,14 @@ local function onCommReceived(self, prefix, message, distribution, sender)
             setAltProtocolState(self, altName, Constants.STATE.OUTDATED)
         end
 
-        After(math_random(Constants.JITTER.ANNOUNCE_MIN, Constants.JITTER.ANNOUNCE_MAX), function()
+        if self.pendingQueryTimers[altName] then
+            self.pendingQueryTimers[altName]:Cancel()
+            self.pendingQueryTimers[altName] = nil
+        end
+
+        self.pendingQueryTimers[altName] = NewTimer(math_random(Constants.JITTER.ANNOUNCE_MIN, Constants.JITTER.ANNOUNCE_MAX),
+                                                    function()
+            self.pendingQueryTimers[altName] = nil
             queryForGuildBankAltData(Protocol, sender, altName)
         end)
 
@@ -2432,6 +2615,13 @@ local function onCommReceived(self, prefix, message, distribution, sender)
 
     local isHeavyPayload = (prefix == "gbc-fp-share" or prefix == "gbc-data-share" or prefix == "gbc-roster-share")
     if isHeavyPayload then
+        if self.isLockedOut then
+            GBCR.Output:Debug("COMMS", "<", "(suppressed in combat)", prefix, prefixDescriptions[prefix], "from",
+                              GBCR.Guild:ColorPlayerName(sender))
+
+            return
+        end
+
         self.incomingPayloadQueue[self.queueTail] = {
             prefix = prefix,
             message = message,
@@ -2488,6 +2678,9 @@ local function onCommReceived(self, prefix, message, distribution, sender)
                     self.fingerprintResponseTimer = nil
                     local targets = self.pendingFingerprintResponses
                     self.pendingFingerprintResponses = nil
+                    if not targets then
+                        return
+                    end
 
                     local count = 0
                     for _ in pairs(targets) do
@@ -2496,7 +2689,7 @@ local function onCommReceived(self, prefix, message, distribution, sender)
 
                     if count >= 5 then
                         GBCR.Output:Debug("PROTOCOL", "Broadcasting fp-share to guild for %d requesters", count)
-                        sendFingerprint(self)
+                        sendFingerprint(self, nil, true)
                     else
                         for target in pairs(targets) do
                             sendFingerprint(self, target)
@@ -2515,7 +2708,16 @@ local function onCommReceived(self, prefix, message, distribution, sender)
 
             setAltProtocolState(self, data.name, Constants.STATE.OUTDATED)
 
-            After(math_random(Constants.JITTER.RETRY_MIN, Constants.JITTER.RETRY_MAX), function()
+            if self.pendingQueryTimers and self.pendingQueryTimers[data.name] then
+                self.pendingQueryTimers[data.name]:Cancel()
+                self.pendingQueryTimers[data.name] = nil
+            end
+
+            self.pendingQueryTimers[data.name] = NewTimer(math_random(Constants.JITTER.RETRY_MIN, Constants.JITTER.RETRY_MAX),
+                                                          function()
+                if self.pendingQueryTimers then
+                    self.pendingQueryTimers[data.name] = nil
+                end
                 queryForGuildBankAltData(Protocol, sender, data.name)
             end)
 
@@ -2538,7 +2740,7 @@ local function onCommReceived(self, prefix, message, distribution, sender)
                           "guild bank alt data for", GBCR.Guild:ColorPlayerName(altName), "")
 
         if hasData and isStillAGuildBankAlt then
-            local responseKey = (altName or "?") .. "|" .. (sender or "?")
+            local responseKey = altName .. "|" .. sender
             local lastResponse = self.recentDataQueryResponses[responseKey] or 0
             local now = GetServerTime()
             if now - lastResponse < 60 then
@@ -2632,6 +2834,7 @@ local function init(self)
     self.itemQueueHead = 1
     self.itemQueueTail = 1
     self.pendingAsyncLoads = 0
+    self.itemLoadWatchdog = nil
     self.isProcessingQueue = false
 
     self.incomingPayloadQueue = {}
@@ -2644,9 +2847,12 @@ local function init(self)
     self.isAcceptingIncoming = true
 
     self.pendingSync = {roster = {}, alts = {}}
+    self.pendingQueryTimers = {}
 
     self.isAddonOutdated = false
     self.guildMembersFingerprintData = {}
+    self.cachedStateHash = nil
+    self.cachedStateHashVersion = 0
 
     self.isLockedOut = false
     self.protocolStates = {}
@@ -2668,6 +2874,7 @@ local function init(self)
     self.uiStatePending = false
 
     self.gossipLoopRunning = false
+    self.gossipGeneration = 0
 
     self.debounceHardDeadlineTimer = nil
     self.fingerprintResponseTimer = nil
@@ -2708,6 +2915,7 @@ local function init(self)
 end
 
 -- ================================================================================================
+
 -- Export functions for other modules
 Protocol.ReconstructItemLinks = reconstructItemLinks
 

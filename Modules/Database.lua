@@ -22,8 +22,6 @@ local colorGold = Constants.COLORS.GOLD
 local Output = GBCR.Output
 
 -- Retrieve the list of guild bank alts on the roster (includes manually defined guild bank alts)
--- This returns an array (ordered iteration)
--- for i = 1, #list do print(list[i]) end
 local function getRosterGuildBankAlts(self)
     if not self.savedVariables then
         return nil
@@ -107,23 +105,38 @@ end
 local function decompressData(encoded)
     local compressed = GBCR.Libs.LibDeflate:DecodeForPrint(encoded)
     if not compressed then
+        GBCR.Output:Error("decompressData: DecodeForPrint failed (corrupted saved data?)")
+
         return nil
     end
 
     local serialized = GBCR.Libs.LibDeflate:DecompressDeflate(compressed)
     if not serialized then
+        GBCR.Output:Error("decompressData: DecompressDeflate failed (corrupted saved data?)")
+
         return nil
     end
 
     local ok, items = GBCR.Libs.LibSerialize:Deserialize(serialized)
+    if not ok then
+        GBCR.Output:Error("decompressData: Deserialize failed: %s", tostring(items))
 
-    return ok and items or nil
+        return nil
+    end
+
+    return items
 end
 
 -- Helper to determine if data decompression is needed
 local function decompressIfNeeded(alt, compressedField, field, decompressFn)
     if alt[compressedField] and not alt[field] then
-        alt[field] = decompressFn(alt[compressedField])
+        local result = decompressFn(alt[compressedField])
+        if result ~= nil then
+            alt[field] = result
+        else
+            GBCR.Output:Error("decompressIfNeeded: permanently skipping corrupted %s field", compressedField)
+            alt[compressedField] = nil
+        end
     end
 end
 
@@ -204,6 +217,48 @@ local function loadGuild(self, guildName)
 
                     return
                 end
+            end
+
+            local missedAlts = {}
+            for altName, alt in pairs(db.alts) do
+                if type(alt) == "table" and alt.itemsCompressed and not alt.items then
+                    missedAlts[#missedAlts + 1] = altName
+                end
+            end
+
+            if #missedAlts > 0 then
+                Output:Debug("DATABASE", "processAltsLoop: %d guild bank alts arrived mid-run, scheduling secondary pass",
+                             #missedAlts)
+
+                local missedAlt = 1
+
+                local function secondaryPass()
+                    local startTimeSecondaryPass = debugprofilestop()
+                    local iterationsSecondaryPass = 0
+
+                    while missedAlt <= #missedAlts do
+                        iterationsSecondaryPass = iterationsSecondaryPass + 1
+                        local altName = missedAlts[missedAlt]
+                        local alt = db.alts[altName]
+                        missedAlt = missedAlt + 1
+
+                        if alt then
+                            decompressIfNeeded(alt, "itemsCompressed", "items", decompressData)
+                            protocol:ReconstructItemLinks(alt.items)
+                        end
+
+                        if shouldYield(startTimeSecondaryPass, iterationsSecondaryPass, 1, 5) then
+                            After(0, secondaryPass)
+
+                            return
+                        end
+                    end
+
+                    GBCR.UI.Inventory:MarkAllDirty()
+                    GBCR.UI:QueueUIRefresh()
+                end
+
+                After(0, secondaryPass)
             end
 
             if myGen ~= GBCR.Database.loadGeneration then
