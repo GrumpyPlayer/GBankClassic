@@ -34,18 +34,18 @@ local function init()
         end,
         OnClick = function(_, button)
             if IsShiftKeyDown() then
-                GBCR.UI.Inventory:ToggleTab("configuration")
+                GBCR.UI:ToggleTab("configuration")
             elseif IsControlKeyDown() then
                 GBCR.UI:RestoreUI()
             elseif IsAltKeyDown() then
                 GBCR.UI.Debug:Toggle()
             else
                 if button == "LeftButton" then
-                    GBCR.UI.Inventory:ToggleTab("browse")
+                    GBCR.UI:ToggleTab("browse")
                 elseif button == "RightButton" then
-                    GBCR.UI.Inventory:ToggleTab("network")
+                    GBCR.UI:ToggleTab("network")
                 elseif button == "MiddleButton" then
-                    GBCR.UI.Inventory:ToggleTab("export")
+                    GBCR.UI:ToggleTab("export")
                 end
             end
         end

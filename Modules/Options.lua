@@ -413,7 +413,7 @@ local function init(self)
                         name = "Make this user interface slightly transparent",
                         set = function(_, v)
                             self.db.profile.uiTransparency = v
-                            GBCR.UI.Inventory:UpdateTransparency()
+                            GBCR.UI:UpdateTransparency()
                         end,
                         get = function()
                             return self:GetUiTransparency()
@@ -428,7 +428,7 @@ local function init(self)
                         values = {["realm"] = "Realm time", ["local"] = "Local time"},
                         set = function(_, v)
                             self.db.profile.clockTime = v
-                            if GBCR.UI.Inventory.clockLabel then
+                            if GBCR.UI.clockLabel then
                                 local useLocal = (v == "local")
                                 local timeStr
                                 if useLocal then
@@ -437,7 +437,7 @@ local function init(self)
                                     local h, m = GetGameTime()
                                     timeStr = string.format("%02d:%02d", h, m)
                                 end
-                                GBCR.UI.Inventory.clockLabel:SetText(Globals.ColorizeText(Constants.COLORS.WHITE, timeStr))
+                                GBCR.UI.clockLabel:SetText(Globals.ColorizeText(Constants.COLORS.WHITE, timeStr))
                             end
                         end,
                         get = function()
@@ -676,7 +676,7 @@ local function init(self)
     button:SetPoint("TOPLEFT", desc, "BOTTOMLEFT", 0, -20)
     button:SetText("Open configuration")
     button:SetScript("OnClick", function()
-        GBCR.UI.Inventory:ToggleTab("configuration")
+        GBCR.UI:ToggleTab("configuration")
     end)
     self.optionsPanel.button = button
 

@@ -14,6 +14,8 @@ local GetAddOnMetadata = Globals.GetAddOnMetadata
 local Constants = GBCR.Constants
 local logLevels = Constants.LOG_LEVEL
 
+-- _G[addonName] = GBCR
+
 -- Make the addon metadata universally available
 local function loadMetadata(self)
     local addonTitle = GetAddOnMetadata(addonName, "Title")
@@ -29,8 +31,8 @@ local function loadMetadata(self)
     self.addonVersion = addonVersion
     self.addonVersionNumber = addonVersionNumber
 
-    if GBCR.UI.Inventory.window then
-        GBCR.UI.Inventory.window:SetTitle(addonHeader)
+    if GBCR.UI.window then
+        GBCR.UI.window:SetTitle(addonHeader)
     end
 end
 
@@ -98,7 +100,7 @@ function GBCR.Addon:OnDisable()
     GBCR.Events:UnregisterEvents()
 
     GBCR.Protocol:CancelAllDebounceTimers()
-    GBCR.UI.Network:Stop()
+    GBCR.UI:StopNetworkTicker()
 
     GBCR.Protocol.gossipLoopRunning = false
     GBCR.Protocol.isAcceptingIncoming = false
@@ -119,10 +121,10 @@ function GBCR.Addon:OnDisable()
     cancelTimer(GBCR.Events, "timerBagUpdateDelayedScanInventory")
     cancelTimer(GBCR.Events, "timerGetItemInfoReceivedScanInventory")
     cancelTimer(GBCR.Ledger, "timerLedgerUpdateBroadcast")
-    cancelTimer(GBCR.UI.Inventory, "clockTicker")
-    cancelTimer(GBCR.UI.Inventory, "syncPulseTicker")
-    cancelTimer(GBCR.UI.Inventory, "searchTimer")
-    cancelTimer(GBCR.UI.Inventory, "resizeTimer")
+    cancelTimer(GBCR.UI, "clockTicker")
+    cancelTimer(GBCR.UI, "syncPulseTicker")
+    cancelTimer(GBCR.UI, "searchTimer")
+    cancelTimer(GBCR.UI, "resizeTimer")
 end
 
 -- Export functions for other modules

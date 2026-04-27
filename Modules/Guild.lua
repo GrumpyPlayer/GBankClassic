@@ -556,7 +556,7 @@ local function rebuildGuildRosterInfo(self)
                                          Globals.ColorizeText(Constants.COLORS.GOLD, name))
                         GBCR.Output:Debug("ROSTER", "Authority wiped data for removed guild bank alt: %s", name)
                     end
-                    GBCR.UI.Inventory:MarkAllDirty()
+                    GBCR.UI:MarkAllDirty()
                 end
 
                 GBCR.Database.savedVariables.roster.alts = GBCR.Database.savedVariables.roster.alts or {}
@@ -637,7 +637,7 @@ local function rebuildGuildRosterInfo(self)
                             if GBCR.Database.savedVariables.alts and GBCR.Database.savedVariables.alts[name] then
                                 GBCR.Database.savedVariables.alts[name] = nil
                                 GBCR.Output:Debug("ROSTER", "Non-authority wiped data for removed guild bank alt: %s", name)
-                                GBCR.UI.Inventory:MarkAllDirty()
+                                GBCR.UI:MarkAllDirty()
                             end
                         end
                     end
@@ -685,8 +685,8 @@ local function rebuildGuildRosterInfo(self)
 
             GBCR.Output:Debug("ROSTER", "Roster operations complete after %.2fms", debugprofilestop() - overallStart)
 
-            GBCR.UI.Inventory.lastKnownOfficerState = nil
-            GBCR.UI.Inventory.lastKnownBankAltState = nil
+            GBCR.UI.lastKnownOfficerState = nil
+            GBCR.UI.lastKnownBankAltState = nil
             GBCR.Protocol:PruneStaleProtocolStates()
             GBCR.Protocol:CleanupPendingSync()
             GBCR.Protocol:SendHello()
@@ -787,8 +787,8 @@ local function areWeGuildBankAlt(self)
                           "areWeGuildBankAlt: weAreGuildBankAlt=false but no officer-note access, deferring to async rebuild")
     end
 
-    GBCR.UI.Inventory.lastKnownOfficerState = nil
-    GBCR.UI.Inventory.lastKnownBankAltState = nil
+    GBCR.UI.lastKnownOfficerState = nil
+    GBCR.UI.lastKnownBankAltState = nil
     GBCR.UI:QueueUIRefresh()
 end
 
@@ -861,14 +861,14 @@ local function resetGuild(self)
         return
     end
 
-    GBCR.UI.Inventory:Close()
+    GBCR.UI:Close()
     GBCR.Database:ResetGuildDatabase(guildName)
     GBCR.Database.savedVariables = GBCR.Database:Load(guildName)
 
     self.isGuildRosterReady = nil
     rebuildGuildRosterInfo(self)
 
-    GBCR.UI.Inventory:MarkAllDirty()
+    GBCR.UI:MarkAllDirty()
 
     GBCR.UI:QueueUIRefresh()
 end

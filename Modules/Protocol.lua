@@ -206,7 +206,7 @@ local function processItemQueue(self)
                                         item.itemLink = nil
                                     end
 
-                                    GBCR.UI.Inventory.itemsHydrated = false
+                                    GBCR.UI.itemsHydrated = false
                                     GBCR.UI:QueueUIRefresh()
 
                                     if not Protocol.isProcessingQueue and Protocol.itemQueueHead < Protocol.itemQueueTail then
@@ -335,20 +335,18 @@ local function setAltProtocolState(self, altName, newState)
     After(0, function()
         self.uiStatePending = false
 
-        if GBCR.UI and GBCR.UI.Inventory then
-            local active = false
+        local active = false
 
-            for _, s in pairs(Protocol.protocolStates) do
-                if s == Constants.STATE.RECEIVING or s == Constants.STATE.DISCOVERING or s == Constants.STATE.REQUESTING then
-                    active = true
+        for _, s in pairs(Protocol.protocolStates) do
+            if s == Constants.STATE.RECEIVING or s == Constants.STATE.DISCOVERING or s == Constants.STATE.REQUESTING then
+                active = true
 
-                    break
-                end
+                break
             end
-
-            GBCR.UI.Inventory:SetSyncing(active)
-            GBCR.UI.Inventory:NotifyStateChanged()
         end
+
+        GBCR.UI:SetSyncing(active)
+        GBCR.UI:NotifyStateChanged()
     end)
 end
 
@@ -757,7 +755,7 @@ local function sendFingerprint(self, target, force)
         return
     end
 
-    GBCR.UI.Inventory:SetSyncing(true)
+    GBCR.UI:SetSyncing(true)
 
     local data = serializePayload(version)
     if target then
@@ -768,7 +766,7 @@ local function sendFingerprint(self, target, force)
 
     After(1.5, function()
         if Protocol.activeOutboundWhispers == 0 then
-            GBCR.UI.Inventory:SetSyncing(false)
+            GBCR.UI:SetSyncing(false)
         end
     end)
 end
@@ -1169,7 +1167,7 @@ local function sendData(self, name, target)
         return
     end
 
-    GBCR.UI.Inventory:SetSyncing(true)
+    GBCR.UI:SetSyncing(true)
 
     local channel = target and "WHISPER" or "GUILD"
     local dest = target or nil
@@ -1182,7 +1180,7 @@ local function sendData(self, name, target)
             local data = serializePayload(payload)
             sendWhisper("gbc-data-query", data, dest, "NORMAL")
 
-            GBCR.UI.Inventory:SetSyncing(false)
+            GBCR.UI:SetSyncing(false)
 
             return
         end
@@ -1207,12 +1205,12 @@ local function sendData(self, name, target)
             self.activeOutboundWhispers = math_max(0, self.activeOutboundWhispers - 1)
 
             if isComplete and norm == GBCR.Guild:GetNormalizedPlayerName() then
-                GBCR.UI.Network:RecordSuccessfulSeed(dest or "guild")
+                GBCR.UI.RecordSuccessfulSeed(dest or "guild")
             else
-                GBCR.UI.Inventory:SetSyncing(false)
+                GBCR.UI:SetSyncing(false)
             end
         else
-            GBCR.UI.Inventory:SetSyncing(false)
+            GBCR.UI:SetSyncing(false)
         end
     end
 
@@ -1244,7 +1242,7 @@ local function sendData(self, name, target)
             self.activeOutboundWhispers = math_max(0, self.activeOutboundWhispers - 1)
         end
 
-        GBCR.UI.Inventory:SetSyncing(false)
+        GBCR.UI:SetSyncing(false)
 
         return
     end
@@ -1344,7 +1342,7 @@ local function receiveData(self, incomingData, sender)
 
     GBCR.Output:Debug("SYNC", "receiveData: accepted and saved guild bank alt data for %s", incomingAltName)
 
-    GBCR.UI.Inventory:MarkAltDirty(incomingAltName)
+    GBCR.UI:MarkAltDirty(incomingAltName)
     self.cachedStateHash = nil
 
     if self.requestTimeoutTimers[incomingAltName] then
@@ -1372,7 +1370,7 @@ local function receiveData(self, incomingData, sender)
         setAltProtocolState(self, incomingAltName, Constants.STATE.IDLE)
     end)
 
-    GBCR.UI.Network:RecordReceived(incomingAltName, sender)
+    GBCR.UI.RecordReceived(incomingAltName, sender)
 
     return Constants.ADOPTION_STATUS.ADOPTED
 end
@@ -2051,7 +2049,7 @@ local function processRosterData(self, data, sender)
     end
 
     if removedAny then
-        GBCR.UI.Inventory:MarkAllDirty()
+        GBCR.UI:MarkAllDirty()
         local guildBankAlts = GBCR.Guild.cachedGuildBankAlts
         local onlineGuildBankAlts = GBCR.Guild.cachedOnlineGuildBankAlts
         for _, name in ipairs(oldAlts) do

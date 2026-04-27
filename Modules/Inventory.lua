@@ -630,7 +630,7 @@ local function scanInventory(self)
                           tostring(currentItemsHash))
 
         GBCR.Protocol:SendAnnounce(GBCR.Guild:GetNormalizedPlayerName())
-        GBCR.UI.Inventory:MarkAltDirty(player)
+        GBCR.UI:MarkAltDirty(player)
     else
         GBCR.Output:Debug("INVENTORY", "No inventory changes for %s, version unchanged (itemsHash=%s)", player,
                           tostring(currentItemsHash))

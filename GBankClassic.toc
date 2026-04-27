@@ -21,9 +21,7 @@ Modules/Chat.lua
 Modules/Guild.lua
 Modules/Inventory.lua
 Modules/UI.lua
-Modules/UI/Inventory.lua
 Modules/UI/Debug.lua
-Modules/UI/Network.lua
 Modules/UI/Minimap.lua
 Modules/Ledger.lua
 Modules/Events.lua

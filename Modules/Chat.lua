@@ -105,7 +105,7 @@ end
 -- Helper to execute chat commands (toggles the UI if no other arguments are provided)
 local function chatCommand(input)
     if input == nil or input == "" then
-        GBCR.UI.Inventory:Toggle()
+        GBCR.UI:Toggle()
     else
         local prefix, arg1 = GBCR.Addon:GetArgs(input, 2)
         local handler = commandHandlers[prefix]

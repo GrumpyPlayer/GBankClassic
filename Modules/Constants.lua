@@ -87,7 +87,7 @@ local commandRegistry = {
         name = "config",
         help = "open configuration options",
         handler = function()
-            GBCR.UI.Inventory:ToggleTab("configuration")
+            GBCR.UI:ToggleTab("configuration")
         end
     },
     {
@@ -201,7 +201,7 @@ local commandRegistry = {
         help = "clear the debug output",
         expert = true,
         handler = function()
-            GBCR.UI:ClearDebugContent()
+            GBCR.UI.ClearDebugContent()
         end
     },
     {
@@ -259,14 +259,14 @@ local commandRegistry = {
         name = "conf", -- alternative to `/bank config`
         help = "open configuration options",
         handler = function()
-            GBCR.UI.Inventory:ToggleTab("configuration")
+            GBCR.UI:ToggleTab("configuration")
         end
     },
     {
         name = "options", -- alternative to `/bank config`
         help = "open configuration options",
         handler = function()
-            GBCR.UI.Inventory:ToggleTab("configuration")
+            GBCR.UI:ToggleTab("configuration")
         end
     },
     {

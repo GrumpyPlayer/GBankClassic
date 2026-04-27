@@ -69,7 +69,7 @@ local function log(self, level, prefix, fmt, ...)
         local timeStr = date("%H:%M:%S", GetServerTime())
         bufferContent(self, timeStr .. ": " .. (prefix or "") .. " " .. message)
 
-        GBCR.UI:QueueDebugLogRefresh()
+        GBCR.UI.QueueDebugLogRefresh()
 
         return true
     end

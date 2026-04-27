@@ -310,7 +310,7 @@ local function registerEvents(self)
     hooksecurefunc("ChatEdit_InsertLink", function(itemLink)
         GBCR.Output:Debug("EVENTS", "ChatEdit_InsertLink function fired")
 
-        GBCR.UI.Inventory:OnChatEdit_InsertLink(itemLink)
+        GBCR.UI:OnChatEdit_InsertLink(itemLink)
     end)
 
     Events.eventsRegistered = true
@@ -474,7 +474,7 @@ function Events:PLAYER_ENTERING_WORLD(_, isInitialLogin, isReloadingUi)
         GBCR.Protocol:SendStateHash()
     end
 
-    GBCR.UI.Inventory:MarkAllDirty()
+    GBCR.UI:MarkAllDirty()
     GBCR.Guild.weAreGuildBankAlt = nil
 
     After(Constants.TIMER_INTERVALS.NEW_SESSION_WARN_DELAY, function()
@@ -548,8 +548,8 @@ function Events:GUILD_RANKS_UPDATE()
         GBCR.Guild.weCanViewOfficerNotes = Globals.CanViewOfficerNote()
         GBCR.Guild.weCanEditOfficerNotes = Globals.CanEditOfficerNote()
         GBCR.Guild:IsAnyoneAuthority()
-        GBCR.UI.Inventory.lastKnownBankAltState = nil
-        GBCR.UI.Inventory.lastKnownOfficerState = nil
+        GBCR.UI.lastKnownBankAltState = nil
+        GBCR.UI.lastKnownOfficerState = nil
         GBCR.Options.InitGuildBankAltOptions()
         GBCR.UI:QueueUIRefresh()
     elseif GBCR.Guild.isGuildRosterRebuilding or GBCR.Guild.timerRebuildGuildRosterInfo then
@@ -564,7 +564,7 @@ function Events:PLAYER_REGEN_DISABLED()
 
     GBCR.Protocol:UpdateSafetyLockout()
     if GBCR.Options:GetCombatHide() then
-        GBCR.UI.Inventory:Close()
+        GBCR.UI:Close()
     end
 end
 
@@ -625,7 +625,7 @@ function Events:GET_ITEM_INFO_RECEIVED(_, itemID, success)
 
     GBCR.Output:Debug("EVENTS", "GET_ITEM_INFO_RECEIVED: data resolved for %d, queuing icon refresh", itemID)
 
-    GBCR.UI.Inventory.itemsHydrated = false
+    GBCR.UI.itemsHydrated = false
     GBCR.UI:QueueUIRefresh()
 
     if GBCR.Guild.weAreGuildBankAlt then
@@ -640,8 +640,8 @@ function Events:GET_ITEM_INFO_RECEIVED(_, itemID, success)
         end)
     end
 
-    if success and GBCR.UI.Inventory.currentTab == "ledger" and GBCR.UI.Inventory.refreshLedger then
-        GBCR.UI.Inventory.refreshLedger()
+    if success and GBCR.UI.currentTab == "ledger" and GBCR.UI.refreshLedger then
+        GBCR.UI.refreshLedger()
     end
 end
 

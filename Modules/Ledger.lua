@@ -339,7 +339,7 @@ local function appendLedger(self, altName, itemString, count, actorUid, opCode, 
 
         Output:Debug("LEDGER", "Ledger changed for %s, version updated to %d", altName, alt.version)
         GBCR.Protocol:SendAnnounce(GBCR.Guild:GetNormalizedPlayerName())
-        GBCR.UI.Inventory:MarkAltDirty(altName)
+        GBCR.UI:MarkAltDirty(altName)
 
         self.timerLedgerUpdateBroadcast = nil
     end)

@@ -254,7 +254,7 @@ local function loadGuild(self, guildName)
                         end
                     end
 
-                    GBCR.UI.Inventory:MarkAllDirty()
+                    GBCR.UI:MarkAllDirty()
                     GBCR.UI:QueueUIRefresh()
                 end
 
@@ -265,7 +265,7 @@ local function loadGuild(self, guildName)
                 return
             end
 
-            GBCR.UI.Inventory:MarkAllDirty()
+            GBCR.UI:MarkAllDirty()
             GBCR.UI:QueueUIRefresh()
             Output:Debug("DATABASE", "Async maintenance complete for %d alts (gen %d)", altCount, myGen)
         end
