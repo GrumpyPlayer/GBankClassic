@@ -380,7 +380,7 @@ end
 local function shouldSkipGuildEvent(eventName)
     if not IsInGuild() then
         GBCR.Guild:ClearGuildCaches()
-        GBCR.Events:UnregisterGuildBankAltEvents()
+        unregisterGuildBankAltEvents()
 
         return true
     end
