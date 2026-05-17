@@ -183,12 +183,12 @@ local function loadGuild(self, guildName)
         end
 
         GBCR.Database.loadGeneration = (GBCR.Database.loadGeneration or 0) + 1
-        local myGen = GBCR.Database.loadGeneration
+        local myLoadGeneration = GBCR.Database.loadGeneration
         local altIndex = 1
 
         local function processAltsLoop()
-            if myGen ~= GBCR.Database.loadGeneration then
-                Output:Debug("DATABASE", "Async maintenance aborted (stale generation %d)", myGen)
+            if myLoadGeneration ~= GBCR.Database.loadGeneration then
+                Output:Debug("DATABASE", "Async maintenance aborted (stale generation %d)", myLoadGeneration)
 
                 return
             end
@@ -198,24 +198,22 @@ local function loadGuild(self, guildName)
 
             while altIndex <= altCount do
                 iterations = iterations + 1
-                local altName = altNames[altIndex]
-                local alt = db.alts[altName]
-
-                if not alt then
-                    altIndex = altIndex + 1
-                else
-                    decompressIfNeeded(alt, "cacheCompressed", "cache", decompressData)
-                    decompressIfNeeded(alt, "itemsCompressed", "items", decompressData)
-                    decompressIfNeeded(alt, "ledgerCompressed", "ledger", decompressData)
-
-                    protocol:ReconstructItemLinks(alt.items)
-                    altIndex = altIndex + 1
-                end
 
                 if shouldYield(startTime, iterations, 1, 10) then
                     After(0, processAltsLoop)
 
                     return
+                end
+
+                local altName = altNames[altIndex]
+                local alt = db.alts[altName]
+                altIndex = altIndex + 1
+
+                if alt then
+                    decompressIfNeeded(alt, "cacheCompressed", "cache", decompressData)
+                    decompressIfNeeded(alt, "itemsCompressed", "items", decompressData)
+                    decompressIfNeeded(alt, "ledgerCompressed", "ledger", decompressData)
+                    protocol:ReconstructItemLinks(alt.items)
                 end
             end
 
@@ -233,6 +231,10 @@ local function loadGuild(self, guildName)
                 local missedAlt = 1
 
                 local function secondaryPass()
+                    if myLoadGeneration ~= GBCR.Database.loadGeneration then
+                        return
+                    end
+
                     local startTimeSecondaryPass = debugprofilestop()
                     local iterationsSecondaryPass = 0
 
@@ -261,13 +263,13 @@ local function loadGuild(self, guildName)
                 After(0, secondaryPass)
             end
 
-            if myGen ~= GBCR.Database.loadGeneration then
+            if myLoadGeneration ~= GBCR.Database.loadGeneration then
                 return
             end
 
             GBCR.UI:MarkAllDirty()
             GBCR.UI:QueueUIRefresh()
-            Output:Debug("DATABASE", "Async maintenance complete for %d alts (gen %d)", altCount, myGen)
+            Output:Debug("DATABASE", "Async maintenance complete for %d alts (gen %d)", altCount, myLoadGeneration)
         end
 
         if altCount > 0 then
