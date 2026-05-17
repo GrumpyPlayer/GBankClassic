@@ -733,10 +733,10 @@ local function registerCustomUI(self)
             local cursorX = GetCursorPosition() / uiScale
             local leftEdge = content:GetLeft()
             local newWidth = cursorX - leftEdge
-            local maxLeftWidth = content:GetWidth() - 200 - self:GetWidth()
+            local maxLeftWidth = content:GetWidth() - 200 - self:GetWidth() -- TODO
 
-            if newWidth < 200 then
-                newWidth = 200
+            if newWidth < 200 then -- TODO
+                newWidth = 200 -- TODO
             end
             if newWidth > maxLeftWidth then
                 newWidth = maxLeftWidth
@@ -752,14 +752,14 @@ local function registerCustomUI(self)
             content.obj:PerformLayout()
         end)
 
-        local maxAllowedLeft = width - 300 - resizer:GetWidth()
+        local maxAllowedLeft = width - 300 - resizer:GetWidth() -- TODO
         local effectiveLeftWidth = UI.activeCartLeftPaneWidth
 
         if effectiveLeftWidth > maxAllowedLeft then
             effectiveLeftWidth = maxAllowedLeft
         end
-        if effectiveLeftWidth < 300 then
-            effectiveLeftWidth = 300
+        if effectiveLeftWidth < 300 then -- TODO
+            effectiveLeftWidth = 300 -- TODO
         end
 
         if leftPane then
@@ -821,10 +821,10 @@ local function registerCustomUI(self)
             local cursorX = GetCursorPosition() / uiScale
             local rightEdge = content:GetRight()
             local newWidth = rightEdge - cursorX
-            local maxPreviewWidth = content:GetWidth() - 202 - self:GetWidth()
+            local maxPreviewWidth = content:GetWidth() - 202 - self:GetWidth() -- TODO
 
-            if newWidth < 200 then
-                newWidth = 200
+            if newWidth < 200 then -- TODO
+                newWidth = 200 -- TODO
             end
             if newWidth > maxPreviewWidth then
                 newWidth = maxPreviewWidth
@@ -840,14 +840,14 @@ local function registerCustomUI(self)
             content.obj:PerformLayout()
         end)
 
-        local maxAllowedPreview = contentWidth - 218 - resizer:GetWidth()
+        local maxAllowedPreview = contentWidth - 218 - resizer:GetWidth() -- TODO
         local effectivePreviewWidth = UI.activePreviewRightPaneWidth
 
         if effectivePreviewWidth > maxAllowedPreview then
             effectivePreviewWidth = maxAllowedPreview
         end
-        if effectivePreviewWidth < 200 then
-            effectivePreviewWidth = 200
+        if effectivePreviewWidth < 200 then -- TODO
+            effectivePreviewWidth = 200 -- TODO
         end
 
         if gridPanel then
@@ -1687,7 +1687,6 @@ local function drawBrowsePanel(self, container)
     container:ReleaseChildren()
     container:SetLayout("GBCR_ThreePane")
 
-    -- Search and filters
     local filters = aceGUI:Create("SimpleGroup")
     filters:SetLayout("Flow")
     container:AddChild(filters)
@@ -1814,7 +1813,6 @@ local function drawBrowsePanel(self, container)
     filters:AddChild(resetFiltersBtn)
     self.filters.resetBtn = resetFiltersBtn
 
-    -- Item grid
     local gridContainer = aceGUI:Create("InlineGroup")
     gridContainer:SetTitle("")
     gridContainer:SetLayout("Fill")
@@ -1832,7 +1830,6 @@ local function drawBrowsePanel(self, container)
     emptyLabel:Hide()
     self.emptyLabel = emptyLabel
 
-    -- Item preview
     local preview = aceGUI:Create("InlineGroup")
     preview:SetTitle("")
     preview:SetLayout("Flow")
@@ -2101,11 +2098,8 @@ local function getEnchantTextFromTooltip(self, itemLink)
             local text = fontString:GetText()
             if text then
                 local r, g, b = fontString:GetTextColor()
-                -- Enchants are rendered in pure green (r=0, g=1, b=0)
                 if g > 0.9 and r < 0.2 and b < 0.2 then
-                    -- Ignore "Equip:", "Use:", and "Set:" bonuses which are also green
                     if not string_match(text, "^Equip:") and not string_match(text, "^Use:") and not string_match(text, "^Set:") then
-                        -- Remove any UI escape sequences just in case
                         return string_gsub(string_gsub(text, "|c%x%x%x%x%x%x%x%x", ""), "|r", "")
                     end
                 end
@@ -2146,7 +2140,7 @@ local function generateImportString(sortedCartItems)
     local _myRank = (_myEntry and _myEntry.rankIndex) or 0
     local payload = {r = _myNorm, t = GetServerTime(), i = items, rk = _myRank}
     local serialized = GBCR.Libs.LibSerialize:Serialize(payload)
-    local compressed = GBCR.Libs.LibDeflate:CompressDeflate(serialized, {level = 9})
+    local compressed = GBCR.Libs.LibDeflate:CompressDeflate(serialized, {level = 9}) -- TODO
 
     return importPrefix .. GBCR.Libs.LibDeflate:EncodeForPrint(compressed)
 end
@@ -2218,12 +2212,10 @@ local function drawCartTab(self, container)
     self.cart = split
     container:AddChild(split)
 
-    -- Left pane
     local leftWrapper = aceGUI:Create("SimpleGroup")
     leftWrapper:SetLayout("GBCR_TopBottom")
     split:AddChild(leftWrapper)
 
-    -- Left pane: top action buttons
     local cartActions = aceGUI:Create("SimpleGroup")
     cartActions:SetFullWidth(true)
     cartActions:SetLayout("Flow")
@@ -2244,14 +2236,12 @@ local function drawCartTab(self, container)
     cartActions:AddChild(refreshCartExportBtn)
     self.cart.actions.refreshExport = refreshCartExportBtn
 
-    -- Left pane: grouping beneath top action buttons
     local leftPane = aceGUI:Create("InlineGroup")
     leftPane:SetTitle("")
     leftPane:SetLayout("Fill")
     leftWrapper:AddChild(leftPane)
     self.cart.leftPane = leftPane
 
-    -- Left pane: scroll list within the grouping
     local cartScroll = aceGUI:Create("ScrollFrame")
     cartScroll:SetLayout("Flow")
     leftPane:AddChild(cartScroll)
@@ -2262,7 +2252,6 @@ local function drawCartTab(self, container)
     split:AddChild(rightWrapper)
     self.cart.rightPane = rightWrapper
 
-    -- Top import code
     local importGroup = aceGUI:Create("InlineGroup")
     importGroup:SetTitle("Import code")
     importGroup:SetFullWidth(true)
@@ -2290,7 +2279,6 @@ local function drawCartTab(self, container)
     importGroup:AddChild(copyImportCartBtn)
     self.cart.copyImportCartBtn = copyImportCartBtn
 
-    -- Bottom Discord export
     local exportArea = aceGUI:Create("SimpleGroup")
     exportArea:SetFullWidth(true)
     exportArea:SetFullHeight(true)
@@ -2384,7 +2372,6 @@ function callbacks.onClickRefreshCartExportBtn()
         return
     end
 
-    -- Build allocations
     local allocationsByBank = {}
     local unassignedItems = {}
 
@@ -2468,7 +2455,6 @@ function callbacks.onClickRefreshCartExportBtn()
     end
     lines[#lines + 1] = "_Generated by " .. GBCR.Core.addonHeader .. "_"
 
-    -- Populate import code box
     local importStr = generateImportString(module.sortedCartItems)
     if module.cart and module.cart.importBox then
         module.cart.importBox:SetText(importStr or "nothing to do")
@@ -2478,7 +2464,6 @@ function callbacks.onClickRefreshCartExportBtn()
         end
     end
 
-    -- Measure Discord chunk info
     local totalChars = 0
     for _, ln in ipairs(lines) do
         totalChars = totalChars + string_len(ln) + 1
@@ -2491,7 +2476,6 @@ function callbacks.onClickRefreshCartExportBtn()
                                                                  totalChars, numChunks, discordMaxChar)) or
                           Globals.ColorizeText(colorGray, string_format("%d characters, fits in one Discord message", totalChars))
 
-    -- Stream Discord text into exportArea
     if not (module.cart and module.cart.exportArea) then
         return
     end
@@ -2509,7 +2493,6 @@ function callbacks.onClickRefreshCartExportBtn()
         return ln
     end
 
-    -- Info label above the stream (shows chunk count)
     local infoWrapper = aceGUI:Create("SimpleGroup")
     infoWrapper:SetFullWidth(true)
     infoWrapper:SetLayout("GBCR_TopBottom")
@@ -2562,10 +2545,8 @@ local function drawLedgerTab(self, container)
     container:SetLayout("GBCR_TopBottom")
     local sv = GBCR.Database.savedVariables
 
-    -- Track active sub-view: "ledger", "export", or "donors"
     local currentView = "ledger"
 
-    -- Top container
     local controlGroup = aceGUI:Create("SimpleGroup")
     controlGroup:SetFullWidth(true)
     controlGroup:SetLayout("Flow")
@@ -2606,7 +2587,6 @@ local function drawLedgerTab(self, container)
     exportLedgerBtn:SetWidth(140)
     controlGroup:AddChild(exportLedgerBtn)
 
-    -- Bottom container
     local bottomArea = aceGUI:Create("SimpleGroup")
     bottomArea:SetFullWidth(true)
     bottomArea:SetFullHeight(true)
@@ -2737,11 +2717,10 @@ local function drawLedgerTab(self, container)
         populateLedgerGen = populateLedgerGen + 1
         local myGeneration = populateLedgerGen
 
-        local MAX_ENTRIES = Constants.LEDGER.MAX_ENTRIES -- cap before sort to keep sort < 5ms
+        local MAX_ENTRIES = Constants.LEDGER.MAX_ENTRIES
         local COLLECT_BATCH = 1000 -- TODO
 
         if selectedAlt ~= "Show all guild banks" then
-            -- Single alt: small ledger, can collect synchronously
             local altData = sv and sv.alts and sv.alts[selectedAlt]
             local entries = {}
 
@@ -2763,7 +2742,6 @@ local function drawLedgerTab(self, container)
             return
         end
 
-        -- "Show all guild banks": async collection across all alts
         local entries = {}
         local altPairs = {}
 
@@ -3152,7 +3130,6 @@ end
 local function drawExportTab(_, container)
     container:SetLayout("GBCR_TopBottom")
 
-    -- Top controls
     local controlGroup = aceGUI:Create("SimpleGroup")
     controlGroup:SetFullWidth(true)
     controlGroup:SetLayout("Flow")
@@ -3171,7 +3148,6 @@ local function drawExportTab(_, container)
     exportBtn:SetWidth(140)
     controlGroup:AddChild(exportBtn)
 
-    -- Bottom box
     local boxContainer = aceGUI:Create("SimpleGroup")
     boxContainer:SetFullWidth(true)
     boxContainer:SetFullHeight(true)
@@ -4218,7 +4194,6 @@ local function drawFulfillmentTab(self, container)
     self.requestsTabGeneration = (self.requestsTabGeneration or 0) + 1
     local myGeneration = self.requestsTabGeneration
 
-    -- Top controls (stacked vertically so label, input, button, status are aligned)
     local fulfillmentTopGroup = aceGUI:Create("SimpleGroup")
     fulfillmentTopGroup:SetFullWidth(true)
     fulfillmentTopGroup:SetLayout("List")
@@ -4248,7 +4223,6 @@ local function drawFulfillmentTab(self, container)
     self.fulfillmentInputLabelOriginal = inputLabelOriginal
     fulfillmentTopGroup:AddChild(inputLabelOriginal)
 
-    -- Row: editbox fills width, button is fixed on the right
     local inputRow = aceGUI:Create("SimpleGroup")
     inputRow:SetFullWidth(true)
     inputRow:SetLayout("Table")
@@ -4257,7 +4231,7 @@ local function drawFulfillmentTab(self, container)
     fulfillmentTopGroup:AddChild(inputRow)
 
     local fulfillmentImportInput = aceGUI:Create("EditBox")
-    fulfillmentImportInput:SetLabel("") -- label text moved above
+    fulfillmentImportInput:SetLabel("")
     fulfillmentImportInput:SetFullWidth(true)
     if fulfillmentImportInput.label then
         fulfillmentImportInput.label:Hide()
@@ -4278,7 +4252,6 @@ local function drawFulfillmentTab(self, container)
     self.fulfillmentStatusLabel = statusLabel
     fulfillmentTopGroup:AddChild(statusLabel)
 
-    -- Bottom: fulfillment table
     local bottomGroup = aceGUI:Create("InlineGroup")
     bottomGroup:SetTitle("What to retrieve from where")
     bottomGroup:SetFullWidth(true)
@@ -4296,7 +4269,6 @@ local function drawFulfillmentTab(self, container)
     local function renderFulfillment(requestData)
         scroll:ReleaseChildren()
 
-        -- Fixed header
         local hdr = aceGUI:Create("Label")
         hdr:SetFullWidth(true)
         hdr:SetText(string_format("Request from %s, created %s",
@@ -4308,7 +4280,6 @@ local function drawFulfillmentTab(self, container)
         sp1:SetText(" ")
         scroll:AddChild(sp1)
 
-        -- Rank gate
         do
             local _rf = GBCR.Options:GetRankFulfillment()
             local _rk = requestData.rk
@@ -4327,7 +4298,6 @@ local function drawFulfillmentTab(self, container)
             end
         end
 
-        -- Per-location item counts
         local myName = GBCR.Guild:GetNormalizedPlayerName()
         local sv_ = GBCR.Database.savedVariables
         local myAlt = sv_ and sv_.alts and sv_.alts[myName]
@@ -4337,7 +4307,6 @@ local function drawFulfillmentTab(self, container)
         local inBank = countById(cache and cache.bank)
         local inMail = countById(cache and cache.mail)
 
-        -- Column header row
         local colHdr = aceGUI:Create("SimpleGroup")
         colHdr:SetFullWidth(true)
         colHdr:SetLayout("Table")
@@ -4357,7 +4326,6 @@ local function drawFulfillmentTab(self, container)
         createHeaderLabel("Mail")
         scroll:AddChild(colHdr)
 
-        -- Async batch state
         local itemEntries = requestData.i or {}
         local totalEntries = #itemEntries
         local batchPosition = 1
@@ -5099,17 +5067,6 @@ local function buildFilteredList(self, callback)
             end
         end
 
-        -- local browseTabText = "Browse"
-        -- if self.tabs and self.tabs.tabs then
-        --     for _, tab in pairs(self.tabs.tabs) do
-        --         if tab.value == "browse" then
-        --             tab:SetText(browseTabText)
-
-        --             break
-        --         end
-        --     end
-        -- end
-
         updateFilterStatus(self)
 
         if callback then
@@ -5125,8 +5082,6 @@ local function buildFilteredList(self, callback)
     local searchText = string_lower(self.searchText or "")
     local searchTokens = parseSearchQuery(searchText)
 
-    -- Corpus fast-reject: for plain text searches with no operator tokens, scan unique names (~5k) instead of all items (~142k)
-    -- Operator tokens (q:, t:, s:, lvl>, ilvl<=) search dimensions other than name, so the corpus cannot reject them
     if searchText ~= "" and #self.corpus > 0 then
         local hasOperator = false
         for _, token in ipairs(searchTokens) do
@@ -5138,7 +5093,6 @@ local function buildFilteredList(self, callback)
         end
 
         if not hasOperator then
-            -- Pure name search: corpus can definitively answer "zero results possible"
             local corpusMatch = false
             for ci = 1, #self.corpus do
                 if string_find(self.corpus[ci].lower, searchText, 1, true) then
@@ -5623,7 +5577,6 @@ local function updateDynamicTabs(self)
 
     GBCR.Libs.AceConfigRegistry:NotifyChange(addonName)
 
-    -- HookScript on Enable/Disable attempts to bypass TSM + Auctioneer font-object overrides which both reset tab text to white when run together
     if self.tabs.tabs then
         for _, tabButton in pairs(self.tabs.tabs) do
             tabButton:SetNormalFontObject(GameFontNormal)
@@ -5644,13 +5597,13 @@ local function updateDynamicTabs(self)
                     local fs = btn:GetFontString()
                     if fs then
                         fs:SetTextColor(1, 0.82, 0)
-                    end -- gold = unselected
+                    end
                 end)
                 tabButton:HookScript("OnDisable", function(btn)
                     local fs = btn:GetFontString()
                     if fs then
                         fs:SetTextColor(1, 1, 1)
-                    end -- white = selected/active
+                    end
                 end)
             end
 
@@ -5861,7 +5814,6 @@ local function getTabStatusText(self)
     local sv = GBCR.Database and GBCR.Database.savedVariables
 
     if tab == "browse" then
-        -- Already handled by updateStatusText
         return nil
     elseif tab == "cart" then
         local uniqueCount = self.cartCount or 0
@@ -5940,7 +5892,6 @@ end
 -- Update the protocol state
 local function notifyStateChanged(self)
     if self and self.isOpen then
-        -- Status bar: browse tab has its own richer updateStatusText; all others use getTabStatusText
         if self.currentTab == "browse" then
             updateStatusText(self)
         else
@@ -5950,7 +5901,6 @@ local function notifyStateChanged(self)
             end
         end
 
-        -- Top-bar text: re-evaluate for tabs whose message depends on runtime state
         if self.topBar and self.topBar.topBarText then
             local newMsg = getTabTopBarMessage(self.currentTab)
             if newMsg ~= self.topBarBaseText then
@@ -6134,7 +6084,6 @@ local function refreshUI(self)
                 end
             end
 
-            -- If the fast path succeeded without finding new items, finalize and return
             if not requiresFullRebuild then
                 wipe(self.itemsList)
                 local n = 0
@@ -6176,7 +6125,6 @@ local function refreshUI(self)
             proceedToRender()
         end)
     else
-        -- Nothing in the inventory changed, skip aggregation and corpus rebuild entirely
         proceedToRender()
     end
 end
@@ -6265,7 +6213,6 @@ local function drawWindow(self)
     self.originalBackdropBorderColor = {r or 1, g or 1, b or 1, a or 1}
     self:UpdateTransparency()
 
-    -- Top bar
     local topBar = aceGUI:Create("SimpleGroup")
     topBar:SetFullWidth(true)
     topBar:SetLayout("GBCR_NoLayout")
@@ -6307,7 +6254,6 @@ local function drawWindow(self)
     syncDot:Hide()
     self.syncDot = syncDot
 
-    -- Notice text
     local topBarText = aceGUI:Create("Label")
     topBarText:SetText("")
     topBarText:SetFontObject(GameFontHighlight)
@@ -6316,7 +6262,6 @@ local function drawWindow(self)
     self.topBar.topBarText = topBarText
     self.topBarBaseText = ""
 
-    -- Middle: tabs
     local tabs = aceGUI:Create("TabGroup")
     tabs:SetLayout("Fill")
     self.tabs = tabs
@@ -6325,7 +6270,6 @@ local function drawWindow(self)
     tabs:SetCallback("OnGroupSelected", callbacks.onGroupSelectedTabs)
     window:AddChild(tabs)
 
-    -- Bottom bar
     local bottomBar = aceGUI:Create("SimpleGroup")
     bottomBar:SetFullWidth(true)
     bottomBar:SetLayout("Flow")
@@ -6349,7 +6293,6 @@ local function drawWindow(self)
     bottomBar:AddChild(bottomBarButton)
     self.bottomBar.button = bottomBarButton
 
-    -- Status bar
     local statusbg = window.statustext:GetParent()
     statusbg:ClearAllPoints()
     statusbg:SetPoint("BOTTOMLEFT", window.frame, "BOTTOMLEFT", 15, 15)
@@ -6688,7 +6631,7 @@ local function init(self)
     self.lastBankDropdownHash = nil
 
     self.filterTree = drawBrowseFilterTree(self)
-    self.treeStatusTable = {treewidth = 175}
+    self.treeStatusTable = {treewidth = 175} -- TODO
 
     self.itemsHydrated = false
     self.filterStatus = ""

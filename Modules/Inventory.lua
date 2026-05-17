@@ -61,7 +61,7 @@ local function buildGlobalItemSourcesIndex(self, dirtyAlts, callback)
             dirtyCount = dirtyCount + 1
         end
 
-        if dirtyCount <= 8 then
+        if dirtyCount <= 8 then -- TODO
             if self.isFullRebuildRunning then
                 GBCR.Output:Debug("INVENTORY", "buildGlobalItemSourcesIndex: partial rebuild deferred (full rebuild in progress)")
                 if callback then

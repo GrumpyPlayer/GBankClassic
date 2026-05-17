@@ -117,7 +117,7 @@ local function getNormalizedPlayerName(self)
         self.retryScheduled = true
 
         local retryCount = 0
-        local maxRetries = 20
+        local maxRetries = 20 -- TODO
         local timer
 
         timer = NewTicker(0.1, function()

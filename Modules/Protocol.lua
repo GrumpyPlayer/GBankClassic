@@ -697,12 +697,19 @@ local function parseFingerprintPayload(payload)
     local isGuildBankAlt = payload[4]
 
     local alts = {}
-    local pos = 5
+    local position = 5
     local prev = baseVersion
 
-    while pos <= #payload - 1 do
-        local uid = payload[pos]
-        local delta = payload[pos + 1]
+    while position <= #payload - 1 do
+        local uid = payload[position]
+        local delta = payload[position + 1]
+
+        if type(delta) ~= "number" or delta < 0 then
+            GBCR.Output:Debug("SYNC", "parseFingerprintPayload: invalid delta %s at position %d, rejecting payload",
+                              tostring(delta), position)
+
+            return nil
+        end
 
         local version = prev + delta
         local name = Guild:FindGuildMemberByUid(uid)
@@ -712,10 +719,10 @@ local function parseFingerprintPayload(payload)
         end
 
         prev = version
-        pos = pos + 2
+        position = position + 2
     end
 
-    local rosterRaw = payload[pos]
+    local rosterRaw = payload[position]
     local rosterVersionTimestamp = (rosterRaw and rosterRaw ~= -1) and rosterRaw or nil
 
     return {
@@ -1718,8 +1725,8 @@ end
 
 -- Helper to determine what the login broadcast (gbc-hash) jitter should be based on online member count
 local function getAdaptiveLoginJitter()
-    local online = GBCR.Guild.cachedOnlineGuildMemberCount or 0
-    if online <= 5 then
+
+    if online <= 5 then -- TODO
         return math_random(3, 8)
     elseif online <= 20 then
         return math_random(5, 20)
@@ -1803,7 +1810,7 @@ end
 -- Helper to determine whether to accept data or not
 local function isAltDataAllowed(sender, claimedNorm)
     if not GBCR.Guild:GetGuildMemberInfo(sender) then
-        GBCR.Output:Debug("PROTOCOL", "Rejecting data from %s (not a guild member)", claimedNorm)
+        GBCR.Output:Debug("PROTOCOL", "Rejecting data from %s (not a guild member)", sender)
 
         return false
     end
