@@ -1268,6 +1268,10 @@ end
 
 -- Helper callback for the browse tab: mouse over an item
 function callbacks.onEnterBrowseItem(_, _, item)
+    if not item or item.aggregationGeneration ~= UI.aggregationGeneration then
+        return
+    end
+
     local link = (item.itemInfo and item.itemInfo.realLink) or item.itemLink
     showItemTooltip(link, item.sources)
 end
@@ -4803,7 +4807,7 @@ local function getItems(self, itemsArray, callback)
 
                 if needsFetch then
                     local name, link, rarity, level, minLevel, itemType, itemSubType, _, equipLoc, icon, price, itemClassId,
-                          itemSubClassId = GetItemInfo(item.itemLink or key)
+                          itemSubClassId = GetItemInfo(item.itemLink or item.validWoWString or key)
 
                     if name then
                         local wasFallback = cached and cached.isFallback
@@ -4851,11 +4855,37 @@ local function getItems(self, itemsArray, callback)
                                 isFallback = true
                             }
 
-                            if numId and numId > 0 and not GBCR.Inventory.pendingItemInfoLoads[numId] then
-                                GBCR.Inventory.pendingItemInfoLoads[numId] = true
-                                GetItemInfo(numId)
+                            if numId and numId > 0 then
+                                local fbName, fbLink, fbRarity, _, _, fbType, fbSubType, _, fbEquip, fbIcon, fbPrice, fbClassId,
+                                      fbSubClassId = GetItemInfo(numId)
+                                if fbName then
+                                    local equipId = GetItemInventoryTypeByID(numId) or 0
+
+                                    UI.itemInfoCache[key] = {
+                                        class = fbClassId or 0,
+                                        subClass = fbSubClassId or 0,
+                                        equipId = equipId,
+                                        rarity = fbRarity or 1,
+                                        name = fbName,
+                                        level = 1,
+                                        minLevel = 0,
+                                        price = fbPrice or 0,
+                                        icon = fbIcon or 134400,
+                                        typeLower = string_lower(fbType or ""),
+                                        subTypeLower = string_lower(fbSubType or ""),
+                                        equipLower = string_lower(fbEquip or ""),
+                                        realLink = fbLink,
+                                        isFallback = false
+                                    }
+
+                                    resolved = resolved + 1
+                                elseif not GBCR.Inventory.pendingItemInfoLoads[numId] then
+                                    GBCR.Inventory.pendingItemInfoLoads[numId] = true
+                                    GetItemInfo(numId)
+                                end
                             end
                         end
+
                         totalFallbacks = totalFallbacks + 1
                     end
                 end
@@ -4910,6 +4940,8 @@ local function getPooledAggItem(self)
         entry.itemCount = nil
         entry.itemId = nil
     end
+
+    entry.aggregationGeneration = self.aggregationGeneration
 
     return entry
 end
@@ -5031,14 +5063,13 @@ local function updateItemsList(self, callback)
         end
 
         if currentAggGen ~= self.aggregationGeneration then
+            local pool = self.aggItemPool
+            local safeCount = math_min(self.aggItemPoolCount, #pool)
+            for i = safeCount + 1, #pool do
+                pool[i] = nil
+            end
+
             return
-        end
-
-        local pool = self.aggItemPool
-        local cap = #pool
-
-        for i = self.aggItemPoolCount + 1, cap do
-            pool[i] = nil
         end
 
         if callback then
