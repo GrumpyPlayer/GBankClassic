@@ -32,11 +32,11 @@ local GetInboxNumItems = Globals.GetInboxNumItems
 local GetItemInfo = Globals.GetItemInfo
 local GetMoney = Globals.GetMoney
 local GetServerTime = Globals.GetServerTime
+local NewTimer = Globals.NewTimer
 local shouldYield = Globals.ShouldYield
 
 local attachmentsMaxReceive = Globals.ATTACHMENTS_MAX_RECEIVE
 local bankContainer = Globals.BANK_CONTAINER
-local itemBindOnAcquire = Globals.ITEM_BIND_ON_ACQUIRE
 local numBankGenericSlots = Globals.NUM_BANKGENERIC_SLOTS
 
 local Constants = GBCR.Constants
@@ -464,7 +464,7 @@ local function scanBag(self, bag, slots, targetTable)
                 if existing then
                     existing.itemCount = existing.itemCount + (itemInfo.stackCount or 1)
                 else
-                    if select(14, GetItemInfo(itemInfo.itemID)) ~= itemBindOnAcquire then
+                    if not itemInfo.isBound then
                         local entry = {}
                         entry.itemCount = itemInfo.stackCount or 1
 
@@ -568,38 +568,81 @@ local function scanMailInventory(self, mailTable)
     return true
 end
 
--- Helper total scan all items in bags, bank, and mail
-local function scanInventory(self)
+-- Helper to shallow-copy an item array (itemString + itemCount only)
+local function copyItemArray(sourceArray, destinationArray)
+    wipe(destinationArray)
+
+    for i = 1, #sourceArray do
+        local s = sourceArray[i]
+        destinationArray[i] = {itemString = s.itemString, itemCount = s.itemCount}
+    end
+end
+
+-- Helper for guards and alt-context lookup (returns info, player, alt or nil if scan should abort)
+local function getInventoryContext()
     local info = GBCR.Database.savedVariables
+
     if not info then
-        return
+        return nil
     end
 
     if not GBCR.Guild.weAreGuildBankAlt then
-        return
+        return nil
     end
 
     if not GBCR.Options:GetInventoryTrackingEnabled() then
-        return
+        return nil
     end
 
     local player = GBCR.Guild:GetNormalizedPlayerName()
-    local alt = info.alts and info.alts[player] or {}
+    local alt = (info.alts and info.alts[player]) or {}
 
     if not alt.cache then
         alt.cache = {}
     end
-    alt.cache.bank = alt.cache.bank or {}
-    alt.cache.bags = alt.cache.bags or {}
+
     alt.cache.mail = alt.cache.mail or {}
+    info.alts = info.alts or {}
+    info.alts[player] = alt
+
+    return info, player, alt
+end
+
+-- Scan bank into self.lastBankScan when bank is open
+local function scanBankNow(self)
+    wipe(self.lastBankScan)
 
     if isBankAvailable() then
-        wipe(alt.cache.bank)
-        scanBank(self, alt.cache.bank)
+        scanBank(self, self.lastBankScan)
     end
 
-    wipe(alt.cache.bags)
-    scanBags(self, alt.cache.bags)
+    GBCR.Output:Debug("INVENTORY", "scanBankNow: captured %d bank item stacks", #self.lastBankScan)
+end
+
+-- Scan bags into self.lastBagScan
+local function scanBagsNow(self)
+    wipe(self.lastBagScan)
+
+    scanBags(self, self.lastBagScan)
+
+    GBCR.Output:Debug("INVENTORY", "scanBagsNow: captured %d bag item stacks", #self.lastBagScan)
+end
+
+-- Deep-copy lastBankScan/lastBagScan into the close-time snapshot slots
+local function snapshotForBankClose(self)
+    copyItemArray(self.lastBankScan, self.bankSnapshotAtClose)
+    copyItemArray(self.lastBagScan, self.bagsSnapshotAtClose)
+
+    GBCR.Output:Debug("INVENTORY", "snapshotForBankClose: bank=%d stacks, bags=%d stacks", #self.bankSnapshotAtClose,
+                      #self.bagsSnapshotAtClose)
+end
+
+-- Helper to aggregate bankItems + bagItems, detect hash change, and announce if dirty
+local function commitInventory(self, bankItems, bagItems)
+    local info, player, alt = getInventoryContext()
+    if not info then
+        return
+    end
 
     local money = GetMoney()
     alt.money = money
@@ -610,16 +653,19 @@ local function scanInventory(self)
         self.mailHasUpdated = false
     end
 
-    recalculateAggregatedItems(self, alt.cache.bank, alt.cache.bags, alt.cache.mail, alt)
+    alt.cache.bank = bankItems
+    alt.cache.bags = bagItems
 
-    local previousItemsHash = alt.itemsHash
-    local currentItemsHash = computeItemsHash(self, alt.items, money)
-    alt.itemsHash = currentItemsHash
+    recalculateAggregatedItems(self, bankItems, bagItems, alt.cache.mail, alt)
 
-    if (not previousItemsHash and currentItemsHash) or currentItemsHash ~= previousItemsHash then
+    local previousHash = alt.itemsHash
+    local currentHash = computeItemsHash(self, alt.items, money)
+    alt.itemsHash = currentHash
+
+    if (not previousHash and currentHash) or currentHash ~= previousHash then
         alt.version = GetServerTime()
 
-        local networkMeta = GBCR.Database.savedVariables and GBCR.Database.savedVariables.networkMeta
+        local networkMeta = info.networkMeta
         if networkMeta then
             networkMeta.seedCount = 0
             networkMeta.lastSeedTime = nil
@@ -627,19 +673,75 @@ local function scanInventory(self)
         end
 
         GBCR.Output:Debug("INVENTORY", "Inventory changed for %s, version updated to %d (itemsHash=%s)", player, alt.version,
-                          tostring(currentItemsHash))
+                          tostring(currentHash))
 
-        GBCR.Protocol:SendAnnounce(GBCR.Guild:GetNormalizedPlayerName())
+        GBCR.Protocol:SendAnnounce(player)
         GBCR.UI:MarkAltDirty(player)
     else
-        GBCR.Output:Debug("INVENTORY", "No inventory changes for %s, version unchanged (itemsHash=%s)", player,
-                          tostring(currentItemsHash))
+        GBCR.Output:Debug("INVENTORY", "No inventory changes for %s (itemsHash=%s)", player, tostring(currentHash))
     end
 
-    if not info.alts then
-        info.alts = {}
+    GBCR.UI:QueueUIRefresh()
+end
+
+-- Helper to return the true final bank state
+local function computeCorrectedBank(self, bankAtClose, bagsAtClose, bagsSettled)
+    local function buildIndex(itemsArray)
+        local tempIndex = {}
+
+        for i = 1, #itemsArray do
+            local item = itemsArray[i]
+            if item.itemString then
+                tempIndex[item.itemString] = (tempIndex[item.itemString] or 0) + (item.itemCount or 1)
+            end
+        end
+
+        return tempIndex
     end
-    info.alts[player] = alt
+
+    local bankByKey = buildIndex(bankAtClose)
+    local atCloseByKey = buildIndex(bagsAtClose)
+    local settledByKey = buildIndex(bagsSettled)
+
+    local seen = {}
+    for key in pairs(bankByKey) do
+        seen[key] = true
+    end
+    for key in pairs(atCloseByKey) do
+        seen[key] = true
+    end
+
+    local corrected = {}
+    for key in pairs(seen) do
+        local bankCount = bankByKey[key] or 0
+        local atClose = atCloseByKey[key] or 0
+        local settled = settledByKey[key] or 0
+        local delta = settled - atClose
+        local newCount = math_max(0, bankCount - delta)
+
+        GBCR.Output:Debug("INVENTORY",
+                          "Bank delta: key=%s, bankAtClose=%d, bagsAtClose=%d, bagsSettled=%d, delta=%d, corrected=%d", key,
+                          bankCount, atClose, settled, delta, newCount)
+
+        if newCount > 0 then
+            corrected[#corrected + 1] = {itemString = key, itemCount = newCount}
+        end
+    end
+
+    return corrected
+end
+
+-- Hellper for generic bag/AH/merchant/mail updates (bank not involved) that uses lastBankScan set during the most recent bank session
+local function scanInventory(self)
+    scanBagsNow(self)
+    commitInventory(self, self.lastBankScan, self.lastBagScan)
+end
+
+-- When closing bank: correct stale bank snapshot using bag delta, then commit
+local function commitWithBankDelta(self)
+    scanBagsNow(self)
+    local correctedBank = computeCorrectedBank(self, self.bankSnapshotAtClose, self.bagsSnapshotAtClose, self.lastBagScan)
+    commitInventory(self, correctedBank, self.lastBagScan)
 end
 
 -- Keep track that any event impacting the inventory (bags, bank, mail) has been triggered
@@ -652,11 +754,18 @@ local function onUpdateStop(self)
     GBCR.Output:Debug("INVENTORY", "OnUpdateStop called, hasUpdated=%s", tostring(self.hasUpdated))
 
     if self.hasUpdated then
-        GBCR.Output:Debug("INVENTORY", "Calling scan")
-        scanInventory(self)
-        GBCR.Output:Debug("INVENTORY", "Scan completed")
+        if self.scanDebounceTimer then
+            self.scanDebounceTimer:Cancel()
+        end
 
-        GBCR.UI:QueueUIRefresh()
+        self.scanDebounceTimer = NewTimer(Constants.TIMER_INTERVALS.SCAN_DEBOUNCE, function()
+            self.scanDebounceTimer = nil
+            GBCR.Output:Debug("INVENTORY", "Calling scan")
+            scanInventory(self)
+            GBCR.Output:Debug("INVENTORY", "Scan completed")
+
+            GBCR.UI:QueueUIRefresh()
+        end)
     else
         GBCR.Output:Debug("INVENTORY", "Skipping scan because hasUpdated is false")
     end
@@ -666,6 +775,11 @@ end
 
 -- Initialize caches
 local function init(self)
+    if self.scanDebounceTimer then
+        self.scanDebounceTimer:Cancel()
+        self.scanDebounceTimer = nil
+    end
+
     self.cachedSourcesPerItem = {}
     self.sourcesIndexGeneration = 0
     self.cachedItemsHashes = {}
@@ -676,11 +790,20 @@ local function init(self)
     self.aggregateStateByKey = {}
     self.cachedBagItems = {}
     self.cachedBankItems = {}
+    self.lastBagScan = {}
+    self.lastBankScan = {}
+    self.bankSnapshotAtClose = {}
+    self.bagsSnapshotAtClose = {}
+    self.pendingBankCloseAggregation = false
 end
 
 -- Export functions for other modules
 Inventory.BuildGlobalItemSourcesIndex = buildGlobalItemSourcesIndex
 Inventory.GetItemKey = getItemKey
+Inventory.ScanBankNow = scanBankNow
+Inventory.ScanBagsNow = scanBagsNow
+Inventory.SnapshotForBankClose = snapshotForBankClose
+Inventory.CommitWithBankDelta = commitWithBankDelta
 Inventory.OnUpdateStart = onUpdateStart
 Inventory.OnUpdateStop = onUpdateStop
 Inventory.Init = init

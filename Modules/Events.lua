@@ -649,23 +649,36 @@ end
 
 -- Events for guild bank alts
 function Events:BAG_UPDATE_DELAYED()
-    GBCR.Output:Debug("EVENTS", "BAG_UPDATE_DELAYED (timerBagUpdateDelayedScanInventory=%s, isMailOpen=%s, isAHClosed=%s)",
-                      tostring(self.timerBagUpdateDelayedScanInventory), tostring(self.isMailOpen),
-                      tostring(self.isAuctionHouseClosed))
+    GBCR.Output:Debug("EVENTS", "BAG_UPDATE_DELAYED (isBankOpen=%s, pendingBankClose=%s)", tostring(self.isBankOpen),
+                      tostring(GBCR.Inventory.pendingBankCloseAggregation))
 
     if shouldSkipGuildEvent("BAG_UPDATE_DELAYED") then
         return
     end
 
-    if self.isMailOpen then
-        GBCR.Output:Debug("EVENTS", "BAG_UPDATE_DELAYED: skipping (mail is still open)")
+    if self.isBankOpen then
+        GBCR.Inventory:ScanBagsNow()
 
         return
     end
 
-    if self.isAuctionHouseClosed == false then
-        GBCR.Output:Debug("EVENTS", "BAG_UPDATE_DELAYED: skipping (AH is still open)")
+    if GBCR.Inventory.pendingBankCloseAggregation then
+        GBCR.Inventory.pendingBankCloseAggregation = false
+        if self.bankCloseTimeoutTimer then
+            self.bankCloseTimeoutTimer:Cancel()
+            self.bankCloseTimeoutTimer = nil
+        end
 
+        GBCR.Inventory:CommitWithBankDelta()
+
+        return
+    end
+
+    if self.isMailOpen then
+        return
+    end
+
+    if self.isAuctionHouseClosed == false then
         return
     end
 
@@ -676,23 +689,43 @@ function Events:BAG_UPDATE_DELAYED()
 
     self.timerBagUpdateDelayedScanInventory = NewTimer(timerIntervals.BAG_UPDATE_QUIET_TIME, function()
         GBCR.Output:Debug("EVENTS", "Debounced BAG_UPDATE_DELAYED timer fired")
-
+        self.timerBagUpdateDelayedScanInventory = nil
         GBCR.Inventory:OnUpdateStart()
         GBCR.Inventory:OnUpdateStop()
-        self.timerBagUpdateDelayedScanInventory = nil
     end)
 end
 
 function Events:BANKFRAME_OPENED()
     GBCR.Output:Debug("EVENTS", "BANKFRAME_OPENED event fired")
 
-    GBCR.Inventory:OnUpdateStart()
+    self.isBankOpen = true
+
+    GBCR.Inventory:ScanBagsNow()
+    GBCR.Inventory:ScanBankNow()
 end
 
 function Events:BANKFRAME_CLOSED()
     GBCR.Output:Debug("EVENTS", "BANKFRAME_CLOSED event fired")
 
-    GBCR.Inventory:OnUpdateStop()
+    self.isBankOpen = false
+
+    GBCR.Inventory:ScanBankNow()
+    GBCR.Inventory:ScanBagsNow()
+    GBCR.Inventory:SnapshotForBankClose()
+    GBCR.Inventory.pendingBankCloseAggregation = true
+
+    if self.bankCloseTimeoutTimer then
+        self.bankCloseTimeoutTimer:Cancel()
+    end
+
+    self.bankCloseTimeoutTimer = NewTimer(Constants.TIMER_INTERVALS.BANK_CLOSE_TIMEOUT, function()
+        self.bankCloseTimeoutTimer = nil
+        if GBCR.Inventory.pendingBankCloseAggregation then
+            GBCR.Output:Debug("EVENTS", "BANKFRAME_CLOSED timeout: no BAG_UPDATE_DELAYED arrived, committing snapshots as-is")
+            GBCR.Inventory.pendingBankCloseAggregation = false
+            GBCR.Inventory:CommitWithBankDelta()
+        end
+    end)
 end
 
 function Events:MAIL_SHOW()
