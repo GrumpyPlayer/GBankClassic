@@ -507,6 +507,11 @@ end
 function Events:PLAYER_LOGOUT()
     GBCR.Output:Debug("EVENTS", "PLAYER_LOGOUT event fired")
 
+    if GBCR.Inventory.pendingCompressionTimer then
+        GBCR.Inventory.pendingCompressionTimer:Cancel()
+        GBCR.Inventory.pendingCompressionTimer = nil
+    end
+
     local sv = GBCR.Database.savedVariables
     if not sv or not sv.alts then
         return
@@ -515,7 +520,6 @@ function Events:PLAYER_LOGOUT()
     for _, altData in pairs(sv.alts) do
         compressAltField(altData, "items", "itemsCompressed")
         compressAltField(altData, "cache", "cacheCompressed")
-        compressAltField(altData, "ledger", "ledgerCompressed")
     end
 end
 

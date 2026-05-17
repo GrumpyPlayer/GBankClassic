@@ -7,6 +7,8 @@ local Globals = GBCR.Globals
 local bit_bxor = Globals.bit_bxor
 local debugprofilestop = Globals.debugprofilestop
 local ipairs = Globals.ipairs
+local math_max = Globals.math_max
+local math_min = Globals.math_min
 local pairs = Globals.pairs
 local select = Globals.select
 local string_byte = Globals.string_byte
@@ -379,7 +381,13 @@ local function recalculateAggregatedItems(self, bankData, bagData, mailData, alt
 
     alt.itemsCompressed = nil
 
-    After(0, function()
+    if self.pendingCompressionTimer then
+        self.pendingCompressionTimer:Cancel()
+        self.pendingCompressionTimer = nil
+    end
+
+    self.pendingCompressionTimer = NewTimer(Constants.TIMER_INTERVALS.ASYNC_COMPRESS, function()
+        self.pendingCompressionTimer = nil
         alt.itemsCompressed = GBCR.Database.CompressData(alt.items)
         alt.itemsCompressedVersion = alt.version or 0
         alt.compressedVersion = alt.version or 0
