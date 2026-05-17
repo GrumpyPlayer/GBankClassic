@@ -160,13 +160,16 @@ local function buildGlobalItemSourcesIndex(self, dirtyAlts, callback)
         end
     end
 
-    wipe(self.cachedSourcesPerItem)
-
+    local newSources = {}
     local altIndex = 1
     local itemIndex = 1
 
     local function Resume()
         if myGen ~= self.sourcesIndexGeneration then
+            if self.isFullRebuildRunning then
+                self.isFullRebuildRunning = false
+            end
+
             return
         end
 
@@ -189,10 +192,10 @@ local function buildGlobalItemSourcesIndex(self, dirtyAlts, callback)
                 end
 
                 if id and id > 0 then
-                    local sources = self.cachedSourcesPerItem[id]
+                    local sources = newSources[id]
                     if not sources then
                         sources = {}
-                        self.cachedSourcesPerItem[id] = sources
+                        newSources[id] = sources
                     end
 
                     sources[altName] = (sources[altName] or 0) + (item.itemCount or 1)
@@ -213,9 +216,18 @@ local function buildGlobalItemSourcesIndex(self, dirtyAlts, callback)
         end
 
         if myGen ~= self.sourcesIndexGeneration then
+            local pool = self.aggItemPool
+            if pool then
+                local safeCount = math_min(self.aggItemPoolCount or 0, #pool)
+                for i = safeCount + 1, #pool do
+                    pool[i] = nil
+                end
+            end
+
             return
         end
 
+        self.cachedSourcesPerItem = newSources
         self.isFullRebuildRunning = false
 
         if callback then
@@ -251,6 +263,13 @@ local function getItemKey(self, itemLink)
     end
 
     self.cachedItemKeys[itemLink] = key
+    self.cachedItemKeyCount = (self.cachedItemKeyCount or 0) + 1
+
+    if self.cachedItemKeyCount >= Constants.LIMITS.CACHE_LIMIT then
+        wipe(self.cachedItemKeys)
+        self.cachedItemKeyCount = 0
+        GBCR.Output:Debug("INVENTORY", "cachedItemKeys evicted (hit limit)")
+    end
 
     return key
 end

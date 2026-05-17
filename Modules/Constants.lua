@@ -23,7 +23,7 @@ Constants.LIMITS = {
     MAX_CONCURRENT_OUTBOUND = 3, -- Limit concurrent outbound data share whispers
     BATCH_SIZE_GETITEMINFO = 50, -- How many items to cache per frame
     MAX_BUFFER_SIZE = 16000, -- Maximum amount of messages for the /chat debuglog
-    DISCORD_MAX = 2000 -- Maximum character length for Discord message export
+    CACHE_LIMIT = 50000, -- Maximum size of cache
 }
 
 -- Timer intervals (in seconds)
