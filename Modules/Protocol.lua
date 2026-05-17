@@ -154,6 +154,22 @@ local function processItemQueue(self)
             break
         end
 
+        if self.itemQueueHead > Constants.LIMITS.QUEUE_LIMIT then
+            local newQueue = {}
+            local newTail = 1
+
+            for i = self.itemQueueHead, self.itemQueueTail - 1 do
+                if self.itemReconstructQueue[i] then
+                    newQueue[newTail] = self.itemReconstructQueue[i]
+                    newTail = newTail + 1
+                end
+            end
+
+            self.itemReconstructQueue = newQueue
+            self.itemQueueHead = 1
+            self.itemQueueTail = newTail
+        end
+
         iterations = iterations + 1
         local item = self.itemReconstructQueue[self.itemQueueHead]
         self.itemReconstructQueue[self.itemQueueHead] = nil
@@ -608,6 +624,10 @@ end
 
 -- Helper to determine if it's allowed to send a query right now
 local function isQueryAllowed()
+    if Protocol.isLockedOut then
+        return false
+    end
+
     if GBCR.Guild.cachedOnlineGuildMemberCount > 1 then
         return true
     end
@@ -787,18 +807,23 @@ local function craftLedgerPayload(altName)
         return {}
     end
 
-    local ledger = sv.alts[altName].ledger or {}
-    if #ledger == 0 then
+    local sourceLedger = sv.alts[altName].ledger or {}
+    local ledgerLength = #sourceLedger
+    if ledgerLength == 0 then
         return {}
     end
 
-    table_sort(ledger, function(a, b)
+    local sortBuffer = {}
+    for i = 1, ledgerLength do
+        sortBuffer[i] = sourceLedger[i]
+    end
+    table_sort(sortBuffer, function(a, b)
         return a[GBCR.Ledger.indexTimestamp] > b[GBCR.Ledger.indexTimestamp]
     end)
 
     local slice = {}
-    for i = 1, math_min(ledgerConstants.SYNC_WINDOW, #ledger) do
-        slice[i] = ledger[i]
+    for i = 1, math_min(ledgerConstants.SYNC_WINDOW, ledgerLength) do
+        slice[i] = sortBuffer[i]
     end
 
     return slice
@@ -997,6 +1022,12 @@ local function parseDataPayload(self, payload)
 
     local numItems = payload[position]
     position = position + 1
+
+    if type(numItems) ~= "number" or numItems < 0 or numItems > Constants.LIMITS.ITEMS_LIMIT then
+        GBCR.Output:Debug("SYNC", "parseDataPayload: invalid numItems=%s, aborting parse", tostring(numItems))
+
+        return nil
+    end
 
     local currentItemId = 0
     for i = 1, numItems do
@@ -1199,6 +1230,19 @@ local function sendData(self, name, target)
 
     local onChunkSent = createOnChunkSentCallback(norm, dest)
     local hookedDone = false
+
+    local watchdogTimer = nil
+    if channel == "WHISPER" and dest then
+        watchdogTimer = NewTimer(Constants.LIMITS.OUTBOUND_WATCHDOG_TIMEOUT, function()
+            watchdogTimer = nil
+            if not hookedDone then
+                GBCR.Output:Debug("SYNC", "sendData: watchdog decremented activeOutboundWhispers for %s (callback never fired)",
+                                  dest)
+                self.activeOutboundWhispers = math_max(0, self.activeOutboundWhispers - 1)
+            end
+        end)
+    end
+
     local hookedCallback = function(arg, bytesSent, totalBytes, sendResult)
         onChunkSent(arg, bytesSent, totalBytes, sendResult)
 
@@ -1211,6 +1255,11 @@ local function sendData(self, name, target)
 
         if (isComplete or isFailed) and channel == "WHISPER" and dest then
             hookedDone = true
+            if watchdogTimer then
+                watchdogTimer:Cancel()
+                watchdogTimer = nil
+            end
+
             self.activeOutboundWhispers = math_max(0, self.activeOutboundWhispers - 1)
 
             if isComplete and norm == GBCR.Guild:GetNormalizedPlayerName() then
@@ -1237,16 +1286,31 @@ local function sendData(self, name, target)
         currentAlt.ledger = tempLedger
     end
 
-    local craftedPayload = craftDataPayload(self, norm, currentAlt)
+    local craftedPayload
+    local craftOk, craftErr = pcall(function()
+        craftedPayload = craftDataPayload(self, norm, currentAlt)
+    end)
+
+    if tempItems then
+        currentAlt.items = nil
+    end
+    if tempLedger then
+        currentAlt.ledger = nil
+    end
+
+    if not craftOk then
+        GBCR.Output:Debug("SYNC", "sendData: craftDataPayload crashed for %s: %s", norm, tostring(craftErr))
+        if channel == "WHISPER" and dest then
+            self.activeOutboundWhispers = math_max(0, self.activeOutboundWhispers - 1)
+        end
+        GBCR.UI:SetSyncing(false)
+
+        return
+    end
+
     if not craftedPayload then
         GBCR.Output:Debug("SYNC", "sendData: skipped sending guild bank alt %s to %s, no valid payload", norm, dest or "guild")
 
-        if tempItems then
-            currentAlt.items = nil
-        end
-        if tempLedger then
-            currentAlt.ledger = nil
-        end
         if channel == "WHISPER" and dest then
             self.activeOutboundWhispers = math_max(0, self.activeOutboundWhispers - 1)
         end
@@ -1256,18 +1320,23 @@ local function sendData(self, name, target)
         return
     end
 
-    if tempItems then
-        currentAlt.items = nil
-    end
-    if tempLedger then
-        currentAlt.ledger = nil
-    end
-
     local data = serializePayload(craftedPayload)
     GBCR.Output:Debug("CHUNK", "Sharing data: %d bytes in ~%d chunks...", string_len(data), math_ceil(string_len(data) / 254))
 
     if channel == "WHISPER" and dest then
-        sendWhisper("gbc-data-share", data, dest, "NORMAL", hookedCallback)
+        local sent = sendWhisper("gbc-data-share", data, dest, "NORMAL", hookedCallback)
+        if not sent then
+            if watchdogTimer then
+                watchdogTimer:Cancel()
+                watchdogTimer = nil
+            end
+
+            self.activeOutboundWhispers = math_max(0, self.activeOutboundWhispers - 1)
+            GBCR.Output:Debug("SYNC", "sendData: whisper to %s failed (offline), releasing slot", dest)
+            GBCR.UI:SetSyncing(false)
+
+            return
+        end
     else
         sendCommMessage("gbc-data-share", data, "GUILD", nil, "NORMAL", hookedCallback)
     end
@@ -1359,6 +1428,14 @@ local function receiveData(self, incomingData, sender)
         self.requestTimeoutTimers[incomingAltName] = nil
     end
 
+    if self.retryCounters then
+        self.retryCounters[incomingAltName] = nil
+    end
+
+    if self.requestRetryAttempts then
+        self.requestRetryAttempts[incomingAltName] = nil
+    end
+
     if self.requestRetryTimers[incomingAltName] then
         self.requestRetryTimers[incomingAltName]:Cancel()
         self.requestRetryTimers[incomingAltName] = nil
@@ -1439,11 +1516,19 @@ local function queryForGuildBankAltData(self, target, altName)
                 if self.requestRetryTimers[altName] then
                     self.requestRetryTimers[altName]:Cancel()
                 end
-                self.requestRetryTimers[altName] = NewTimer(math_random(Constants.JITTER.TIMEOUT_RETRY_MIN,
-                                                                        Constants.JITTER.TIMEOUT_RETRY_MAX), function()
-                    self.requestRetryTimers[altName] = nil
-                    queryForGuildBankAltData(Protocol, nil, altName)
-                end)
+
+                local attempts = (self.requestRetryAttempts[altName] or 0)
+                if attempts >= Constants.LIMITS.MAX_ABSENT_ALT_RETRIES then
+                    GBCR.Output:Debug("PROTOCOL", "Giving up on %s after %d attempts", altName, attempts)
+                else
+                    self.requestRetryAttempts[altName] = attempts + 1
+                    local delay =
+                        math_min(Constants.JITTER.TIMEOUT_RETRY_MIN * (2 ^ attempts), Constants.JITTER.TIMEOUT_RETRY_MAX)
+                    self.requestRetryTimers[altName] = NewTimer(delay, function()
+                        self.requestRetryTimers[altName] = nil
+                        queryForGuildBankAltData(Protocol, nil, altName)
+                    end)
+                end
             end
         end
     end)
@@ -1667,24 +1752,29 @@ local function getStateHash()
     end
 
     local fp = craftFingerprintPayload()
-    local hash = 5381
+    local h1, h2 = 5381, 4277
 
     for i = 1, #fp do
         local v = fp[i]
         local t = type(v)
 
         if t == "number" then
-            hash = ((hash * 33) + v) % 4294967296
+            h1 = ((h1 * 31) + v) % 1000003
+            h2 = ((h2 * 37) + (v * 13)) % 999983
         elseif t == "boolean" then
-            hash = ((hash * 33) + (v and 1 or 0)) % 4294967296
+            local b = v and 1 or 0
+            h1 = ((h1 * 31) + b) % 1000003
+            h2 = ((h2 * 37) + (b * 17)) % 999983
         elseif t == "string" then
             for j = 1, string_len(v) do
-                hash = ((hash * 33) + string_byte(v, j)) % 4294967296
+                local byte = string_byte(v, j)
+                h1 = ((h1 * 31) + byte) % 1000003
+                h2 = ((h2 * 37) + byte) % 999983
             end
         end
     end
 
-    Protocol.cachedStateHash = tostring(hash)
+    Protocol.cachedStateHash = h1 .. ":" .. h2
     Protocol.cachedStateHashVersion = myVersion
 
     return Protocol.cachedStateHash
@@ -2130,11 +2220,12 @@ local function processDebouncedMessageWithMultipleGuildBankAlts(self)
         local bestRosterVersion = nil
         local bestRosterSender = nil
         for _, entry in pairs(self.debounceQueues.multipleAlts) do
-            local senderEntry = entry.sender and self.guildMembersFingerprintData[entry.sender]
+            local rosterSenderName = entry.bestRosterSender or entry.sender
+            local senderEntry = rosterSenderName and self.guildMembersFingerprintData[rosterSenderName]
             local rv = senderEntry and senderEntry.rosterVersionTimestamp
             if rv and (not bestRosterVersion or rv > bestRosterVersion) then
                 bestRosterVersion = rv
-                bestRosterSender = entry.sender
+                bestRosterSender = rosterSenderName
             end
         end
 
@@ -2256,15 +2347,32 @@ local function queueDebouncedMessageWithMultipleGuildBankAlts(self, sender, payl
             local existing = self.debounceQueues.multipleAlts[altNorm]
 
             if shouldReplaceQueuedData(existing, incomingVersion) then
+                local preservedRosterSender = (existing and existing.bestRosterSender) or existing and existing.sender
+                local newRosterTimestamp = incomingRosterVersionTimestamp or 0
+                local existingRosterTimestamp = existing and
+                                                    ((existing.bestRosterSender and
+                                                        (self.addonUsers and self.addonUsers[existing.bestRosterSender] and
+                                                            self.addonUsers[existing.bestRosterSender].rosterVersionTimestamp or 0)) or
+                                                        (self.addonUsers and self.addonUsers[existing.sender or ""] and
+                                                            self.addonUsers[existing.sender].rosterVersionTimestamp or 0)) or 0
+
+                local bestRosterSender
+                if newRosterTimestamp > existingRosterTimestamp then
+                    bestRosterSender = sender
+                else
+                    bestRosterSender = preservedRosterSender or sender
+                end
+
                 self.debounceQueues.multipleAlts[altNorm] = {
                     version = incomingVersion,
                     sender = sender,
+                    bestRosterSender = bestRosterSender,
                     queuedAt = now,
                     areOfficerNotesUsed = incomingData.areOfficerNotesUsedToDefineGuildBankAlts
                 }
-                GBCR.Output:Debug("PROTOCOL", "Best sender for %s is now %s (incomingVersion=%s)",
+                GBCR.Output:Debug("PROTOCOL", "Best sender for %s is now %s (rosterSender=%s, incomingVersion=%s)",
                                   GBCR.Guild:ColorPlayerName(altNorm), GBCR.Guild:ColorPlayerName(sender),
-                                  tostring(incomingVersion))
+                                  GBCR.Guild:ColorPlayerName(bestRosterSender), tostring(incomingVersion))
                 queued = true
             end
         end
@@ -2454,6 +2562,13 @@ local function processNextIncomingPayload(self)
         return
     end
 
+    local queueDepth = self.queueTail - self.queueHead
+    if queueDepth > Constants.LIMITS.MAX_INCOMING_QUEUE_DEPTH then
+        GBCR.Output:Debug("COMMS", "Incoming queue overflow (%d entries), dropping oldest entry", queueDepth)
+        self.incomingPayloadQueue[self.queueHead] = nil
+        self.queueHead = self.queueHead + 1
+    end
+
     self.isProcessingIncoming = true
 
     local payloadData = self.incomingPayloadQueue[self.queueHead]
@@ -2476,18 +2591,23 @@ local function processNextIncomingPayload(self)
         local distribution = payloadData.distribution
         local message = payloadData.message
 
-        if prefix == "gbc-fp-share" then
-            if not queueDebouncedMessageWithMultipleGuildBankAlts(self, sender, data) then
-                processFingerprint(self, data, sender)
+        local dispatchOk, dispatchErr = pcall(function()
+            if prefix == "gbc-fp-share" then
+                if not queueDebouncedMessageWithMultipleGuildBankAlts(self, sender, data) then
+                    processFingerprint(self, data, sender)
+                end
+            elseif prefix == "gbc-data-share" then
+                if not queueDebouncedMessageWithSingularGuildBankAlt(self, prefix, message, distribution, sender, data) then
+                    processGuildBankAltData(self, data, sender)
+                end
+            elseif prefix == "gbc-roster-share" then
+                if not queueDebouncedMessageWithSingularGuildBankAlt(self, prefix, message, distribution, sender, data) then
+                    processRosterData(self, data, sender)
+                end
             end
-        elseif prefix == "gbc-data-share" then
-            if not queueDebouncedMessageWithSingularGuildBankAlt(self, prefix, message, distribution, sender, data) then
-                processGuildBankAltData(self, data, sender)
-            end
-        elseif prefix == "gbc-roster-share" then
-            if not queueDebouncedMessageWithSingularGuildBankAlt(self, prefix, message, distribution, sender, data) then
-                processRosterData(self, data, sender)
-            end
+        end)
+        if not dispatchOk then
+            GBCR.Output:Debug("COMMS", "processNextIncomingPayload: handler crashed (%s): %s", prefix, tostring(dispatchErr))
         end
     end
 
@@ -2605,6 +2725,10 @@ local function onCommReceived(self, prefix, message, distribution, sender)
     if prefix == "gbc-announce" then
         local altName = message
 
+        if not isAltDataAllowed(sender, altName) then
+            return
+        end
+
         if self.protocolStates[altName] ~= Constants.STATE.REQUESTING then
             setAltProtocolState(self, altName, Constants.STATE.OUTDATED)
         end
@@ -2628,6 +2752,13 @@ local function onCommReceived(self, prefix, message, distribution, sender)
         if self.isLockedOut then
             GBCR.Output:Debug("COMMS", "<", "(suppressed in combat)", prefix, prefixDescriptions[prefix], "from",
                               GBCR.Guild:ColorPlayerName(sender))
+
+            return
+        end
+
+        if string_len(message) > Constants.LIMITS.MAX_INCOMING_PAYLOAD_BYTES then
+            GBCR.Output:Warn("Blocked oversized %s from %s (%d bytes, limit %d).", prefix, GBCR.Guild:ColorPlayerName(sender),
+                             string_len(message), Constants.LIMITS.MAX_INCOMING_PAYLOAD_BYTES)
 
             return
         end
@@ -2718,13 +2849,22 @@ local function onCommReceived(self, prefix, message, distribution, sender)
 
             setAltProtocolState(self, data.name, Constants.STATE.OUTDATED)
 
-            if self.pendingQueryTimers and self.pendingQueryTimers[data.name] then
+            if self.requestTimeoutTimers[data.name] then
+                self.requestTimeoutTimers[data.name]:Cancel()
+                self.requestTimeoutTimers[data.name] = nil
+            end
+
+            if self.pendingQueryTimers[data.name] then
                 self.pendingQueryTimers[data.name]:Cancel()
                 self.pendingQueryTimers[data.name] = nil
             end
 
-            self.pendingQueryTimers[data.name] = NewTimer(math_random(Constants.JITTER.RETRY_MIN, Constants.JITTER.RETRY_MAX),
-                                                          function()
+            local retryCount = math_min(self.retryCounters[data.name] or 0, Constants.JITTER.RETRY_BACKOFF_MAX_EXPONENT)
+            self.retryCounters[data.name] = retryCount + 1
+            local delay = math_min(Constants.JITTER.RETRY_MIN * (2 ^ retryCount) +
+                                       math_random(0, math_floor(Constants.JITTER.RETRY_MIN / 2)), Constants.JITTER.RETRY_MAX)
+
+            self.pendingQueryTimers[data.name] = NewTimer(delay, function()
                 if self.pendingQueryTimers then
                     self.pendingQueryTimers[data.name] = nil
                 end
@@ -2751,8 +2891,19 @@ local function onCommReceived(self, prefix, message, distribution, sender)
 
         if hasData and isStillAGuildBankAlt then
             local responseKey = altName .. "|" .. sender
-            local lastResponse = self.recentDataQueryResponses[responseKey] or 0
             local now = GetServerTime()
+
+            self.recentDataQueryPruneCount = (self.recentDataQueryPruneCount or 0) + 1
+            if self.recentDataQueryPruneCount > 100 then
+                self.recentDataQueryPruneCount = 0
+                for key, ts in pairs(self.recentDataQueryResponses) do
+                    if now - ts > 120 then
+                        self.recentDataQueryResponses[key] = nil
+                    end
+                end
+            end
+
+            local lastResponse = self.recentDataQueryResponses[responseKey] or 0
             if now - lastResponse < 60 then
                 GBCR.Output:Debug("PROTOCOL", "Query from %s for %s: rate-limited (last response %ds ago)", sender, altName,
                                   now - lastResponse)
@@ -2825,6 +2976,13 @@ local function onCommReceived(self, prefix, message, distribution, sender)
     end
 
     if prefix == "gbc-w" then
+        local senderInfo = GBCR.Guild.cachedGuildMembers and GBCR.Guild.cachedGuildMembers[sender]
+        if not senderInfo or not senderInfo.isAuthority then
+            GBCR.Output:Warn("Blocked unauthorized remote wipe attempt from %s.", GBCR.Guild:ColorPlayerName(sender))
+
+            return
+        end
+
         local guildName = GBCR.Guild:GetGuildInfo()
         if guildName then
             GBCR.Guild:ResetGuild()
@@ -2858,6 +3016,8 @@ local function init(self)
 
     self.pendingSync = {roster = {}, alts = {}}
     self.pendingQueryTimers = {}
+    self.retryCounters = {}
+    self.requestRetryAttempts = {}
 
     self.isAddonOutdated = false
     self.guildMembersFingerprintData = {}
