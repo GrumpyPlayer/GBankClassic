@@ -280,13 +280,29 @@ local function colorizeText(color, text)
 end
 
 -- Evaluates whether a heavy background loop should yield execution to the next frame to prevent freezing the game client
+local frameGlobalStart = debugprofilestop()
+local frameGlobalFrame = 0
+
+local function getFrameGlobalStart()
+    local f = GetFramerate and math_floor(GetTime() * 1000) or 0
+    if f ~= frameGlobalFrame then
+        frameGlobalFrame = f
+        frameGlobalStart = debugprofilestop()
+    end
+
+    return frameGlobalStart
+end
+
 local function shouldYield(frameStart, processedThisFrame, checkInterval, fallbackLimit)
     if processedThisFrame >= fallbackLimit then
         return true
     end
 
-    if processedThisFrame % checkInterval == 0 and (Globals.debugprofilestop() - frameStart) > 12 then
-        return true
+    if processedThisFrame % checkInterval == 0 then
+        local elapsed = Globals.debugprofilestop() - getFrameGlobalStart()
+        if elapsed > 12 then
+            return true
+        end
     end
 
     return false
