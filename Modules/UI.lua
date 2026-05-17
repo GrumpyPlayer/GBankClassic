@@ -1329,7 +1329,17 @@ local function parseSearchQuery(queryText)
     end
 
     for word in string_gmatch(string_lower(queryText), "%S+") do
-        tokens[#tokens + 1] = word
+        local prefix, op, val = string_match(word, "^(%a+)([<>=]+)(.+)$")
+        if prefix then
+            tokens[#tokens + 1] = {isAdvanced = true, prefix = prefix, op = op, val = val, nVal = tonumber(val) or 0}
+        else
+            prefix, val = string_match(word, "^(%a+):(.+)$")
+            if prefix then
+                tokens[#tokens + 1] = {isAdvanced = true, prefix = prefix, op = ":", val = val, nVal = tonumber(val) or 0}
+            else
+                tokens[#tokens + 1] = {isAdvanced = false, raw = word}
+            end
+        end
     end
 
     return tokens
@@ -1356,10 +1366,9 @@ local function advancedSearchMatch(item, tokens)
 
     for _, token in ipairs(tokens) do
         local matched = false
-        local prefix, op, val = string_match(token, "^(%a+)([<>=]+)(.+)$")
 
-        if prefix then
-            local nVal = tonumber(val) or 0
+        if token.isAdvanced then
+            local prefix, op, val, nVal = token.prefix, token.op, token.val, token.nVal
 
             if prefix == "lvl" or prefix == "req" then
                 if op == ">" then
@@ -1385,16 +1394,8 @@ local function advancedSearchMatch(item, tokens)
                 elseif op == "=" or op == "==" then
                     matched = ilvl == nVal
                 end
-            elseif prefix == "q" and (op == "=" or op == "==") then
+            elseif prefix == "q" then
                 local numVal = nVal > 0 and nVal or Constants.FILTER.RARITY_MAP[val]
-                if numVal then
-                    matched = (rarity == numVal)
-                end
-            end
-        else
-            prefix, val = string_match(token, "^(%a+):(.+)$")
-            if prefix == "q" then
-                local numVal = tonumber(val) or Constants.FILTER.RARITY_MAP[val]
                 if numVal then
                     matched = (rarity == numVal)
                 end
@@ -1403,10 +1404,8 @@ local function advancedSearchMatch(item, tokens)
             elseif prefix == "s" then
                 matched = string_find(equipL, val, 1, true) and true or false
             end
-        end
-
-        if not matched and not prefix then
-            matched = string_find(name, token, 1, true) and true or false
+        else
+            matched = string_find(name, token.raw, 1, true) and true or false
         end
 
         if not matched then
@@ -5098,7 +5097,7 @@ local function buildFilteredList(self, callback)
     if searchText ~= "" and #self.corpus > 0 then
         local hasOperator = false
         for _, token in ipairs(searchTokens) do
-            if string_match(token, "^%a+[<>=]") or string_match(token, "^%a+:") then
+            if token.isAdvanced then
                 hasOperator = true
 
                 break
