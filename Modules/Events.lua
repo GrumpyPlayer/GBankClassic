@@ -112,7 +112,7 @@ GameTooltip:HookScript("OnTooltipSetItem", function(self)
     for i = 1, count do
         local altName = Events.tooltipSortBuffer[i]
         local qty = sources[altName]
-        total = total + qty
+        total = total + (qty or 0)
 
         if show then
             self:AddDoubleLine(altName, qty, 1, 1, 1, 1, 1, 1)
