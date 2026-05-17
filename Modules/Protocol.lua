@@ -7,6 +7,7 @@ local Globals = GBCR.Globals
 local debugprofilestop = Globals.debugprofilestop
 local ipairs = Globals.ipairs
 local math_ceil = Globals.math_ceil
+local math_floor = Globals.math_floor
 local math_max = Globals.math_max
 local math_min = Globals.math_min
 local math_random = Globals.math_random
@@ -30,6 +31,7 @@ local After = Globals.After
 local Enum = Globals.Enum
 local GetClassColor = Globals.GetClassColor
 local GetItemInfo = Globals.GetItemInfo
+local GetNumGuildMembers = Globals.GetNumGuildMembers
 local GetServerTime = Globals.GetServerTime
 local InCombatLockdown = Globals.InCombatLockdown
 local IsInGuild = Globals.IsInGuild
@@ -1717,14 +1719,17 @@ end
 local function startGossipLoop(self)
     self.gossipLoopRunning = true
     self.gossipGeneration = (self.gossipGeneration or 0) + 1
+    local myGeneration = self.gossipGeneration
 
     After(Constants.TIMER_INTERVALS.GOSSIP_CYCLE or 900, function()
-        gossipLoop(self.gossipGeneration)
+        gossipLoop(myGeneration)
     end)
 end
 
 -- Helper to determine what the login broadcast (gbc-hash) jitter should be based on online member count
 local function getAdaptiveLoginJitter()
+    local _, numOnline = GetNumGuildMembers()
+    local online = numOnline or 0
 
     if online <= 5 then -- TODO
         return math_random(3, 8)

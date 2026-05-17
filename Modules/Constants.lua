@@ -24,7 +24,13 @@ Constants.LIMITS = {
     BATCH_SIZE_GETITEMINFO = 50, -- How many items to cache per frame
     MAX_BUFFER_SIZE = 16000, -- Maximum amount of messages for the /chat debuglog
     DISCORD_MAX = 2000, -- Maximum character length for Discord message export
+    QUEUE_LIMIT = 1000, -- Maximum size of item queue
+    ITEMS_LIMIT = 10000, -- Maximum number of items expected
     CACHE_LIMIT = 50000, -- Maximum size of cache
+    MAX_INCOMING_PAYLOAD_BYTES = 65536, -- Hard cap on raw incoming addon message size (prevents decompression bombs)
+    MAX_INCOMING_QUEUE_DEPTH = 50, -- Drop oldest payload when the incoming queue overflows this depth
+    OUTBOUND_WATCHDOG_TIMEOUT = 45, -- Seconds before the safety watchdog force-decrements activeOutboundWhispers
+    MAX_ABSENT_ALT_RETRIES = 5 -- Give up querying an alt that has never been seen after this many attempts
 }
 
 -- Timer intervals (in seconds)
@@ -66,7 +72,8 @@ Constants.JITTER = {
     LOGIN_MIN = 15, -- login-storm broadcast minimum
     LOGIN_MAX = 60,
     TIMEOUT_RETRY_MIN = 60, -- post-timeout retry minimum
-    TIMEOUT_RETRY_MAX = 120
+    TIMEOUT_RETRY_MAX = 120,
+    RETRY_BACKOFF_MAX_EXPONENT = 5 -- Caps exponential backoff at RETRY_MIN * 2^5 before clamping to RETRY_MAX
 }
 
 -- One place to define and maintain non-class specific colors
