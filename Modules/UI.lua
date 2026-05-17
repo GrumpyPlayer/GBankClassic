@@ -986,6 +986,16 @@ local function createVirtualScroll(aceParent, rowHeight, renderFn)
             frame:Hide()
             virtualScroll.pool[#virtualScroll.pool + 1] = frame
         end
+
+        local poolSize = #virtualScroll.pool
+        if poolSize > needed * 2 then
+            for i = needed + 1, poolSize do
+                local f = virtualScroll.pool[i]
+                f:Hide()
+                f:SetParent(nil)
+                virtualScroll.pool[i] = nil
+            end
+        end
     end
 
     local function repaint()
@@ -2687,13 +2697,15 @@ local function drawLedgerTab(self, container)
             local virtualScroll = getVS()
 
             if index <= #entries then
-                if virtualScroll then
-                    virtualScroll.SetData(rows)
+                if not virtualScroll or not virtualScroll.scrollFrame then
+                    return
+                end
 
-                    local parent = virtualScroll.scrollFrame:GetParent()
-                    if parent and parent.obj and parent.obj.PerformLayout then
-                        parent.obj:PerformLayout()
-                    end
+                virtualScroll.SetData(rows)
+
+                local parent = virtualScroll.scrollFrame:GetParent()
+                if parent and parent.obj and parent.obj.PerformLayout then
+                    parent.obj:PerformLayout()
                 end
 
                 After(0, buildRows)
@@ -2995,7 +3007,7 @@ local function drawLedgerTab(self, container)
 
             local scroll = aceGUI:Create("ScrollFrame")
             scroll:SetLayout("Table")
-            scroll:SetUserData("table", {columns = {{width = 30}, {width = 0.6}, {width = 0.4}}, spaceH = 10, spaceV = 5})
+            scroll:SetUserData("table", {columns = {30, 350, 150}, spaceH = 10, spaceV = 5})
             scroll:SetFullWidth(true)
             scroll:SetFullHeight(true)
 
@@ -3025,6 +3037,7 @@ local function drawLedgerTab(self, container)
 
                 local nameLbl = aceGUI:Create("Label")
                 nameLbl:SetText(Globals.ColorizeText(color, playerName or d.uid))
+                nameLbl:SetWidth(350)
                 scroll:AddChild(nameLbl)
 
                 local valLbl = aceGUI:Create("Label")
@@ -3436,18 +3449,18 @@ local function ensureRosterPool(self, needed)
 
         local nameFS = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         nameFS:SetPoint("LEFT", frame, "LEFT", 4, 0)
-        nameFS:SetWidth(216)
+        nameFS:SetWidth(346)
         nameFS:SetJustifyH("LEFT")
         nameFS:SetJustifyV("MIDDLE")
 
         local ageFS = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        ageFS:SetPoint("LEFT", frame, "LEFT", 224, 0)
+        ageFS:SetPoint("LEFT", frame, "LEFT", 354, 0)
         ageFS:SetWidth(116)
         ageFS:SetJustifyH("LEFT")
         ageFS:SetJustifyV("MIDDLE")
 
         local stateFS = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        stateFS:SetPoint("LEFT", frame, "LEFT", 344, 0)
+        stateFS:SetPoint("LEFT", frame, "LEFT", 474, 0)
         stateFS:SetPoint("RIGHT", frame, "RIGHT", -4, 0)
         stateFS:SetJustifyH("LEFT")
         stateFS:SetJustifyV("MIDDLE")
@@ -3668,7 +3681,7 @@ local function drawNetworkTab(self, container)
     local headerRow = aceGUI:Create("SimpleGroup")
     headerRow:SetFullWidth(true)
     headerRow:SetLayout("Table")
-    headerRow:SetUserData("table", {columns = {220, 120, 180}})
+    headerRow:SetUserData("table", {columns = {350, 120, 180}})
     local hName = aceGUI:Create("Label")
     hName:SetText(Globals.ColorizeText(colorYellow, "Guild bank"))
     local hAge = aceGUI:Create("Label")
