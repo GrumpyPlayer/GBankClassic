@@ -5018,7 +5018,7 @@ local function updateItemsList(self, callback)
                         aggItem.itemId = derivedId
                         local validWoWString = string_format("item:%d:%s:0:0:0:0:%s:0:0:0:0:0:0", derivedId, p2 or "0", p3 or "0")
                         aggItem.validWoWString = validWoWString
-                        aggItem.itemLink = string_format("|cffffffff|H%s|height[item:%d]|height|r", validWoWString, derivedId)
+                        aggItem.itemLink = string_format("|cffffffff|H%s|h[item:%d]|h|r", validWoWString, derivedId)
                         aggItem.itemInfo = self.itemInfoCache[key] or item.itemInfo
                         if aggItem.itemInfo and aggItem.itemInfo.name then
                             aggItem.lowerName = string_lower(aggItem.itemInfo.name)
@@ -6293,8 +6293,8 @@ local function drawWindow(self)
         if useLocal then
             timeStr = date("%H:%M")
         else
-            local height, m = GetGameTime()
-            timeStr = string_format("%02d:%02d", height, m)
+            local h, m = GetGameTime()
+            timeStr = string_format("%02d:%02d", h, m)
         end
 
         self.clockLabel:SetText(Globals.ColorizeText(Constants.COLORS.WHITE, timeStr))
