@@ -45,7 +45,9 @@ local GameFontHighlightSmall = Globals.GameFontHighlightSmall
 local GameFontNormal = Globals.GameFontNormal
 local GameTooltip = Globals.GameTooltip
 local GameTooltip_SetDefaultAnchor = Globals.GameTooltip_SetDefaultAnchor
+local GetContainerItemID = Globals.GetContainerItemID
 local GetContainerItemInfo = Globals.GetContainerItemInfo
+local GetContainerItemLink = Globals.GetContainerItemLink
 local GetContainerNumSlots = Globals.GetContainerNumSlots
 local GetCursorInfo = Globals.GetCursorInfo
 local GetCursorPosition = Globals.GetCursorPosition
@@ -67,6 +69,9 @@ local PickupItem = Globals.PickupItem
 local SearchBoxTemplate_OnTextChanged = Globals.SearchBoxTemplate_OnTextChanged
 local shouldYield = Globals.ShouldYield
 local SplitContainerItem = Globals.SplitContainerItem
+
+local MailFrame = Globals.MailFrame
+local MailFrameTab2 = Globals.MailFrameTab2
 local UIParent = Globals.UIParent
 local UISpecialFrames = Globals.UISpecialFrames
 local WorldFrame = Globals.WorldFrame
@@ -2121,10 +2126,14 @@ local function generateImportString(sortedCartItems)
 
     for _, entry in ipairs(sortedCartItems) do
         local data = entry.data
+        local itemIdentifier = data.itemLink and string_match(data.itemLink, "|H(item:[%d:-]+)|h")
 
-        local itemId = data.itemLink and tonumber(string_match(data.itemLink, "|Hitem:(%d+):"))
-        if itemId then
-            items[#items + 1] = {itemId, data.qty}
+        if not itemIdentifier and entry.key and string_find(entry.key, "^item:") then
+            itemIdentifier = entry.key
+        end
+
+        if itemIdentifier then
+            items[#items + 1] = {itemIdentifier, data.qty}
         end
     end
 
@@ -3758,25 +3767,50 @@ end
 -- ================================================================================================ -- request fulfillment tab
 
 -- Helper to find the item in bags
-local function scanBagsForItem(itemId)
-    wipe(UI.recycledStacks)
+local function scanBagsForItem(itemIdentifier)
+    local stacks = {}
+
+    if not itemIdentifier then
+        return stacks
+    end
+
+    local targetId = tonumber(string_match(tostring(itemIdentifier), "item:(%d+)") or itemIdentifier)
+    local targetStr = type(itemIdentifier) == "string" and string_match(itemIdentifier, "(item:[%d:-]+)") or nil
+    local isStrictString = targetStr and string_find(targetStr, ":%d+:%d+")
 
     for bag = 0, 4 do
-        local numSlots = GetContainerNumSlots(bag)
-
+        local numSlots = GetContainerNumSlots(bag) or 0
         for slot = 1, numSlots do
-            local info = GetContainerItemInfo(bag, slot)
-            if info and info.itemID == itemId then
-                UI.recycledStacks[#UI.recycledStacks + 1] = {bag = bag, slot = slot, count = info.stackCount or 1}
+            local matched = false
+            local count = 0
+
+            if isStrictString then
+                local link = GetContainerItemLink(bag, slot)
+                if link then
+                    local currentStr = string_match(link, "|H(item:[%d:-]+)|h")
+                    if currentStr == targetStr then
+                        matched = true
+                    end
+                end
+            else
+                local id = GetContainerItemID(bag, slot)
+                if id == targetId then
+                    matched = true
+                end
+            end
+
+            if matched then
+                local info = GetContainerItemInfo(bag, slot)
+                count = info and info.stackCount or 0
+
+                if count > 0 then
+                    stacks[#stacks + 1] = {bag = bag, slot = slot, count = count}
+                end
             end
         end
     end
 
-    table_sort(UI.recycledStacks, function(a, b)
-        return a.count > b.count
-    end)
-
-    return UI.recycledStacks
+    return stacks
 end
 
 -- Helper to find an empty bag slot for stack splitting
@@ -3800,7 +3834,7 @@ end
 local function planItem(stacks, qtyNeeded)
     wipe(UI.recycledDirectOps)
     local accumulated = 0
-    local splitOp = {bag = nil, slot = nil, originalCount = nil, splitAmount = nil}
+    local splitOp = nil
 
     for i = 1, #stacks do
         if accumulated >= qtyNeeded then
@@ -3826,7 +3860,7 @@ local function planItem(stacks, qtyNeeded)
         directOpsCopy[i] = UI.recycledDirectOps[i]
     end
 
-    return {directOps = directOpsCopy, splitOp = splitOp, totalMailable = accumulated}
+    return {directOps = directOpsCopy, splitOps = splitOp, totalMailable = accumulated}
 end
 
 -- Helper to create the request fulfillment plan
@@ -3837,8 +3871,8 @@ local function buildFulfillmentPlan(requestItems)
     local issues = {}
 
     for _, req in ipairs(requestItems) do
-        if req.itemId and req.qty > 0 then
-            local stacks = scanBagsForItem(req.itemId)
+        if req.item and req.qty > 0 then
+            local stacks = scanBagsForItem(req.item)
             local plan = planItem(stacks, req.qty)
 
             if plan.totalMailable < req.qty then
@@ -3852,19 +3886,19 @@ local function buildFulfillmentPlan(requestItems)
                     bag = op.bag,
                     slot = op.slot,
                     count = op.count,
-                    itemId = req.itemId,
+                    item = req.item,
                     itemName = req.name
                 }
             end
 
-            if plan.splitOp then
+            if plan.splitOps then
                 allOps[#allOps + 1] = {
                     type = "split",
-                    bag = plan.splitOp.bag,
-                    slot = plan.splitOp.slot,
-                    originalCount = plan.splitOp.originalCount,
-                    splitAmount = plan.splitOp.splitAmount,
-                    itemId = req.itemId,
+                    bag = plan.splitOps.bag,
+                    slot = plan.splitOps.slot,
+                    originalCount = plan.splitOps.originalCount,
+                    splitAmount = plan.splitOps.splitAmount,
+                    item = req.item,
                     itemName = req.name
                 }
             end
@@ -3872,16 +3906,16 @@ local function buildFulfillmentPlan(requestItems)
     end
 
     local batches = {}
-    local currentScrollValue = {directOps = {}, splitOp = nil, slotCount = 0}
+    local currentScrollValue = {directOps = {}, splitOps = {}, slotCount = 0}
 
     local function flushBatch()
         if currentScrollValue.slotCount > 0 then
             batches[#batches + 1] = {
                 directOps = currentScrollValue.directOps,
-                splitOp = currentScrollValue.splitOp,
+                splitOps = currentScrollValue.splitOps,
                 slotCount = currentScrollValue.slotCount
             }
-            currentScrollValue = {directOps = {}, splitOp = nil, slotCount = 0}
+            currentScrollValue = {directOps = {}, splitOps = {}, slotCount = 0}
         end
     end
 
@@ -3894,10 +3928,8 @@ local function buildFulfillmentPlan(requestItems)
             currentScrollValue.directOps[#currentScrollValue.directOps + 1] = op
             currentScrollValue.slotCount = currentScrollValue.slotCount + 1
         elseif op.type == "split" then
-            currentScrollValue.splitOp = op
+            currentScrollValue.splitOps[#currentScrollValue.splitOps + 1] = op
             currentScrollValue.slotCount = currentScrollValue.slotCount + 1
-
-            flushBatch()
         end
     end
 
@@ -3928,7 +3960,7 @@ local function doDirectAttach(directOps, startSlot)
             attached = attached + op.count
         else
             errors[#errors + 1] = string_format(
-                                      "Pickup failed: %dx %s (bag %d slot %d). Item moved or is bind-on-pickup. Click 'Plan fulfillment' again to re-scan",
+                                      "Pickup failed: %dx %s (bag %d slot %d). Close and re-open the mailbox, then click 'Plan fulfillment' to retry.",
                                       op.count, op.itemName, op.bag, op.slot)
         end
     end
@@ -3938,138 +3970,206 @@ local function doDirectAttach(directOps, startSlot)
     return {attached = attached, nextSlot = slot, errors = errors}
 end
 
--- Helper to executes the fulfillment plan (requires open mail compose window): sets the recipient name, attaches synchronously or splits first and then attaches async
-local function executeFulfillmentPlan(batch, recipientRaw, onDone)
+-- Helper to list what could not be fulfilled
+local function getRequestShortages(requestData, canSendItems)
+    local sentQuantities = {}
+    local itemNameMap = {}
+
+    for _, item in ipairs(canSendItems) do
+        if item.item and item.qty then
+            sentQuantities[item.item] = (sentQuantities[item.item] or 0) + item.qty
+            itemNameMap[item.item] = item.name
+        end
+    end
+
+    local shortageLines = {}
+
+    for _, entry in ipairs(requestData.i) do
+        local item = entry[1]
+        local requestedQty = entry[2]
+        local sentQty = sentQuantities[item] or 0
+
+        if sentQty < requestedQty then
+            local missingQty = requestedQty - sentQty
+            local itemName = itemNameMap[item]
+
+            if not itemName then
+                itemName = GetItemInfo(item) or ("Unknown Item (" .. (item:match("item:(%d+)") or "??") .. ")")
+            end
+
+            table.insert(shortageLines, string.format(" - %dx %s", missingQty, itemName))
+        end
+    end
+
+    return shortageLines
+end
+
+-- Helper to execute the fulfillment plan (requires open mail compose window): sets the recipient name and supports multiple splits per mail
+local function executeFulfillmentPlan(batch, requestData, canSendItems, onDone)
+    local recipientRaw = requestData.r
     local toName = GBCR.Guild:NormalizePlayerName(recipientRaw, true)
-    if Globals.SendMailNameEditBox then
-        Globals.SendMailNameEditBox:SetText(toName)
+
+    local MailEditBox = Globals.MailEditBox
+    local SendMailNameEditBox = Globals.SendMailNameEditBox
+    local SendMailSubjectEditBox = Globals.SendMailSubjectEditBox
+
+    local batchIndex = UI.batchIndex or 1
+    local totalBatches = UI.fulfillmentPlan and #UI.fulfillmentPlan.batches or 1
+
+    if SendMailNameEditBox then
+        SendMailNameEditBox:SetText(toName)
     end
 
-    -- Direct attachments
+    if SendMailSubjectEditBox then
+        SendMailSubjectEditBox:SetText(string_format("Guild bank request (mail %d of %d)", batchIndex, totalBatches))
+    end
+
+    if MailEditBox then
+        local shortages = getRequestShortages(requestData, canSendItems)
+        local bodyText = string_format("Here are the items for your request (mail %d of %d).\n", batchIndex, totalBatches)
+
+        if batchIndex == totalBatches then
+            bodyText = bodyText .. "\nFulfillment complete."
+
+            if totalBatches > 1 then
+                bodyText = bodyText .. " See previous mails for the rest of your items."
+            end
+
+            if #shortages > 0 then
+                bodyText = bodyText .. "\n\nUNMET REQUESTS (shortages):\n" .. table.concat(shortages, "\n")
+            end
+        else
+            bodyText = bodyText ..
+                           string_format("\nExpect %d more mail%s after this one.", totalBatches - batchIndex,
+                                         totalBatches - batchIndex ~= 1 and "s" or "")
+        end
+
+        MailEditBox:SetText(bodyText)
+    end
+
     local dr = doDirectAttach(batch.directOps, 1)
+    local nextSlot = dr.nextSlot
+    local totalAttached = dr.attached
+    local errors = dr.errors
 
-    if not batch.splitOp then
-        local msg = dr.attached > 0 and
-                        string_format("Attached %d item%s for %s. Click 'Send' to deliver.", dr.attached,
-                                      dr.attached ~= 1 and "s" or "", toName) or
-                        "No items attached. They may have moved. Re-plan fulfillment and try again."
-        onDone({attached = dr.attached, errors = dr.errors, message = msg})
-
-        return
-    end
-
-    -- Async stack split
-    local sp = batch.splitOp
-    local emptyBag, emptySlot = findEmptyBagSlot(sp.bag, sp.slot)
-
-    if not emptyBag then
-        local errs = dr.errors
-        errs[#errs + 1] = string_format("No empty bag slot to commit split of %dx %s. Free a slot and re-plan fulfillment.",
-                                        sp.splitAmount, sp.itemName)
-
-        onDone({
-            attached = dr.attached,
-            errors = errs,
-            message = string_format(
-                "Attached %d item%s. Split of %dx %s requires an empty bag slot. Make room and re-plan fulfillment.", dr.attached,
-                dr.attached ~= 1 and "s" or "", sp.splitAmount, sp.itemName)
-        })
+    if #batch.splitOps == 0 then
+        local msg = totalAttached > 0 and
+                        string_format("Ready to send! Filled %d mail slot%s. Click 'Send'.", nextSlot - 1,
+                                      nextSlot - 1 ~= 1 and "s" or "") or
+                        "No items attached. They may have moved. Re-plan and try again."
+        onDone({attached = totalAttached, errors = errors, message = msg})
 
         return
     end
 
-    if sp.bag and sp.slot and sp.splitAmount then
-        ClearCursor()
-        SplitContainerItem(sp.bag, sp.slot, sp.splitAmount)
-    end
+    local function processSplitQueue(index)
+        if index > #batch.splitOps then
+            local msg = string_format("Ready to send! Filled %d mail slot%s. Click 'Send'.", nextSlot - 1,
+                                      nextSlot - 1 ~= 1 and "s" or "")
+            onDone({attached = totalAttached, errors = errors, message = msg})
 
-    local MAX_RETRIES = 15 -- TODO
+            return
+        end
 
-    local splitRetries = 0
-    local dropRetries = 0
-    local attachRetries = 0
+        if nextSlot > 12 then
+            errors[#errors + 1] = "Mail full (12 attachment limit reached)."
+            local msg = string_format("Filled %d slots. Remaining splits omitted due to full mail.", totalAttached)
+            onDone({attached = totalAttached, errors = errors, message = msg})
 
-    local attemptCursorPickup, attemptBagDrop, attemptMailAttach
+            return
+        end
 
-    -- Pick up the newly committed stack from the bag and attach it to the mail
-    attemptMailAttach = function()
-        ClearCursor()
-        PickupContainerItem(emptyBag, emptySlot)
+        local sp = batch.splitOps[index]
+        local emptyBag, emptySlot = findEmptyBagSlot(sp.bag, sp.slot)
 
-        local function verifyAndAttach()
-            if GetCursorInfo() == "item" then
-                ClickSendMailItemButton(dr.nextSlot)
-                ClearCursor()
+        if not emptyBag then
+            errors[#errors + 1] = string_format("No empty bag slot to commit split of %dx %s. Free a slot.", sp.splitAmount,
+                                                sp.itemName)
+            local msg = string_format("Attached %d items. Split of %s aborted due to lack of bag space.", totalAttached,
+                                      sp.itemName)
+            onDone({attached = totalAttached, errors = errors, message = msg})
 
-                local totalAttached = dr.attached + sp.splitAmount
-                onDone({
-                    attached = totalAttached,
-                    errors = dr.errors,
-                    message = string_format("Attached %d item%s (includes auto-split of %dx %s) for %s. Click 'Send' to deliver.",
-                                            totalAttached, totalAttached ~= 1 and "s" or "", sp.splitAmount, sp.itemName, toName)
-                })
-            else
-                attachRetries = attachRetries + 1
-                if attachRetries <= MAX_RETRIES then
-                    After(0.10, verifyAndAttach)
-                else
+            return
+        end
+
+        if sp.bag and sp.slot and sp.splitAmount then
+            ClearCursor()
+            SplitContainerItem(sp.bag, sp.slot, sp.splitAmount)
+        end
+
+        local MAX_RETRIES = 15 -- TODO
+        local splitRetries = 0
+        local dropRetries = 0
+        local attachRetries = 0
+
+        local attemptCursorPickup, attemptBagDrop, attemptMailAttach
+
+        attemptMailAttach = function()
+            ClearCursor()
+            PickupContainerItem(emptyBag, emptySlot)
+
+            local function verifyAndAttach()
+                if GetCursorInfo() == "item" then
+                    ClickSendMailItemButton(nextSlot)
                     ClearCursor()
 
-                    local errs = dr.errors
-                    errs[#errs + 1] = string_format("Pickup of split %dx %s from bag %d slot %d failed after commit.",
-                                                    sp.splitAmount, sp.itemName, emptyBag, emptySlot)
+                    totalAttached = totalAttached + sp.splitAmount
+                    nextSlot = nextSlot + 1
 
-                    onDone({attached = dr.attached, errors = errs, message = "Attachment failed due to server latency."})
+                    After(0.12, function()
+                        processSplitQueue(index + 1)
+                    end)
+                else
+                    attachRetries = attachRetries + 1
+                    if attachRetries <= MAX_RETRIES then
+                        After(0.10, verifyAndAttach)
+                    else
+                        ClearCursor()
+                        errors[#errors + 1] = string_format("Pickup of split %dx %s from bag %d slot %d failed.", sp.splitAmount,
+                                                            sp.itemName, emptyBag, emptySlot)
+                        processSplitQueue(index + 1)
+                    end
+                end
+            end
+
+            After(0.10, verifyAndAttach)
+        end
+
+        attemptBagDrop = function()
+            if GetContainerItemInfo(emptyBag, emptySlot) then
+                attemptMailAttach()
+            else
+                dropRetries = dropRetries + 1
+                if dropRetries <= MAX_RETRIES then
+                    After(0.10, attemptBagDrop)
+                else
+                    errors[#errors + 1] = string_format("Failed to verify split item %s landed in bag.", sp.itemName)
+                    processSplitQueue(index + 1)
                 end
             end
         end
 
-        After(0.10, verifyAndAttach)
-    end
-
-    -- Wait for the item to physically land in the new bag slot
-    attemptBagDrop = function()
-        if GetContainerItemInfo(emptyBag, emptySlot) then
-            attemptMailAttach()
-        else
-            dropRetries = dropRetries + 1
-            if dropRetries <= MAX_RETRIES then
+        attemptCursorPickup = function()
+            if GetCursorInfo() == "item" then
+                PickupContainerItem(emptyBag, emptySlot)
                 After(0.10, attemptBagDrop)
             else
-                local errs = dr.errors
-                errs[#errs + 1] = string_format("Failed to verify split item %s landed in bag (high latency).", sp.itemName)
-
-                onDone({attached = dr.attached, errors = errs, message = "Bag commit failed."})
+                splitRetries = splitRetries + 1
+                if splitRetries <= MAX_RETRIES then
+                    After(0.10, attemptCursorPickup)
+                else
+                    ClearCursor()
+                    errors[#errors + 1] = string_format("Split of %dx %s failed due to server latency.", sp.splitAmount,
+                                                        sp.itemName)
+                    processSplitQueue(index + 1)
+                end
             end
         end
+
+        After(0.10, attemptCursorPickup)
     end
 
-    -- Wait for the initial split item to appear on the cursor
-    attemptCursorPickup = function()
-        if GetCursorInfo() == "item" then
-            PickupContainerItem(emptyBag, emptySlot)
-            After(0.10, attemptBagDrop)
-        else
-            splitRetries = splitRetries + 1
-            if splitRetries <= MAX_RETRIES then
-                After(0.10, attemptCursorPickup)
-            else
-                ClearCursor()
-
-                local errs = dr.errors
-                errs[#errs + 1] = string_format("Split of %dx %s failed (stack may have moved or high latency).", sp.splitAmount,
-                                                sp.itemName)
-                onDone({
-                    attached = dr.attached,
-                    errors = errs,
-                    message = string_format("Attached %d item%s. Split of %dx %s failed. Split manually and re-plan fulfillment.",
-                                            dr.attached, dr.attached ~= 1 and "s" or "", sp.splitAmount, sp.itemName)
-                })
-            end
-        end
-    end
-
-    After(0.10, attemptCursorPickup)
+    processSplitQueue(1)
 end
 
 -- Helper to count by item
@@ -4104,7 +4204,7 @@ local function doLoad(widget)
     end
 
     local pluralItems = ((data.i or {}) ~= 1 and "s" or "")
-    local statusTxt = Globals.ColorizeText(Constants.COLORS.GREEN, string_format("Success: loaded %d item%s from %s",
+    local statusTxt = Globals.ColorizeText(Constants.COLORS.GREEN, string_format("Success: identified %d requested item%s from %s",
                                                                                  #(data.i or {}), pluralItems, data.r or "?"))
     statusLabel:SetText(statusTxt)
     container:DoLayout()
@@ -4241,11 +4341,12 @@ local function drawFulfillmentTab(self, container)
         local colHdr = aceGUI:Create("SimpleGroup")
         colHdr:SetFullWidth(true)
         colHdr:SetLayout("Table")
-        colHdr:SetUserData("table", {columns = {0, 55, 55, 55, 55}})
+        colHdr:SetUserData("table", {columns = {0.48, 0.13, 0.13, 0.13, 0.13}})
 
         local function createHeaderLabel(text)
             local label = aceGUI:Create("Label")
             label:SetText(Globals.ColorizeText(Constants.COLORS.GOLD, text))
+            label:SetFullWidth(true)
             colHdr:AddChild(label)
         end
 
@@ -4270,20 +4371,19 @@ local function drawFulfillmentTab(self, container)
             sp2:SetText(" ")
             scroll:AddChild(sp2)
 
-            local pluralUnmet = (totalUnmet ~= 1 and "s" or "")
-
             if totalUnmet > 0 then
                 local warn = aceGUI:Create("Label")
                 warn:SetFullWidth(true)
                 warn:SetText(Globals.ColorizeText(Constants.COLORS.ORANGE, string_format(
-                                                      "Warning: %d item%s cannot be fully fulfilled.", totalUnmet, pluralUnmet)))
+                                                      "Warning: %d shortage%s across the total request.", totalUnmet,
+                                                      totalUnmet ~= 1 and "s" or "")))
                 scroll:AddChild(warn)
             end
 
             if #canSendItems == 0 then
                 local none = aceGUI:Create("Label")
                 none:SetFullWidth(true)
-                none:SetText(Globals.ColorizeText(Constants.COLORS.GRAY, "Nothing sendable from bags right now."))
+                none:SetText(Globals.ColorizeText(Constants.COLORS.GRAY, "No matching items found in your bags."))
                 scroll:AddChild(none)
                 scroll:DoLayout()
 
@@ -4292,9 +4392,8 @@ local function drawFulfillmentTab(self, container)
 
             local infoLabel = aceGUI:Create("Label")
             infoLabel:SetFullWidth(true)
-            infoLabel:SetText(string_format("%d item type%s ready to mail.\n" ..
-                                                "Items in bank or mail must be moved to bags first.\n" ..
-                                                "Stacks are split automatically when needed. Each mail holds up to 12 stacks.",
+            infoLabel:SetText(string_format("Found %d requested item%s ready in your bags.\n" ..
+                                                "Items will automatically split and attach up to the 12-slot mail limit.",
                                             #canSendItems, #canSendItems ~= 1 and "s" or ""))
             scroll:AddChild(infoLabel)
 
@@ -4309,26 +4408,30 @@ local function drawFulfillmentTab(self, container)
 
             local fulfillmentPlanBtn, fulfillmentAttachBtn
 
+            fulfillmentPlanBtn = aceGUI:Create("Button")
+            fulfillmentPlanBtn:SetText("Plan fulfillment")
+            fulfillmentPlanBtn:SetFullWidth(true)
+            scroll:AddChild(fulfillmentPlanBtn)
+
             fulfillmentAttachBtn = aceGUI:Create("Button")
             fulfillmentAttachBtn:SetText("Attach items to mail")
             fulfillmentAttachBtn:SetFullWidth(true)
             fulfillmentAttachBtn:SetDisabled(true)
             scroll:AddChild(fulfillmentAttachBtn)
 
-            fulfillmentPlanBtn = aceGUI:Create("Button")
-            fulfillmentPlanBtn:SetText("Plan fulfillment")
-            fulfillmentPlanBtn:SetFullWidth(true)
             fulfillmentPlanBtn:SetUserData("statusLabel", statusLabel)
             fulfillmentPlanBtn:SetUserData("fulfillmentAttachBtn", fulfillmentAttachBtn)
             fulfillmentPlanBtn:SetUserData("requestData", requestData)
             fulfillmentPlanBtn:SetUserData("canSendItems", canSendItems)
+            fulfillmentPlanBtn:SetUserData("scroll", scroll)
             fulfillmentPlanBtn:SetCallback("OnClick", callbacks.onClickFulfillmentPlanBtn)
-            scroll:AddChild(fulfillmentPlanBtn)
 
             fulfillmentAttachBtn:SetUserData("statusLabel", statusLabel)
+            fulfillmentAttachBtn:SetUserData("scroll", scroll)
             fulfillmentAttachBtn:SetUserData("fulfillmentAttachBtn", fulfillmentAttachBtn)
             fulfillmentAttachBtn:SetUserData("fulfillmentPlanBtn", fulfillmentPlanBtn)
             fulfillmentAttachBtn:SetUserData("requestData", requestData)
+            fulfillmentAttachBtn:SetUserData("canSendItems", canSendItems)
             fulfillmentAttachBtn:SetCallback("OnClick", callbacks.onClickFulfillmentAttachBtn)
 
             scroll:DoLayout()
@@ -4343,25 +4446,29 @@ local function drawFulfillmentTab(self, container)
 
             for i = batchPosition, endPosition do
                 local entry = itemEntries[i]
-                local itemId, qty = entry[1], entry[2]
+                local itemIdentifier, qty = entry[1], entry[2]
 
-                if itemId and qty then
+                if itemIdentifier and qty then
+                    local itemId = tonumber(string_match(itemIdentifier, "item:(%d+)") or itemIdentifier)
+
                     local bags = inBags[itemId] or 0
                     local bank = inBank[itemId] or 0
                     local mail = inMail[itemId] or 0
                     local avail = bags + bank + mail
                     local canSend = math_min(qty, bags)
 
-                    local rawName = GetItemInfo(itemId)
+                    local rawName, rawLink = GetItemInfo(itemIdentifier)
                     local name = rawName or ("item:" .. itemId)
 
                     local row = aceGUI:Create("SimpleGroup")
                     row:SetFullWidth(true)
                     row:SetLayout("Table")
-                    row:SetUserData("table", {columns = {0, 55, 55, 55, 55}})
+                    row:SetUserData("table", {columns = {0.48, 0.13, 0.13, 0.13, 0.13}})
 
                     local nameLabel = aceGUI:Create("Label")
-                    nameLabel:SetText(name)
+                    nameLabel:SetText(rawName)
+                    nameLabel:SetWidth(346)
+                    nameLabel:SetFullWidth(true)
                     row:AddChild(nameLabel)
 
                     local function createLabelForCounts(count, isNeed)
@@ -4380,10 +4487,11 @@ local function drawFulfillmentTab(self, container)
                     scroll:AddChild(row)
 
                     if canSend > 0 then
-                        canSendItems[#canSendItems + 1] = {itemId = itemId, qty = canSend, name = name}
+                        canSendItems[#canSendItems + 1] = {item = itemIdentifier, qty = canSend, name = name}
                     end
-                    if avail < qty then
-                        totalUnmet = totalUnmet + (qty - avail)
+
+                    if canSend < qty then
+                        totalUnmet = totalUnmet + (qty - canSend)
                     end
                 end
             end
@@ -4429,12 +4537,14 @@ function callbacks.onClickFulfillmentPlanBtn(widget)
     local requestData = widget:GetUserData("requestData")
     local canSendItems = widget:GetUserData("canSendItems")
 
-    if not Globals.MailFrame or not Globals.MailFrame:IsShown() then
+    if not MailFrame or not MailFrame:IsShown() then
         statusLabel:SetText(
             Globals.ColorizeText(Constants.COLORS.ORANGE, "Open the mailbox first, then click 'Plan fulfillment'."))
 
         return
     end
+
+    MailFrameTab2:Click()
 
     UI.fulfillmentPlan = buildFulfillmentPlan(canSendItems)
     UI.batchIndex = 0
@@ -4455,13 +4565,8 @@ function callbacks.onClickFulfillmentPlanBtn(widget)
     }
 
     for i, batch in ipairs(UI.fulfillmentPlan.batches) do
-        local slots = #batch.directOps + (batch.splitOp and 1 or 0)
-        local desc = string_format("  - Mail %d: %d attachment%s", i, slots, slots ~= 1 and "s" or "")
-
-        if batch.splitOp then
-            desc = desc .. string_format(" (%dx %s)", batch.splitOp.splitAmount, batch.splitOp.itemName)
-        end
-        lines[#lines + 1] = desc
+        local slots = #batch.directOps + #batch.splitOps
+        lines[#lines + 1] = string_format("   - Mail %d: %d attachment%s", i, slots, slots ~= 1 and "s" or "")
     end
 
     if #UI.fulfillmentPlan.issues > 0 then
@@ -4478,6 +4583,11 @@ function callbacks.onClickFulfillmentPlanBtn(widget)
     statusLabel:SetText(table_concat(lines, "\n"))
     fulfillmentAttachBtn:SetText(string_format("Attach items (mail 1 of %d)", #UI.fulfillmentPlan.batches))
     fulfillmentAttachBtn:SetDisabled(false)
+
+    local scroll = widget:GetUserData("scroll")
+    if scroll then
+        scroll:DoLayout()
+    end
 end
 
 -- Helper callback for the request fulfillment tab: attach
@@ -4486,6 +4596,7 @@ function callbacks.onClickFulfillmentAttachBtn(widget)
     local fulfillmentAttachBtn = widget:GetUserData("fulfillmentAttachBtn")
     local fulfillmentPlanBtn = widget:GetUserData("fulfillmentPlanBtn")
     local requestData = widget:GetUserData("requestData")
+    local canSendItems = widget:GetUserData("canSendItems")
 
     if not UI.fulfillmentPlan or #UI.fulfillmentPlan.batches == 0 then
         statusLabel:SetText("Click 'Plan fulfillment' first.")
@@ -4501,18 +4612,20 @@ function callbacks.onClickFulfillmentAttachBtn(widget)
 
     UI.batchIndex = UI.batchIndex + 1
     if UI.batchIndex > #UI.fulfillmentPlan.batches then
-        statusLabel:SetText(Globals.ColorizeText(Constants.COLORS.GREEN, "All mails prepared, request fully fulfilled!"))
+        statusLabel:SetText(Globals.ColorizeText(Constants.COLORS.GREEN, "All mails prepared!"))
         fulfillmentAttachBtn:SetDisabled(true)
 
         return
     end
 
     local batch = UI.fulfillmentPlan.batches[UI.batchIndex]
+    local totalBatches = #UI.fulfillmentPlan.batches
+
     fulfillmentPlanBtn:SetDisabled(true)
     fulfillmentAttachBtn:SetDisabled(true)
     statusLabel:SetText("Attaching items, please wait...")
 
-    executeFulfillmentPlan(batch, requestData.r, function(result)
+    executeFulfillmentPlan(batch, requestData, canSendItems, function(result)
         fulfillmentPlanBtn:SetDisabled(false)
 
         local lines = {result.message}
@@ -4520,24 +4633,31 @@ function callbacks.onClickFulfillmentAttachBtn(widget)
             lines[#lines + 1] = Globals.ColorizeText(Constants.COLORS.ORANGE, "  - " .. err)
         end
 
-        if UI.batchIndex < #UI.fulfillmentPlan.batches then
+        if UI.batchIndex < totalBatches then
             lines[#lines + 1] = " "
             lines[#lines + 1] = Globals.ColorizeText(Constants.COLORS.GOLD, string_format(
                                                          "Send this mail, then click 'Attach items' for mail %d of %d.",
-                                                         UI.batchIndex + 1, #UI.fulfillmentPlan.batches))
-            fulfillmentAttachBtn:SetText(string_format("Attach items (mail %d of %d)", UI.batchIndex + 1,
-                                                       #UI.fulfillmentPlan.batches))
+                                                         UI.batchIndex + 1, totalBatches))
+
+            fulfillmentAttachBtn:SetText(string_format("Attach items (mail %d of %d)", UI.batchIndex + 1, totalBatches))
             fulfillmentAttachBtn:SetDisabled(false)
         else
             lines[#lines + 1] = " "
-            lines[#lines + 1] = Globals.ColorizeText(Constants.COLORS.GREEN,
-                                                     "All items attached! Send this last mail to complete the request.")
+            local completionText = totalBatches == 1 and "All items attached! Send this mail to complete the request." or
+                                       "All items attached! Send this final mail to complete the request."
+
+            lines[#lines + 1] = Globals.ColorizeText(Constants.COLORS.GREEN, completionText)
             fulfillmentAttachBtn:SetText("All done!")
             fulfillmentAttachBtn:SetDisabled(true)
         end
 
         statusLabel:SetText(table_concat(lines, "\n"))
     end)
+
+    local scroll = widget:GetUserData("scroll")
+    if scroll then
+        scroll:DoLayout()
+    end
 end
 
 -- Helper callback for the request fulfillment tab: import
