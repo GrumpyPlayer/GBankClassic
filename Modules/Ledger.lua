@@ -10,11 +10,13 @@ Ledger.indexSuffix = 4
 Ledger.indexCount = 5
 Ledger.indexActor = 6
 Ledger.indexOperation = 7
+Ledger.indexSequence = 8
 
 local Globals = GBCR.Globals
 local bit_band = Globals.bit_band
 local date = Globals.date
 local ipairs = Globals.ipairs
+local math_max = Globals.math_max
 local math_min = Globals.math_min
 local string_format = Globals.string_format
 local string_match = Globals.string_match
@@ -222,7 +224,7 @@ end
 local function makeLedgerEntryKey(self, entry)
     return entry[self.indexTimestamp] .. "_" .. entry[self.indexItemId] .. "_" .. (entry[self.indexEnchant] or 0) .. "_" ..
                (entry[self.indexSuffix] or 0) .. "_" .. entry[self.indexOperation] .. "_" .. (entry[self.indexCount] or 0) .. "_" ..
-               (entry[self.indexActor] or "")
+               (entry[self.indexActor] or "") .. "_" .. (entry[self.indexSequence] or 0)
 end
 
 -- Merge received ledger entries into local ledger (dedup by timestamp + itemId + opCode)
@@ -298,8 +300,11 @@ local function appendLedger(self, altName, itemString, count, actorUid, opCode, 
     end
 
     local now = GetServerTime()
+    local lastVersion = alt.version or 0
+    local newVersion = math_max(now, lastVersion + 1)
     local ledgerLen = #ledger + 1
-    ledger[ledgerLen] = {now, itemId, enchant, suffix, count or 1, actorUid or "", opCode}
+    alt.ledgerSequence = (alt.ledgerSequence or 0) + 1
+    ledger[ledgerLen] = {now, itemId, enchant, suffix, count or 1, actorUid or "", opCode, alt.ledgerSequence}
     alt.ledgerCompressedVersion = nil
 
     Output:Debug("LEDGER",
@@ -315,7 +320,19 @@ local function appendLedger(self, altName, itemString, count, actorUid, opCode, 
         end
     end
 
-    alt.version = now
+    alt.version = newVersion
+
+    if not self.timerLedgerFirstChange then
+        self.timerLedgerFirstChange = NewTimer(10, function()
+            self.timerLedgerFirstChange = nil
+            if self.timerLedgerUpdateBroadcast then
+                self.timerLedgerUpdateBroadcast:Cancel()
+                self.timerLedgerUpdateBroadcast = nil
+            end
+            GBCR.Protocol:SendAnnounce(GBCR.Guild:GetNormalizedPlayerName())
+            GBCR.UI:MarkAltDirty(altName)
+        end)
+    end
 
     if self.timerLedgerUpdateBroadcast and not self.timerLedgerUpdateBroadcast:IsCancelled() then
         self.timerLedgerUpdateBroadcast:Cancel()
@@ -335,6 +352,11 @@ local function appendLedger(self, altName, itemString, count, actorUid, opCode, 
             networkMeta.seedCount = 0
             networkMeta.lastSeedTime = nil
             networkMeta.lastSeedTarget = nil
+        end
+
+        if self.timerLedgerFirstChange then
+            self.timerLedgerFirstChange:Cancel()
+            self.timerLedgerFirstChange = nil
         end
 
         Output:Debug("LEDGER", "Ledger changed for %s, version updated to %d", altName, alt.version)
@@ -365,14 +387,16 @@ local function getMailContext(mailId)
         return nil
     end
 
+    local isSystemSender = string_match(sender, " ") ~= nil
+
     return {
         sender = sender,
         money = tonumber(money) or 0,
         cod = tonumber(cod) or 0,
         daysLeft = daysLeft or 0,
         itemCount = itemCount or 0,
-        ahType = getAHMailType(subject),
-        actorUid = GBCR.Guild:DetermineUidForGuildMemberName(sender)
+        ahType = isSystemSender and getAHMailType(subject) or nil,
+        actorUid = (not isSystemSender) and GBCR.Guild:DetermineUidForGuildMemberName(sender) or nil
     }
 end
 
@@ -417,6 +441,7 @@ local function onTakeInboxItem(self, mailId, attachmentIndex, header)
 
     self.mailRegistry[dedupeKey] = true
     self.mailItemQueue[#self.mailItemQueue + 1] = {
+        session = GBCR.Events.currentMailSessionId,
         sender = header.sender,
         actorUid = header.actorUid,
         itemStr = itemStr,
@@ -449,6 +474,7 @@ local function onTakeInboxMoney(self, mailId, header)
 
     self.mailRegistry[dedupeKey] = true
     self.mailMoneyQueue[#self.mailMoneyQueue + 1] = {
+        session = GBCR.Events.currentMailSessionId,
         sender = header.sender,
         actorUid = header.actorUid,
         amount = header.money,

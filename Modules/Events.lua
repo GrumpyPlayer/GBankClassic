@@ -48,6 +48,8 @@ local tradeComplete = Globals.ERR_TRADE_COMPLETE
 local tradeTargetBagFull = Globals.ERR_TRADE_TARGET_BAG_FULL
 local tradeTargetMaxExceeded = Globals.ERR_TRADE_TARGET_MAX_LIMIT_CATEGORY_COUNT_EXCEEDED_IS
 
+local StaticPopupDialogs = Globals.StaticPopupDialogs
+
 local Constants = GBCR.Constants
 local timerIntervals = Constants.TIMER_INTERVALS
 
@@ -244,8 +246,20 @@ local function hookLedgerEventsOnce(self)
         Events.pendingCursorItem = captureContainerItem(bag, slot)
     end)
 
-    -- Destroy: step 2
-    hookLedgerEvent("DeleteCursorItem", "OnDeleteCursorItem")
+    -- Destroy: step 2 (hook the confirmation dialog)
+    if StaticPopupDialogs then
+        local function onConfirmDelete()
+            if GBCR.Guild.weAreGuildBankAlt and Events.pendingCursorItem then
+                GBCR.Ledger:OnDeleteCursorItem()
+            end
+        end
+
+        for _, dialogName in ipairs({"DELETE_ITEM", "DELETE_GOOD_ITEM"}) do
+            if StaticPopupDialogs[dialogName] and StaticPopupDialogs[dialogName].OnAccept then
+                hooksecurefunc(StaticPopupDialogs[dialogName], "OnAccept", onConfirmDelete)
+            end
+        end
+    end
 
     GBCR.Output:Debug("EVENTS", "Ledger hooks installed (one-time)")
 end
@@ -731,6 +745,17 @@ end
 function Events:MAIL_SHOW()
     GBCR.Output:Debug("EVENTS", "MAIL_SHOW event fired")
 
+    self.currentMailSessionId = (self.currentMailSessionId or 0) + 1
+    if GBCR.Ledger.mailItemQueue then
+        wipe(GBCR.Ledger.mailItemQueue)
+    end
+    if GBCR.Ledger.mailMoneyQueue then
+        wipe(GBCR.Ledger.mailMoneyQueue)
+    end
+    if GBCR.Ledger.mailRegistry then
+        wipe(GBCR.Ledger.mailRegistry)
+    end
+
     GBCR.Inventory:OnUpdateStart()
     GBCR.Inventory.mailHasUpdated = true
     self.isMailOpen = true
@@ -755,20 +780,6 @@ function Events:MAIL_CLOSED()
     self.isMailOpen = false
     GBCR.Inventory:OnUpdateStart()
     GBCR.Inventory:OnUpdateStop()
-
-    After(0.15, function()
-        if GBCR.Ledger.mailItemQueue then
-            wipe(GBCR.Ledger.mailItemQueue)
-        end
-        if GBCR.Ledger.mailRegistry then
-            wipe(GBCR.Ledger.mailRegistry)
-        end
-    end)
-    After(0.2, function()
-        if GBCR.Ledger.mailMoneyQueue then
-            wipe(GBCR.Ledger.mailMoneyQueue)
-        end
-    end)
 end
 
 function Events:CHAT_MSG_LOOT(_, message)
@@ -805,7 +816,7 @@ function Events:CHAT_MSG_LOOT(_, message)
         local idMatch = pendingID and itemID and pendingID == itemID
         local linkMatch = pending.link == itemLink
 
-        if (idMatch or linkMatch) and pending.qty == amount then
+        if pending.session == self.currentMailSessionId and (idMatch or linkMatch) and pending.qty == amount then
             GBCR.Output:Debug("LEDGER", "Confirmed item from mail! Appending ledger for %sx %s from %s (key=%s)", pending.qty,
                               pending.link, pending.sender, pending.dedupeContext)
 
@@ -831,7 +842,7 @@ function Events:PLAYER_MONEY()
     local i = 1
     while i <= #queue do
         local pending = queue[i]
-        if currentMoney > pending.moneySnapshot then
+        if pending.session == self.currentMailSessionId and currentMoney > pending.moneySnapshot then
             GBCR.Output:Debug("LEDGER", "Confirmed money from mail! Appending ledger for %d copper from %s (key=%s)",
                               pending.amount, pending.sender or "?", pending.dedupeContext)
 
