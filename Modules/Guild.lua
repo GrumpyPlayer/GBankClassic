@@ -830,12 +830,17 @@ local function colorPlayerName(self, name)
         return ""
     end
 
+    local normalized = normalizePlayerName(self, name)
+
     local cached = self.cachedColoredPlayerName[name]
     if cached then
-        return cached
+        local member = self.cachedGuildMembers[normalized]
+        local currentClass = member and member.playerClass
+        if self.cachedColoredPlayerNameClass and self.cachedColoredPlayerNameClass[name] == currentClass then
+            return cached
+        end
     end
 
-    local normalized = normalizePlayerName(self, name)
     local playerClass = getGuildMemberInfo(self, normalized)
     local result
 
@@ -848,6 +853,13 @@ local function colorPlayerName(self, name)
 
     result = result or Globals.ColorizeText(Constants.COLORS.RED, name)
     self.cachedColoredPlayerName[name] = result
+
+    if not self.cachedColoredPlayerNameClass then
+        self.cachedColoredPlayerNameClass = {}
+    end
+
+    local member = self.cachedGuildMembers[normalized]
+    self.cachedColoredPlayerNameClass[name] = member and member.playerClass
 
     return result
 end
