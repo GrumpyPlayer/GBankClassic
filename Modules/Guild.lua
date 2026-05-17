@@ -927,6 +927,7 @@ local function clearGuildCaches(self)
     self.cachedGuildRankNames = resetTable(self.cachedGuildRankNames)
     self.cachedAddonUsers = resetTable(self.cachedAddonUsers)
     self.cachedColoredPlayerName = resetTable(self.cachedColoredPlayerName)
+    self.cachedColoredPlayerNameClass = resetTable(self.cachedColoredPlayerNameClass)
 end
 
 -- Resets if the data does not already exist, only runs on GUILD_RANKS_UPDATE
