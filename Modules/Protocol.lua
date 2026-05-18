@@ -1706,7 +1706,7 @@ local function sendHello(self, messageType, target)
     if messageType ~= "reply" then
         local now = GetServerTime()
         local last = self.lastHelloTime or 0
-        if now - last < 300 then
+        if now - last < 300 then -- TODO
             GBCR.Output:Debug("PROTOCOL", "sendHello suppressed (last was %ds ago)", now - last)
 
             return
@@ -2631,7 +2631,7 @@ local function processNextIncomingPayload(self)
         delay = 0.1
     end
 
-    if #payloadData.message > 5000 then
+    if #payloadData.message > 5000 then -- TODO
         delay = math_max(delay, 0.2)
     end
 
@@ -2898,17 +2898,17 @@ local function onCommReceived(self, prefix, message, distribution, sender)
             local now = GetServerTime()
 
             self.recentDataQueryPruneCount = (self.recentDataQueryPruneCount or 0) + 1
-            if self.recentDataQueryPruneCount > 100 then
+            if self.recentDataQueryPruneCount > 100 then -- TODO
                 self.recentDataQueryPruneCount = 0
                 for key, ts in pairs(self.recentDataQueryResponses) do
-                    if now - ts > 120 then
+                    if now - ts > 120 then -- TODO
                         self.recentDataQueryResponses[key] = nil
                     end
                 end
             end
 
             local lastResponse = self.recentDataQueryResponses[responseKey] or 0
-            if now - lastResponse < 60 then
+            if now - lastResponse < 60 then -- TODO
                 GBCR.Output:Debug("PROTOCOL", "Query from %s for %s: rate-limited (last response %ds ago)", sender, altName,
                                   now - lastResponse)
             else
@@ -2933,7 +2933,7 @@ local function onCommReceived(self, prefix, message, distribution, sender)
         self.rosterQueryResponded = self.rosterQueryResponded or {}
         local lastResponse = self.rosterQueryResponded[sender] or 0
         local now = GetServerTime()
-        if now - lastResponse < 60 then
+        if now - lastResponse < 60 then -- TODO
             GBCR.Output:Debug("PROTOCOL", "Roster query from %s: rate-limited (%ds cooldown remaining)",
                               GBCR.Guild:ColorPlayerName(sender), 60 - (now - lastResponse))
             return

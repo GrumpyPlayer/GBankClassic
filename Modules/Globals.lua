@@ -306,7 +306,7 @@ local function shouldYield(frameStart, processedThisFrame, checkInterval, fallba
 
     if processedThisFrame % checkInterval == 0 then
         local elapsed = Globals.debugprofilestop() - getFrameGlobalStart()
-        if elapsed > 12 then
+        if elapsed > 12 then -- TODO
             return true
         end
     end
