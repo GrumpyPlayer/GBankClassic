@@ -14,7 +14,7 @@ local GetAddOnMetadata = Globals.GetAddOnMetadata
 local Constants = GBCR.Constants
 local logLevels = Constants.LOG_LEVEL
 
--- _G[addonName] = GBCR
+-- _G[addonName] = GBCR -- Uncomment for debugging purposes
 
 -- Make the addon metadata universally available
 local function loadMetadata(self)
