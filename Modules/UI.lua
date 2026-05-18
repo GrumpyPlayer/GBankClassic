@@ -4654,6 +4654,9 @@ end
 
 -- Helper to wipe cached UI data
 local function invalidateDataCache(self, isFullRebuild)
+    self.aggregationGeneration = (self.aggregationGeneration or 0) + 1
+    self.buildSearchGeneration = (self.buildSearchGeneration or 0) + 1
+    self.renderGeneration = (self.renderGeneration or 0) + 1
     self.ledgerDataDirty = true
     self.itemsHydrated = false
     self.needsFullRebuild = isFullRebuild == true
@@ -4664,6 +4667,7 @@ local function invalidateDataCache(self, isFullRebuild)
     wipe(self.corpus)
     wipe(self.aggregatedMap)
     wipe(self.itemsList)
+    wipe(self.cachedFilteredList)
     if isFullRebuild then
         wipe(self.itemInfoCache)
     end
@@ -5238,12 +5242,12 @@ local function buildFilteredList(self, callback)
                         pass = false
                     end
 
-                    if pass and searchText ~= "" then
+                    if pass and item and searchText ~= "" then
                         pass = #searchTokens > 0 and advancedSearchMatch(item, searchTokens) or
                                    (string_find(item.lowerName or "", searchText, 1, true) ~= nil)
                     end
 
-                    if pass then
+                    if pass and item then
                         self.filteredCount = self.filteredCount + 1
                         self.cachedFilteredList[self.filteredCount] = item
                     end
