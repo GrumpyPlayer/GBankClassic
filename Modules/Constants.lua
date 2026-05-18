@@ -227,7 +227,7 @@ local commandRegistry = {
         help = "display what guild bank data you know about and inform others",
         expert = true,
         handler = function()
-            GBCR.Protocol:SendHello()
+            GBCR.Protocol:SendHello("cmd")
         end
     },
     {

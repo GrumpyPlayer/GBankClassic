@@ -1711,9 +1711,13 @@ local function sendHello(self, messageType, target)
 
             return
         end
+
         self.lastHelloTime = now
 
-        GBCR.Output:Info(hello)
+        if messageType == "cmd" then
+            GBCR.Output:Info(hello)
+        end
+
         sendCommMessage("gbc-h", data, "GUILD", nil, "NORMAL")
     else
         if target then
