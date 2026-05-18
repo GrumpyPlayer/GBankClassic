@@ -14,7 +14,7 @@ local Enum = Globals.Enum
 local GetServerTime = Globals.GetServerTime
 
 -- Version aware import string prefix (Discord request list)
-Constants.IMPORT_PREFIX = "GBCR3:"
+Constants.IMPORT_PREFIX = "GBCR30011:"
 
 -- Limits
 Constants.LIMITS = {
