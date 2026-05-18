@@ -8,6 +8,7 @@ local debugprofilestop = Globals.debugprofilestop
 local pairs = Globals.pairs
 local select = Globals.select
 local string_gsub = Globals.string_gsub
+local tostring = Globals.tostring
 local type = Globals.type
 
 local After = Globals.After

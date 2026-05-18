@@ -24,6 +24,7 @@ local strsplit = Globals.strsplit
 local table_concat = Globals.table_concat
 local table_sort = Globals.table_sort
 local tonumber = Globals.tonumber
+local tostring = Globals.tostring
 local wipe = Globals.wipe
 
 local After = Globals.After
