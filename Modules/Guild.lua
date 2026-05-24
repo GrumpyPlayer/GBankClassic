@@ -419,7 +419,8 @@ local function rebuildGuildRosterInfo(self)
         self.areOfficerNotesUsedToDefineGuildBankAlts = nil
 
         local anyoneIsAuthority = isAnyoneAuthority(self)
-        local weCanViewOfficerNotes = self.weCanViewOfficerNotes
+        local weCanViewOfficerNotes = Globals.CanViewOfficerNote()
+        self.weCanViewOfficerNotes = weCanViewOfficerNotes
         local player = getNormalizedPlayerName(self)
 
         local numTotal, numOnline = GetNumGuildMembers()
