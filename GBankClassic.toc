@@ -3,7 +3,7 @@
 ## Notes: A simple way to aggregate and view the inventories of multiple guild bank alts.
 ## Author: GrumpyPlayers (also known as <SG>Soul)
 ## Collaborators: Dominion-Myzrael, Lothsahn, Huntmehuntme-Myzrael, Pimptasty
-## Version: 3.0.13
+## Version: 3.0.14
 ## SavedVariables: GBCR_DB_V30011
 ## OptionalDeps: Ace3
 ## X-Embeds: Ace3

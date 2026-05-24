@@ -2144,13 +2144,27 @@ local function processRosterData(self, data, sender)
         newSet[name] = true
     end
 
+    local localOfficerNotesUsed = sv.roster and sv.roster.areOfficerNotesUsed == true
+    local incomingOfficerNotesUsed = data.roster.areOfficerNotesUsed == true
+    local suppressRemovals = localOfficerNotesUsed and not incomingOfficerNotesUsed
+    if suppressRemovals then
+        GBCR.Output:Debug("PROTOCOL", "Roster from %s skips officer note alts, accepting additions but suppressing removals",
+                          sender)
+    end
+
     local removedAny = false
     for _, name in ipairs(oldAlts) do
-        if not newSet[name] and sv.alts and sv.alts[name] then
-            sv.alts[name] = nil
-            removedAny = true
-            GBCR.Output:Info("%s is no longer a guild bank alt. Their data has been removed.", GBCR.Guild:ColorPlayerName(name))
-            GBCR.Output:Debug("PROTOCOL", "Wiped guild bank alt data on roster-share for %s", name)
+        if not newSet[name] then
+            if suppressRemovals then
+                newSet[name] = true
+                newAlts[#newAlts + 1] = name
+            elseif sv.alts and sv.alts[name] then
+                sv.alts[name] = nil
+                removedAny = true
+                GBCR.Output:Info("%s is no longer a guild bank alt. Their data has been removed.",
+                                 GBCR.Guild:ColorPlayerName(name))
+                GBCR.Output:Debug("PROTOCOL", "Wiped guild bank alt data on roster-share for %s", name)
+            end
         end
     end
 
@@ -2189,10 +2203,14 @@ local function processRosterData(self, data, sender)
     end
 
     if data.roster.areOfficerNotesUsed ~= nil then
-        sv.roster.areOfficerNotesUsed = data.roster.areOfficerNotesUsed
-        GBCR.Guild.areOfficerNotesUsedToDefineGuildBankAlts = data.roster.areOfficerNotesUsed
-        GBCR.Output:Debug("PROTOCOL", "areOfficerNotesUsedToDefineGuildBankAlts set to %s by authority %s",
-                          tostring(data.roster.areOfficerNotesUsed), GBCR.Guild:ColorPlayerName(sender))
+        if suppressRemovals then
+            GBCR.Output:Debug("PROTOCOL", "Ignored areOfficerNotesUsed state (false) from %s due to suppressed removals", sender)
+        else
+            sv.roster.areOfficerNotesUsed = data.roster.areOfficerNotesUsed
+            GBCR.Guild.areOfficerNotesUsedToDefineGuildBankAlts = data.roster.areOfficerNotesUsed
+            GBCR.Output:Debug("PROTOCOL", "areOfficerNotesUsedToDefineGuildBankAlts set to %s by authority %s",
+                              tostring(data.roster.areOfficerNotesUsed), GBCR.Guild:ColorPlayerName(sender))
+        end
     end
 
     sv.alts = sv.alts or {}

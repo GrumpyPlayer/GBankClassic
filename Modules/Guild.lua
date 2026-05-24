@@ -536,62 +536,71 @@ local function rebuildGuildRosterInfo(self)
             local selfIsAuthority = self.cachedGuildMembers[player] and self.cachedGuildMembers[player].isAuthority
 
             if anyoneIsAuthority or selfIsAuthority then
-                local newBanksSet = {}
-                for i = 1, #guildBankAlts do
-                    newBanksSet[guildBankAlts[i]] = true
-                end
+                local previouslyUsedOfficerNotes = GBCR.Database.savedVariables.roster.areOfficerNotesUsed == true
+                local scanFoundNoOfficerNoteAlts = not self.areOfficerNotesUsedToDefineGuildBankAlts
 
-                local removedAlts = {}
-                local existingRosterAlts = GBCR.Database.savedVariables.roster.alts or {}
-                local previousRosterCount = #existingRosterAlts
-                for _, oldName in ipairs(existingRosterAlts) do
-                    if not newBanksSet[oldName] then
-                        removedAlts[#removedAlts + 1] = oldName
+                if previouslyUsedOfficerNotes and scanFoundNoOfficerNoteAlts then
+                    GBCR.Output:Debug("ROSTER",
+                                      "Skipping destructive diff: officer notes were in use but scan found none (roster data may be incomplete)")
+                else
+                    local newBanksSet = {}
+                    for i = 1, #guildBankAlts do
+                        newBanksSet[guildBankAlts[i]] = true
                     end
-                end
 
-                if #removedAlts > 0 and GBCR.Database.savedVariables.alts then
-                    for _, name in ipairs(removedAlts) do
-                        GBCR.Database.savedVariables.alts[name] = nil
-                        GBCR.Output:Info("%s is no longer a guild bank alt. Their local data has been removed.",
-                                         Globals.ColorizeText(Constants.COLORS.GOLD, name))
-                        GBCR.Output:Debug("ROSTER", "Authority wiped data for removed guild bank alt: %s", name)
+                    local removedAlts = {}
+                    local existingRosterAlts = GBCR.Database.savedVariables.roster.alts or {}
+                    local previousRosterCount = #existingRosterAlts
+                    for _, oldName in ipairs(existingRosterAlts) do
+                        if not newBanksSet[oldName] then
+                            removedAlts[#removedAlts + 1] = oldName
+                        end
                     end
-                    GBCR.UI:MarkAllDirty()
-                end
 
-                GBCR.Database.savedVariables.roster.alts = GBCR.Database.savedVariables.roster.alts or {}
-
-                wipe(GBCR.Database.savedVariables.roster.alts)
-                for i = 1, #guildBankAlts do
-                    GBCR.Database.savedVariables.roster.alts[i] = guildBankAlts[i]
-                end
-
-                GBCR.Database.savedVariables.roster.areOfficerNotesUsed = self.areOfficerNotesUsedToDefineGuildBankAlts == true
-                GBCR.Database.savedVariables.roster.manualAlts = GBCR.Database.savedVariables.roster.manualAlts or {}
-
-                if anyoneIsAuthority then
-                    GBCR.Database.savedVariables.roster.version = nil
-                elseif selfIsAuthority then
-                    local rosterChanged = (#removedAlts > 0) or (#guildBankAlts > previousRosterCount)
-
-                    if rosterChanged then
-                        GBCR.Database.savedVariables.roster.version = GetServerTime()
-                        After(0, function()
-                            GBCR.Protocol.SendRoster()
-                        end)
-                        GBCR.Output:Debug("ROSTER",
-                                          "Authority broadcast: roster changed (officerNotes=%s, manualAlts=%s), pushing to guild",
-                                          tostring(self.areOfficerNotesUsedToDefineGuildBankAlts),
-                                          tostring(savedManualAlts and #savedManualAlts > 0))
+                    if #removedAlts > 0 and GBCR.Database.savedVariables.alts then
+                        for _, name in ipairs(removedAlts) do
+                            GBCR.Database.savedVariables.alts[name] = nil
+                            GBCR.Output:Info("%s is no longer a guild bank alt. Their local data has been removed.",
+                                             Globals.ColorizeText(Constants.COLORS.GOLD, name))
+                            GBCR.Output:Debug("ROSTER", "Authority wiped data for removed guild bank alt: %s", name)
+                        end
+                        GBCR.UI:MarkAllDirty()
                     end
-                end
 
-                GBCR.Output:Debug("ROSTER",
-                                  "Authority rebuilt roster: %d alts, %d removed (version=%s, areOfficerNotesUsed=%s, anyoneIsAuthority=%s, selfIsAuthority=%s)",
-                                  #guildBankAlts, #removedAlts, tostring(GBCR.Database.savedVariables.roster.version),
-                                  tostring(GBCR.Database.savedVariables.roster.areOfficerNotesUsed), tostring(anyoneIsAuthority),
-                                  tostring(selfIsAuthority))
+                    GBCR.Database.savedVariables.roster.alts = GBCR.Database.savedVariables.roster.alts or {}
+
+                    wipe(GBCR.Database.savedVariables.roster.alts)
+                    for i = 1, #guildBankAlts do
+                        GBCR.Database.savedVariables.roster.alts[i] = guildBankAlts[i]
+                    end
+
+                    GBCR.Database.savedVariables.roster.areOfficerNotesUsed =
+                        self.areOfficerNotesUsedToDefineGuildBankAlts == true
+                    GBCR.Database.savedVariables.roster.manualAlts = GBCR.Database.savedVariables.roster.manualAlts or {}
+
+                    if anyoneIsAuthority then
+                        GBCR.Database.savedVariables.roster.version = nil
+                    elseif selfIsAuthority then
+                        local rosterChanged = (#removedAlts > 0) or (#guildBankAlts > previousRosterCount)
+
+                        if rosterChanged then
+                            GBCR.Database.savedVariables.roster.version = GetServerTime()
+                            After(0, function()
+                                GBCR.Protocol.SendRoster()
+                            end)
+                            GBCR.Output:Debug("ROSTER",
+                                              "Authority broadcast: roster changed (officerNotes=%s, manualAlts=%s), pushing to guild",
+                                              tostring(self.areOfficerNotesUsedToDefineGuildBankAlts),
+                                              tostring(savedManualAlts and #savedManualAlts > 0))
+                        end
+                    end
+
+                    GBCR.Output:Debug("ROSTER",
+                                      "Authority rebuilt roster: %d alts, %d removed (version=%s, areOfficerNotesUsed=%s, anyoneIsAuthority=%s, selfIsAuthority=%s)",
+                                      #guildBankAlts, #removedAlts, tostring(GBCR.Database.savedVariables.roster.version),
+                                      tostring(GBCR.Database.savedVariables.roster.areOfficerNotesUsed),
+                                      tostring(anyoneIsAuthority), tostring(selfIsAuthority))
+                end
             else
                 local officerNotesConfirmedNotUsed = GBCR.Database.savedVariables.roster.areOfficerNotesUsed == false
 
