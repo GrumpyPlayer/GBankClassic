@@ -682,7 +682,7 @@ local function commitInventory(self, bankItems, bagItems)
     local newBankCache = {}
     if bankItems then
         for key, data in pairs(bankItems) do
-            newBankCache[key] = { itemString = data.itemString, itemCount = data.itemCount }
+            newBankCache[key] = {itemString = data.itemString, itemCount = data.itemCount}
         end
     end
     alt.cache.bank = newBankCache
@@ -690,7 +690,7 @@ local function commitInventory(self, bankItems, bagItems)
     local newBagCache = {}
     if bagItems then
         for key, data in pairs(bagItems) do
-            newBagCache[key] = { itemString = data.itemString, itemCount = data.itemCount }
+            newBagCache[key] = {itemString = data.itemString, itemCount = data.itemCount}
         end
     end
     alt.cache.bags = newBagCache
@@ -791,7 +791,7 @@ local function commitWithBankDelta(self)
 
     wipe(self.lastBankScan)
     for i = 1, #correctedBank do
-        self.lastBankScan[i] = { itemString = correctedBank[i].itemString, itemCount = correctedBank[i].itemCount }
+        self.lastBankScan[i] = {itemString = correctedBank[i].itemString, itemCount = correctedBank[i].itemCount}
     end
 
     commitInventory(self, correctedBank, self.lastBagScan)

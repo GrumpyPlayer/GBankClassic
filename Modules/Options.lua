@@ -204,12 +204,7 @@ local function init(self)
     end)
 
     local bankArgs = {
-        settingsHeader = {
-            order = 1,
-            type = "description",
-            fontSize = "medium",
-            name = "Settings for this bank character"
-        },
+        settingsHeader = {order = 1, type = "description", fontSize = "medium", name = "Settings for this bank character"},
         inventoryTracking = {
             order = 2,
             type = "toggle",
@@ -500,7 +495,7 @@ local function init(self)
                         order = 1,
                         type = "description",
                         fontSize = "medium",
-                        name = "Choose who can see the top 30 donors list. Changes update automatically for everyone online.\n",
+                        name = "Choose who can see the top 30 donors list. Changes update automatically for everyone online.\n"
                     },
                     showDonorsToAll = {
                         order = 2,
@@ -524,13 +519,9 @@ local function init(self)
                         end,
                         disabled = function()
                             return not IsGuildOfficer()
-                        end,
+                        end
                     },
-                    addAltHeader = {
-                        order = 3,
-                        type = "header",
-                        name = "Add banks without guild notes"
-                    },
+                    addAltHeader = {order = 3, type = "header", name = "Add banks without guild notes"},
                     addAltDesc = {
                         order = 5,
                         type = "description",

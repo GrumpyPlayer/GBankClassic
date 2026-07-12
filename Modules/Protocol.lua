@@ -1730,7 +1730,8 @@ end
 local function sendWipeAll()
     local guildName = GBCR.Guild:GetGuildInfo()
     if not guildName or not GBCR.Guild.weAreOfficer then
-        GBCR.Output:Error("Access denied. Only officers (guild members with permission to view officer chat) are permitted to do this.")
+        GBCR.Output:Error(
+            "Access denied. Only officers (guild members with permission to view officer chat) are permitted to do this.")
         GBCR.Output:Debug("PROTOCOL", "sendWipeAll blocked: guildName=%s, weAreOfficer=%s", tostring(guildName),
                           tostring(GBCR.Guild.weAreOfficer))
 
