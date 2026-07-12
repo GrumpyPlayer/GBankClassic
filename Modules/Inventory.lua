@@ -637,9 +637,8 @@ end
 
 -- Scan bank into self.lastBankScan when bank is open
 local function scanBankNow(self)
-    wipe(self.lastBankScan)
-
     if isBankAvailable() then
+        wipe(self.lastBankScan)
         scanBank(self, self.lastBankScan)
     end
 
@@ -680,10 +679,23 @@ local function commitInventory(self, bankItems, bagItems)
         self.mailHasUpdated = false
     end
 
-    alt.cache.bank = bankItems
-    alt.cache.bags = bagItems
+    local newBankCache = {}
+    if bankItems then
+        for key, data in pairs(bankItems) do
+            newBankCache[key] = { itemString = data.itemString, itemCount = data.itemCount }
+        end
+    end
+    alt.cache.bank = newBankCache
 
-    recalculateAggregatedItems(self, bankItems, bagItems, alt.cache.mail, alt)
+    local newBagCache = {}
+    if bagItems then
+        for key, data in pairs(bagItems) do
+            newBagCache[key] = { itemString = data.itemString, itemCount = data.itemCount }
+        end
+    end
+    alt.cache.bags = newBagCache
+
+    recalculateAggregatedItems(self, alt.cache.bank, alt.cache.bags, alt.cache.mail, alt)
 
     local previousHash = alt.itemsHash
     local currentHash = computeItemsHash(self, alt.items, money)
@@ -761,6 +773,14 @@ end
 -- Hellper for generic bag/AH/merchant/mail updates (bank not involved) that uses lastBankScan set during the most recent bank session
 local function scanInventory(self)
     scanBagsNow(self)
+
+    if #self.lastBankScan == 0 then
+        local _, _, alt = getInventoryContext()
+        if alt and alt.cache and alt.cache.bank and #alt.cache.bank > 0 then
+            copyItemArray(alt.cache.bank, self.lastBankScan)
+        end
+    end
+
     commitInventory(self, self.lastBankScan, self.lastBagScan)
 end
 
@@ -768,7 +788,15 @@ end
 local function commitWithBankDelta(self)
     scanBagsNow(self)
     local correctedBank = computeCorrectedBank(self, self.bankSnapshotAtClose, self.bagsSnapshotAtClose, self.lastBagScan)
+
+    wipe(self.lastBankScan)
+    for i = 1, #correctedBank do
+        self.lastBankScan[i] = { itemString = correctedBank[i].itemString, itemCount = correctedBank[i].itemCount }
+    end
+
     commitInventory(self, correctedBank, self.lastBagScan)
+
+    GBCR.Inventory:BuildGlobalItemSourcesIndex({[GBCR.Guild:GetNormalizedPlayerName()] = true})
 end
 
 -- Keep track that any event impacting the inventory (bags, bank, mail) has been triggered

@@ -149,7 +149,7 @@ local function loadGuild(self, guildName)
         return nil
     end
 
-    GBCR.Events:GUILD_ROSTER_UPDATE()
+    -- GBCR.Events:GUILD_ROSTER_UPDATE()
 
     local uniqueKey, realmName = getUniqueKey(guildName)
 
@@ -279,6 +279,8 @@ local function loadGuild(self, guildName)
             After(0, processAltsLoop)
         end
     end
+
+    GBCR.Guild:AreWeGuildBankAlt()
 
     return db
 end

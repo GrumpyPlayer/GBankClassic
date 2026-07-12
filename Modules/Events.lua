@@ -676,6 +676,7 @@ function Events:BAG_UPDATE_DELAYED()
 
     if self.isBankOpen then
         GBCR.Inventory:ScanBagsNow()
+        GBCR.Inventory:ScanBankNow()
 
         return
     end
