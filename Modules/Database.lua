@@ -85,7 +85,7 @@ local function resetGuildDatabase(self, guildName)
     self.db.global.guilds[uniqueKey] = {
         guildName = guildName,
         realm = realmName,
-        roster = {alts = {}, version = nil, areOfficerNotesUsed = nil, manualAlts = {}},
+        roster = {alts = {}, version = nil, areOfficerNotesUsed = nil, manualAlts = {}, showDonorsToAll = false},
         alts = {}
     }
     self.savedVariables = nil

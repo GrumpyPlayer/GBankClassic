@@ -42,7 +42,6 @@ Globals.wipe = table.wipe or wipe
 -- Game APIs
 Globals.After = After or C_Timer.After
 Globals.BuyMerchantItem = BuyMerchantItem
-Globals.CanEditOfficerNote = CanEditOfficerNote or C_GuildInfo.CanEditOfficerNote
 Globals.CanViewOfficerNote = CanViewOfficerNote or C_GuildInfo.CanViewOfficerNote
 Globals.ChatEdit_InsertLink = ChatEdit_InsertLink
 Globals.CheckInbox = CheckInbox

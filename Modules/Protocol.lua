@@ -1729,10 +1729,10 @@ end
 -- Send a wipeall (gbc-w) so every online member wipes their data (and confirms with gbc-wr) upon /bank wipeall (only officers)
 local function sendWipeAll()
     local guildName = GBCR.Guild:GetGuildInfo()
-    if not guildName or not GBCR.Guild.weCanEditOfficerNotes then
-        GBCR.Output:Error("Access denied. Only guild members with permission to edit officer notes are permitted to do this.")
-        GBCR.Output:Debug("PROTOCOL", "sendWipeAll blocked: guildName=%s, weCanEditOfficerNotes=%s", tostring(guildName),
-                          tostring(GBCR.Guild.weCanEditOfficerNotes))
+    if not guildName or not GBCR.Guild.weAreOfficer then
+        GBCR.Output:Error("Access denied. Only officers (guild members with permission to view officer chat) are permitted to do this.")
+        GBCR.Output:Debug("PROTOCOL", "sendWipeAll blocked: guildName=%s, weAreOfficer=%s", tostring(guildName),
+                          tostring(GBCR.Guild.weAreOfficer))
 
         return
     end
@@ -2211,6 +2211,10 @@ local function processRosterData(self, data, sender)
             GBCR.Output:Debug("PROTOCOL", "areOfficerNotesUsedToDefineGuildBankAlts set to %s by authority %s",
                               tostring(data.roster.areOfficerNotesUsed), GBCR.Guild:ColorPlayerName(sender))
         end
+    end
+
+    if data.roster.showDonorsToAll ~= nil then
+        sv.roster.showDonorsToAll = data.roster.showDonorsToAll
     end
 
     sv.alts = sv.alts or {}

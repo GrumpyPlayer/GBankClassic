@@ -60,6 +60,7 @@ local GetItemSubClassInfo = Globals.GetItemSubClassInfo
 local GetRealmName = Globals.GetRealmName
 local GetServerTime = Globals.GetServerTime
 local IsControlKeyDown = Globals.IsControlKeyDown
+local IsGuildOfficer = Globals.IsGuildOfficer
 local IsInGuild = Globals.IsInGuild
 local IsShiftKeyDown = Globals.IsShiftKeyDown
 local NewTicker = Globals.NewTicker
@@ -2593,7 +2594,9 @@ local function drawLedgerTab(self, container)
     local ledgerDonorsBtn = aceGUI:Create("Button")
     ledgerDonorsBtn:SetText("Show donors")
     ledgerDonorsBtn:SetWidth(140)
-    controlGroup:AddChild(ledgerDonorsBtn)
+    if IsGuildOfficer() or (sv and sv.roster and sv.roster.showDonorsToAll) then
+        controlGroup:AddChild(ledgerDonorsBtn)
+    end
 
     local exportLedgerBtn = aceGUI:Create("Button")
     exportLedgerBtn:SetText("Prepare export")
@@ -5600,10 +5603,10 @@ local function updateDynamicTabs(self)
         return
     end
 
-    GBCR.Guild.weCanEditOfficerNotes = Globals.CanEditOfficerNote()
+    GBCR.Guild.weAreOfficer = IsGuildOfficer()
 
     local isBankAlt = (GBCR.Guild.weAreGuildBankAlt ~= nil) and GBCR.Guild.weAreGuildBankAlt
-    local isOfficer = GBCR.Guild.weCanEditOfficerNotes == true
+    local isOfficer = GBCR.Guild.weAreOfficer == true
 
     if self.lastKnownBankAltState == isBankAlt and self.lastKnownOfficerState == isOfficer then
         return

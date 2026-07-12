@@ -12,9 +12,11 @@ local string_match = Globals.string_match
 local table_remove = Globals.table_remove
 local table_sort = Globals.table_sort
 
+local IsGuildOfficer = Globals.IsGuildOfficer
 local CreateFrame = Globals.CreateFrame
 local GameFontHighlight = Globals.GameFontHighlight
 local GetGameTime = Globals.GetGameTime
+local GetServerTime = Globals.GetServerTime
 local GuildControlGetNumRanks = Globals.GuildControlGetNumRanks
 local GuildControlGetRankName = Globals.GuildControlGetRankName
 
@@ -170,7 +172,7 @@ end
 -- Initialize configuration defaults and configuration options specifically for guild bank alts
 local function initGuildBankAltOptions()
     local isBankAlt = GBCR.Guild.weAreGuildBankAlt and true or false
-    local isOfficer = GBCR.Guild.weCanEditOfficerNotes and true or false
+    local isOfficer = GBCR.Guild.weAreOfficer and true or false
     if Options.lastBankAltState == isBankAlt and Options.lastOfficerState == isOfficer then
         return
     end
@@ -206,16 +208,16 @@ local function init(self)
             order = 1,
             type = "description",
             fontSize = "medium",
-            name = "Configure inventory tracking and donation handling for this guild bank character"
+            name = "Settings for this bank character"
         },
         inventoryTracking = {
             order = 2,
             type = "toggle",
             width = "full",
             name = function()
-                return "Enable inventory tracking for " .. GBCR.Guild:GetNormalizedPlayerName()
+                return "Share items for " .. GBCR.Guild:GetNormalizedPlayerName()
             end,
-            desc = "Enables inventory (bank, bags, and mailbox) scanning and sharing for this player",
+            desc = "Share this character's bags, bank, and mail with the guild",
             set = function(_, v)
                 self.db.char.bank.inventoryTracking = v
                 if v then
@@ -226,25 +228,25 @@ local function init(self)
                 return self:GetInventoryTrackingEnabled()
             end
         },
-        donationsTracking = {
-            order = 3,
-            type = "toggle",
-            width = "full",
-            name = "Enable donation tracking",
-            desc = "Tracks and shares donations sent to you via the mailbox",
-            set = function(_, v)
-                self.db.char.bank.donationsTracking = v
-            end,
-            get = function()
-                return self:GetDonationsTrackingEnabled()
-            end
-        },
+        -- donationsTracking = {
+        --     order = 3,
+        --     type = "toggle",
+        --     width = "full",
+        --     name = "Track mail donations",
+        --     desc = "Record items sent to this character's mailbox",
+        --     set = function(_, v)
+        --         self.db.char.bank.donationsTracking = v
+        --     end,
+        --     get = function()
+        --         return self:GetDonationsTrackingEnabled()
+        --     end
+        -- },
         reportReceivedDonations = {
             order = 4,
             type = "toggle",
             width = "full",
-            name = "Report received donations",
-            desc = "Display a message when donations are processed from mail",
+            name = "Chat alerts for mail",
+            desc = "Show a chat message when taking donations from the mailbox",
             set = function(_, v)
                 self.db.char.bank.reportReceivedDonations = v
             end,
@@ -257,13 +259,13 @@ local function init(self)
             order = 6,
             type = "description",
             fontSize = "medium",
-            name = "Clears locally stored inventory data for this guild bank character"
+            name = "Delete saved item data for this character from your computer"
         },
         resetAlt = {
             order = 7,
             type = "execute",
-            name = "Reset data",
-            desc = "Clears locally stored inventory data for this guild bank character",
+            name = "Delete data",
+            desc = "Delete saved item data for this character",
             func = function()
                 local guildName = GBCR.Guild:GetGuildInfo()
                 if guildName then
@@ -275,7 +277,7 @@ local function init(self)
         ranksDesc = {
             order = 10,
             type = "description",
-            name = "Enable which guild ranks are eligible for request fulfillment from this guild bank",
+            name = "Choose which guild ranks are eligible for request fulfillment from this bank",
             fontSize = "medium"
         }
     }
@@ -491,17 +493,52 @@ local function init(self)
                 name = "Officer configuration",
                 order = 6,
                 hidden = function()
-                    return not (GBCR.Guild.weCanEditOfficerNotes == true)
+                    return not (GBCR.Guild.weAreOfficer == true)
                 end,
                 args = {
-                    desc = {
+                    donorsDesc = {
                         order = 1,
                         type = "description",
                         fontSize = "medium",
-                        name = "Define guild bank alts manually, independent of guild notes.\nOnly officers may edit this list. Adding or removing a character immediately saves and broadcasts the updated roster.\n"
+                        name = "Choose who can see the top 30 donors list. Changes update automatically for everyone online.\n",
+                    },
+                    showDonorsToAll = {
+                        order = 2,
+                        type = "toggle",
+                        width = "full",
+                        name = "Show donors to everyone",
+                        desc = "Check this to let all guild members see the donor list. Uncheck to limit it to officers only.",
+                        get = function()
+                            local sv = GBCR.Database and GBCR.Database.savedVariables
+
+                            return sv and sv.roster and sv.roster.showDonorsToAll or false
+                        end,
+                        set = function(info, value)
+                            local sv = GBCR.Database and GBCR.Database.savedVariables
+                            if sv and sv.roster and GBCR.Guild.isGuildRosterReady then
+                                sv.roster.showDonorsToAll = value
+                                sv.roster.version = GetServerTime()
+                                GBCR.Protocol.SendRoster()
+                                GBCR.UI:QueueUIRefresh()
+                            end
+                        end,
+                        disabled = function()
+                            return not IsGuildOfficer()
+                        end,
+                    },
+                    addAltHeader = {
+                        order = 3,
+                        type = "header",
+                        name = "Add banks without guild notes"
+                    },
+                    addAltDesc = {
+                        order = 5,
+                        type = "description",
+                        fontSize = "medium",
+                        name = "Use this to set up bank characters if you cannot put 'gbank' in their public or officer notes. Changes update instantly for everyone online.\n"
                     },
                     addAlt = {
-                        order = 2,
+                        order = 6,
                         type = "input",
                         name = "Add character (Name or Name-Realm)",
                         width = "double",
@@ -594,9 +631,9 @@ local function init(self)
                         end
                     },
                     manageAlts = {
-                        order = 3,
+                        order = 7,
                         type = "multiselect",
-                        name = "Current manually defined guild banks (uncheck to remove immediately)",
+                        name = "Bank characters added without notes (uncheck to remove)",
                         width = "full",
                         values = function()
                             local out = {}

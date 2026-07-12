@@ -564,7 +564,7 @@ function Events:GUILD_RANKS_UPDATE()
 
     if next(GBCR.Guild.cachedGuildMembers) then
         GBCR.Guild.weCanViewOfficerNotes = Globals.CanViewOfficerNote()
-        GBCR.Guild.weCanEditOfficerNotes = Globals.CanEditOfficerNote()
+        GBCR.Guild.weAreOfficer = Globals.IsGuildOfficer()
         GBCR.Guild:IsAnyoneAuthority()
         GBCR.UI.lastKnownBankAltState = nil
         GBCR.UI.lastKnownOfficerState = nil

@@ -27,6 +27,7 @@ local GuildControlGetNumRanks = Globals.GuildControlGetNumRanks
 local GuildControlGetRankFlags = Globals.GuildControlGetRankFlags
 local GuildControlGetRankName = Globals.GuildControlGetRankName
 local IsInGuild = Globals.IsInGuild
+local IsGuildOfficer = Globals.IsGuildOfficer
 local NewTicker = Globals.NewTicker
 local UnitGUID = Globals.UnitGUID
 local UnitName = Globals.UnitName
@@ -276,23 +277,10 @@ local function refreshOnlineMembersCache(self, force)
     After(0, scanBatch)
 end
 
--- Helper to determine if a rank can edit officer notes, then it is considered a guild officer (able to wipe everyone's database)
-local function isOfficer(self, rankIndex)
-    if not rankIndex then
-        return false
-    end
-
-    return self.cachedGuildRanksThatCanEditOfficerNotes[rankIndex] == true
-end
-
--- Helper to check if we can view and edit officer notes
+-- Helper to check if we can view officer notes and are considered an officer
 local function verifyOfficerNotePermissions(self)
-    if not self.cachedGuildRanksThatCanEditOfficerNotes then
-        self.cachedGuildRanksThatCanEditOfficerNotes = {}
-    end
-
     self.weCanViewOfficerNotes = CanViewOfficerNote()
-    self.weCanEditOfficerNotes = isOfficer(self, select(3, getGuildInfo()))
+    self.weAreOfficer = IsGuildOfficer()
 end
 
 -- If this rank can view officer notes, then it is considered the authority on the roster
@@ -305,17 +293,14 @@ local function isAuthority(self, rankIndex)
 end
 
 -- If all ranks can view officer notes, then all players are consider the authority on the roster
--- Also build a local cache of guild members that can edit officer notes (considered guild officer)
 local function isAnyoneAuthority(self)
     local result = true
 
     for i = 1, GuildControlGetNumRanks() do
         local flags = GuildControlGetRankFlags(i)
         local viewOfficerNote = flags[11]
-        local editOfficerNote = flags[12]
 
         self.cachedGuildRanksThatCanViewOfficerNotes[i - 1] = viewOfficerNote
-        self.cachedGuildRanksThatCanEditOfficerNotes[i - 1] = editOfficerNote
         self.cachedGuildRankNames[i - 1] = GuildControlGetRankName(i)
 
         result = result and viewOfficerNote
@@ -722,7 +707,7 @@ end
 -- Fast self-detection of own guild bank status
 local function areWeGuildBankAlt(self)
     self.weCanViewOfficerNotes = Globals.CanViewOfficerNote()
-    self.weCanEditOfficerNotes = Globals.CanEditOfficerNote()
+    self.weAreOfficer = Globals.IsGuildOfficer()
 
     local publicNote, officerNote = fetchMyGuildNotes()
     local hasGbank = (publicNote and noteContainsGbank(publicNote)) or
@@ -919,7 +904,7 @@ local function clearGuildCaches(self)
     self.retryScheduled = false
     self.cachedOnlineGuildMemberCount = 0
     self.weCanViewOfficerNotes = nil
-    self.weCanEditOfficerNotes = nil
+    self.weAreOfficer = nil
     self.anyoneIsAuthority = nil
     self.isGuildRosterRebuilding = nil
     self.guildRosterGeneration = 0
@@ -933,7 +918,6 @@ local function clearGuildCaches(self)
     self.cachedOnlineGuildBankAlts = resetTable(self.cachedOnlineGuildBankAlts)
     self.cachedGuildBankAlts = resetTable(self.cachedGuildBankAlts)
     self.cachedGuildRanksThatCanViewOfficerNotes = resetTable(self.cachedGuildRanksThatCanViewOfficerNotes)
-    self.cachedGuildRanksThatCanEditOfficerNotes = resetTable(self.cachedGuildRanksThatCanEditOfficerNotes)
     self.cachedGuildRankNames = resetTable(self.cachedGuildRankNames)
     self.cachedAddonUsers = resetTable(self.cachedAddonUsers)
     self.cachedColoredPlayerName = resetTable(self.cachedColoredPlayerName)
