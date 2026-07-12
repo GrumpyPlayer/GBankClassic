@@ -510,11 +510,13 @@ local function init(self)
                         end,
                         set = function(info, value)
                             local sv = GBCR.Database and GBCR.Database.savedVariables
-                            if sv and sv.roster and GBCR.Guild.isGuildRosterReady then
+                            if sv and sv.roster then
                                 sv.roster.showDonorsToAll = value
                                 sv.roster.version = GetServerTime()
-                                GBCR.Protocol.SendRoster()
-                                GBCR.UI:QueueUIRefresh()
+                                if GBCR.Guild.isGuildRosterReady then
+                                    GBCR.Protocol.SendRoster()
+                                    GBCR.UI:QueueUIRefresh()
+                                end
                             end
                         end,
                         disabled = function()
