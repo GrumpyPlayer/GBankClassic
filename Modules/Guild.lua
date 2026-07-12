@@ -707,7 +707,10 @@ end
 -- Fast self-detection of own guild bank status
 local function areWeGuildBankAlt(self)
     self.weCanViewOfficerNotes = Globals.CanViewOfficerNote()
+
+    local previousWeAreOfficer = self.weAreOfficer
     self.weAreOfficer = Globals.IsGuildOfficer()
+    local officerStatusChanged = self.weAreOfficer ~= previousWeAreOfficer
 
     local publicNote, officerNote = fetchMyGuildNotes()
     local hasGbank = (publicNote and noteContainsGbank(publicNote)) or
@@ -726,60 +729,69 @@ local function areWeGuildBankAlt(self)
     end
 
     local weAreGuildBankAlt = hasGbank or isManuallyDefinedGuildBankAlt
-    if weAreGuildBankAlt == self.weAreGuildBankAlt then
+    local bankAltStatusChanged = weAreGuildBankAlt ~= self.weAreGuildBankAlt
+
+    if not bankAltStatusChanged and not officerStatusChanged then
         return
     end
 
     self.weAreGuildBankAlt = weAreGuildBankAlt
-    GBCR.Output:Debug("ROSTER", "areWeGuildBankAlt: guild bank alt status changed to %s", tostring(weAreGuildBankAlt))
 
-    if weAreGuildBankAlt then
-        if self.cachedGuildBankAlts then
-            self.cachedGuildBankAlts[normName] = true
-        end
+    if bankAltStatusChanged then
+        GBCR.Output:Debug("ROSTER", "areWeGuildBankAlt: guild bank alt status changed to %s", tostring(weAreGuildBankAlt))
 
-        if sv and sv.roster and sv.roster.alts then
-            local found = false
-            for i = 1, #sv.roster.alts do
-                if sv.roster.alts[i] == normName then
-                    found = true
+        if weAreGuildBankAlt then
+            if self.cachedGuildBankAlts then
+                self.cachedGuildBankAlts[normName] = true
+            end
 
-                    break
+            if sv and sv.roster and sv.roster.alts then
+                local found = false
+                for i = 1, #sv.roster.alts do
+                    if sv.roster.alts[i] == normName then
+                        found = true
+
+                        break
+                    end
+                end
+
+                if not found then
+                    sv.roster.alts[#sv.roster.alts + 1] = normName
+                    GBCR.Output:Debug("ROSTER", "areWeGuildBankAlt: added %s to roster", normName)
                 end
             end
 
-            if not found then
-                sv.roster.alts[#sv.roster.alts + 1] = normName
-                GBCR.Output:Debug("ROSTER", "areWeGuildBankAlt: added %s to roster", normName)
+            if sv and sv.alts and not sv.alts[normName] then
+                sv.alts[normName] = {name = normName, version = 0, money = 0, items = {}, ledger = {}}
+                GBCR.Output:Debug("ROSTER", "areWeGuildBankAlt: created stub data for %s", normName)
             end
-        end
 
-        if sv and sv.alts and not sv.alts[normName] then
-            sv.alts[normName] = {name = normName, version = 0, money = 0, items = {}, ledger = {}}
-            GBCR.Output:Debug("ROSTER", "areWeGuildBankAlt: created stub data for %s", normName)
-        end
+            GBCR.Events:RegisterGuildBankAltEvents()
+            GBCR.Options.InitGuildBankAltOptions()
+        elseif self.weCanViewOfficerNotes then
+            if self.cachedGuildBankAlts then
+                self.cachedGuildBankAlts[normName] = nil
+            end
 
-        GBCR.Events:RegisterGuildBankAltEvents()
+            if sv and sv.roster and sv.roster.alts then
+                local alts = sv.roster.alts
+                for i = #alts, 1, -1 do
+                    if alts[i] == normName then
+                        table_remove(alts, i)
+                        GBCR.Output:Debug("ROSTER", "areWeGuildBankAlt: removed %s from roster", normName)
+
+                        break
+                    end
+                end
+            end
+        else
+            GBCR.Output:Debug("ROSTER",
+                              "areWeGuildBankAlt: weAreGuildBankAlt=false but no officer-note access, deferring to async rebuild")
+        end
+    end
+
+    if bankAltStatusChanged or officerStatusChanged then
         GBCR.Options.InitGuildBankAltOptions()
-    elseif self.weCanViewOfficerNotes then
-        if self.cachedGuildBankAlts then
-            self.cachedGuildBankAlts[normName] = nil
-        end
-
-        if sv and sv.roster and sv.roster.alts then
-            local alts = sv.roster.alts
-            for i = #alts, 1, -1 do
-                if alts[i] == normName then
-                    table_remove(alts, i)
-                    GBCR.Output:Debug("ROSTER", "areWeGuildBankAlt: removed %s from roster", normName)
-
-                    break
-                end
-            end
-        end
-    else
-        GBCR.Output:Debug("ROSTER",
-                          "areWeGuildBankAlt: weAreGuildBankAlt=false but no officer-note access, deferring to async rebuild")
     end
 
     GBCR.UI.lastKnownOfficerState = nil
