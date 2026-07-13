@@ -292,14 +292,25 @@ local function isAuthority(self, rankIndex)
     return self.cachedGuildRanksThatCanViewOfficerNotes[rankIndex] == true
 end
 
--- If all ranks can view officer notes, then all players are consider the authority on the roster
+-- If this rank can view officer chat, then it is considered an officer according to the official C_GuildInfo.IsGuildOfficer() API
+local function isOfficerRank(self, rankIndex)
+    if not rankIndex then
+        return false
+    end
+
+    return self.cachedGuildRanksThatAreOfficers[rankIndex] == true
+end
+
+-- If all ranks can view officer notes, then all players are considered the authority on the roster
 local function isAnyoneAuthority(self)
     local result = true
 
     for i = 1, GuildControlGetNumRanks() do
         local flags = GuildControlGetRankFlags(i)
+        local viewOfficerChat = flags[3]
         local viewOfficerNote = flags[11]
 
+        self.cachedGuildRanksThatAreOfficers[i - 1] = viewOfficerChat
         self.cachedGuildRanksThatCanViewOfficerNotes[i - 1] = viewOfficerNote
         self.cachedGuildRankNames[i - 1] = GuildControlGetRankName(i)
 
@@ -404,7 +415,7 @@ local function rebuildGuildRosterInfo(self)
         self.areOfficerNotesUsedToDefineGuildBankAlts = nil
 
         local anyoneIsAuthority = isAnyoneAuthority(self)
-        local weCanViewOfficerNotes = Globals.CanViewOfficerNote()
+        local weCanViewOfficerNotes = CanViewOfficerNote()
         self.weCanViewOfficerNotes = weCanViewOfficerNotes
         local player = getNormalizedPlayerName(self)
 
@@ -439,6 +450,7 @@ local function rebuildGuildRosterInfo(self)
 
                     if rankIndex and class then
                         self.cachedGuildMembers[normName] = {
+                            isOfficer = isOfficerRank(self, rankIndex),
                             isAuthority = isAuthority(self, rankIndex),
                             playerClass = class,
                             playerUid = playerUid,
@@ -706,10 +718,10 @@ end
 
 -- Fast self-detection of own guild bank status
 local function areWeGuildBankAlt(self)
-    self.weCanViewOfficerNotes = Globals.CanViewOfficerNote()
+    self.weCanViewOfficerNotes = CanViewOfficerNote()
 
     local previousWeAreOfficer = self.weAreOfficer
-    self.weAreOfficer = Globals.IsGuildOfficer()
+    self.weAreOfficer = IsGuildOfficer()
     local officerStatusChanged = self.weAreOfficer ~= previousWeAreOfficer
 
     local publicNote, officerNote = fetchMyGuildNotes()
@@ -929,6 +941,7 @@ local function clearGuildCaches(self)
     self.cachedOnlineGuildMembers = resetTable(self.cachedOnlineGuildMembers)
     self.cachedOnlineGuildBankAlts = resetTable(self.cachedOnlineGuildBankAlts)
     self.cachedGuildBankAlts = resetTable(self.cachedGuildBankAlts)
+    self.cachedGuildRanksThatAreOfficers = resetTable(self.cachedGuildRanksThatAreOfficers)
     self.cachedGuildRanksThatCanViewOfficerNotes = resetTable(self.cachedGuildRanksThatCanViewOfficerNotes)
     self.cachedGuildRankNames = resetTable(self.cachedGuildRankNames)
     self.cachedAddonUsers = resetTable(self.cachedAddonUsers)

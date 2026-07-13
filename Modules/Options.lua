@@ -12,7 +12,6 @@ local string_match = Globals.string_match
 local table_remove = Globals.table_remove
 local table_sort = Globals.table_sort
 
-local IsGuildOfficer = Globals.IsGuildOfficer
 local CreateFrame = Globals.CreateFrame
 local GameFontHighlight = Globals.GameFontHighlight
 local GetGameTime = Globals.GetGameTime
@@ -82,11 +81,6 @@ end
 -- Retrieve the inventory tracking setting from saved variables
 local function getInventoryTrackingEnabled(self)
     return self.db.char.bank.inventoryTracking
-end
-
--- Retrieve the donation tracking setting from saved variables
-local function getDonationsTrackingEnabled(self)
-    return self.db.char.bank.donationsTracking
 end
 
 -- Retrieve the donation reporting setting from saved variables
@@ -223,21 +217,8 @@ local function init(self)
                 return self:GetInventoryTrackingEnabled()
             end
         },
-        -- donationsTracking = {
-        --     order = 3,
-        --     type = "toggle",
-        --     width = "full",
-        --     name = "Track mail donations",
-        --     desc = "Record items sent to this character's mailbox",
-        --     set = function(_, v)
-        --         self.db.char.bank.donationsTracking = v
-        --     end,
-        --     get = function()
-        --         return self:GetDonationsTrackingEnabled()
-        --     end
-        -- },
         reportReceivedDonations = {
-            order = 4,
+            order = 3,
             type = "toggle",
             width = "full",
             name = "Chat alerts for mail",
@@ -506,21 +487,22 @@ local function init(self)
                         get = function()
                             local sv = GBCR.Database and GBCR.Database.savedVariables
 
-                            return sv and sv.roster and sv.roster.showDonorsToAll or false
+                            return sv and sv.guildConfig and sv.guildConfig.showDonorsToAll or false
                         end,
                         set = function(info, value)
                             local sv = GBCR.Database and GBCR.Database.savedVariables
-                            if sv and sv.roster then
-                                sv.roster.showDonorsToAll = value
-                                sv.roster.version = GetServerTime()
+                            if sv then
+                                sv.guildConfig = sv.guildConfig or {}
+                                sv.guildConfig.version = GetServerTime()
+                                sv.guildConfig.showDonorsToAll = value
                                 if GBCR.Guild.isGuildRosterReady then
-                                    GBCR.Protocol.SendRoster()
+                                    GBCR.Protocol.SendGuildConfig()
                                     GBCR.UI:QueueUIRefresh()
                                 end
                             end
                         end,
                         disabled = function()
-                            return not IsGuildOfficer()
+                            return not GBCR.Guild.weAreOfficer
                         end
                     },
                     addAltHeader = {order = 3, type = "header", name = "Add banks without guild notes"},
@@ -723,7 +705,6 @@ Options.SetCategoryEnabled = setCategoryEnabled
 Options.EnableAllCategories = enableAllCategories
 Options.DisableAllCategories = disableAllCategories
 Options.GetInventoryTrackingEnabled = getInventoryTrackingEnabled
-Options.GetDonationsTrackingEnabled = getDonationsTrackingEnabled
 Options.GetDonationReportingEnabled = getDonationReportingEnabled
 Options.GetRankFulfillment = getRankFulfillment
 Options.GetCombatHide = getCombatHide

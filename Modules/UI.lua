@@ -2594,7 +2594,7 @@ local function drawLedgerTab(self, container)
     local ledgerDonorsBtn = aceGUI:Create("Button")
     ledgerDonorsBtn:SetText("Show donors")
     ledgerDonorsBtn:SetWidth(140)
-    if IsGuildOfficer() or (sv and sv.roster and sv.roster.showDonorsToAll) then
+    if GBCR.Guild.weAreOfficer or (sv and sv.guildConfig and sv.guildConfig.showDonorsToAll) then
         controlGroup:AddChild(ledgerDonorsBtn)
     end
 
@@ -4199,8 +4199,9 @@ local function doLoad(widget)
     end
 
     local pluralItems = ((data.i or {}) ~= 1 and "s" or "")
-    local statusTxt = Globals.ColorizeText(Constants.COLORS.GREEN, string_format("Success: identified %d requested item%s from %s",
-                                                                                 #(data.i or {}), pluralItems, data.r or "?"))
+    local statusTxt = Globals.ColorizeText(Constants.COLORS.GREEN, string_format(
+                                               "Success: identified %d requested item%s from %s", #(data.i or {}), pluralItems,
+                                               data.r or "?"))
     statusLabel:SetText(statusTxt)
     container:DoLayout()
     renderFulfillment(data)

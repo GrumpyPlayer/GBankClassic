@@ -85,7 +85,8 @@ local function resetGuildDatabase(self, guildName)
     self.db.global.guilds[uniqueKey] = {
         guildName = guildName,
         realm = realmName,
-        roster = {alts = {}, version = nil, areOfficerNotesUsed = nil, manualAlts = {}, showDonorsToAll = false},
+        guildConfig = {version = nil, showDonorsToAll = false},
+        roster = {alts = {}, version = nil, areOfficerNotesUsed = nil, manualAlts = {}},
         alts = {}
     }
     self.savedVariables = nil
@@ -149,8 +150,6 @@ local function loadGuild(self, guildName)
         return nil
     end
 
-    -- GBCR.Events:GUILD_ROSTER_UPDATE()
-
     local uniqueKey, realmName = getUniqueKey(guildName)
 
     self.db.global.guilds = self.db.global.guilds or {}
@@ -162,6 +161,7 @@ local function loadGuild(self, guildName)
     else
         db.guildName = db.guildName or guildName
         db.realm = db.realm or realmName
+        db.guildConfig = db.guildConfig or {}
         db.roster = db.roster or {}
         db.alts = db.alts or {}
         if db.networkMeta then

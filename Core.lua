@@ -41,7 +41,7 @@ function GBCR.Addon:OnInitialize()
     loadMetadata(Core)
 
     local defaults = {
-        char = {bank = {inventoryTracking = true, donationsTracking = true, reportReceivedDonations = true, rankFulfillment = {}}},
+        char = {bank = {inventoryTracking = true, reportReceivedDonations = true, rankFulfillment = {}}},
         profile = {
             combat = {hide = true},
             minimap = {hide = false},

@@ -496,7 +496,10 @@ function Events:PLAYER_ENTERING_WORLD(_, isInitialLogin, isReloadingUi)
             local db = GBCR.Database.savedVariables
             local myName = GBCR.Guild:GetNormalizedPlayerName()
             local myData = db and db.alts and db.alts[myName]
-            if not myData or not myData.items or #myData.items == 0 then
+            local hasRecordedData = myData and
+                                        ((myData.items and #myData.items > 0) or
+                                            (myData.itemsCompressed and myData.itemsCompressed ~= ""))
+            if not hasRecordedData then
                 GBCR.Output:Response(Globals.ColorizeText(Constants.COLORS.ORANGE, "Action required!") ..
                                          " You are a guild bank alt, but your local inventory data is empty. Please visit a bank and mailbox to record your items!")
             end

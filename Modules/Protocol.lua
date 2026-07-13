@@ -560,7 +560,7 @@ end
 
 -- Helper to track metadata from sender
 local function trackSenderMetadata(self, sender, incomingAddonVersionNumber, incomingIsGuildBankAlt,
-                                   incomingRosterVersionTimestamp)
+                                   incomingRosterVersionTimestamp, incomingGuildConfigVersionTimestamp)
     if not sender or sender == "" then
         return
     end
@@ -584,10 +584,12 @@ local function trackSenderMetadata(self, sender, incomingAddonVersionNumber, inc
     entry.seen = GetServerTime()
     entry.isGuildBankAlt = incomingIsGuildBankAlt or entry.isGuildBankAlt
     entry.rosterVersionTimestamp = incomingRosterVersionTimestamp or entry.rosterVersionTimestamp
+    entry.guildConfigVersionTimestamp = incomingGuildConfigVersionTimestamp or entry.guildConfigVersionTimestamp
 
-    GBCR.Output:Debug("ROSTER", "Tracking member %s with addon version %s (isGuildBankAlt=%s, rosterVersionTimestamp=%s)",
+    GBCR.Output:Debug("ROSTER",
+                      "Tracking member %s with addon version %s (isGuildBankAlt=%s, rosterVersionTimestamp=%s, guildConfigVersionTimestamp=%s)",
                       GBCR.Guild:ColorPlayerName(sender), tostring(incomingAddonVersionNumber), tostring(incomingIsGuildBankAlt),
-                      tostring(incomingRosterVersionTimestamp))
+                      tostring(incomingRosterVersionTimestamp), tostring(incomingGuildConfigVersionTimestamp))
 
     checkAndWarnAddonOutdated(self, incomingAddonVersionNumber)
 end
@@ -705,6 +707,7 @@ local function craftFingerprintPayload()
     end
 
     payload[position] = (db.roster and db.roster.version) or -1
+    payload[position + 1] = (db.guildConfig and db.guildConfig.version) or -1
 
     return payload
 end
@@ -722,7 +725,7 @@ local function parseFingerprintPayload(payload)
     local position = 5
     local prev = baseVersion
 
-    while position <= #payload - 1 do
+    while position <= #payload - 2 do
         local uid = payload[position]
         local delta = payload[position + 1]
 
@@ -746,13 +749,16 @@ local function parseFingerprintPayload(payload)
 
     local rosterRaw = payload[position]
     local rosterVersionTimestamp = (rosterRaw and rosterRaw ~= -1) and rosterRaw or nil
+    local configRaw = payload[position + 1]
+    local guildConfigVersionTimestamp = (configRaw and configRaw ~= -1) and configRaw or nil
 
     return {
         addonVersionNumber = addonVersionNumber,
         areOfficerNotesUsedToDefineGuildBankAlts = areOfficerNotesUsedToDefineGuildBankAlts,
         isGuildBankAlt = isGuildBankAlt,
         alts = alts,
-        rosterVersionTimestamp = rosterVersionTimestamp
+        rosterVersionTimestamp = rosterVersionTimestamp,
+        guildConfigVersionTimestamp = guildConfigVersionTimestamp
     }
 end
 
@@ -1362,7 +1368,7 @@ local function receiveData(self, incomingData, sender)
     local incomingItems = parsedPayload.items
     local incomingLedgerlog = parsedPayload.ledger
 
-    trackSenderMetadata(self, sender, incomingAddonVersionNumber or nil, nil, nil)
+    trackSenderMetadata(self, sender, incomingAddonVersionNumber or nil, nil, nil, nil)
 
     GBCR.Output:Debug("SYNC", "receiveData: processing %d items for %s", incomingNumItems, incomingAltName)
 
@@ -1543,6 +1549,90 @@ local function queryForGuildBankAltData(self, target, altName)
 
     sendCommMessage("gbc-data-query", data, "GUILD", nil, "NORMAL")
     markPendingSync(self, "alt", "guild", altName)
+end
+
+-- Send our locally cached guild configuration (gbc-config-share)
+local function sendGuildConfig(target)
+    local sv = GBCR.Database.savedVariables
+    if not sv or not sv.guildConfig then
+        return
+    end
+
+    local payload = serializePayload({guildConfig = sv.guildConfig})
+
+    if target and sendWhisper("gbc-config-share", payload, target, "NORMAL") then
+        return
+    end
+
+    sendCommMessage("gbc-config-share", payload, "GUILD", nil, "NORMAL")
+end
+
+-- Receive guild configuration with an independent staleness gate and independent (officer) trust gate
+local function processGuildConfigData(self, data, sender)
+    local senderEntry = GBCR.Guild.cachedGuildMembers and GBCR.Guild.cachedGuildMembers[sender]
+    if not (senderEntry and senderEntry.isOfficer) then
+        GBCR.Output:Debug("PROTOCOL", "Ignored guild configuration from %s: not an officer", sender)
+
+        return
+    end
+
+    local sv = GBCR.Database.savedVariables
+    if not sv or not data.guildConfig then
+        return
+    end
+
+    sv.guildConfig = sv.guildConfig or {}
+
+    local incomingVersion = data.guildConfig.version or 0
+    local currentVersion = sv.guildConfig.version or 0
+    if incomingVersion <= currentVersion and currentVersion ~= 0 then
+        GBCR.Output:Debug("PROTOCOL", "Ignored guild configuration from %s: stale version", sender)
+
+        return
+    end
+
+    sv.guildConfig.version = incomingVersion
+    sv.guildConfig.showDonorsToAll = data.guildConfig.showDonorsToAll
+
+    GBCR.UI:QueueUIRefresh()
+end
+
+-- Query guild configuration (mirrors queryForRosterData but seeks an online officer instead of an online authority)
+local function queryForGuildConfig(self, target, incomingGuildConfigVersion)
+    if not isQueryAllowed() then
+        return
+    end
+
+    local function isOfficerMember(name)
+        local entry = GBCR.Guild.cachedGuildMembers and GBCR.Guild.cachedGuildMembers[name]
+
+        return entry and entry.isOfficer or false
+    end
+
+    if target and not isOfficerMember(target) then
+        target = nil
+    end
+    if not target then
+        for name, info in pairs(GBCR.Guild.cachedGuildMembers or {}) do
+            if info.isOfficer and GBCR.Guild:IsPlayerOnlineMember(name) and name ~= GBCR.Guild:GetNormalizedPlayerName() then
+                target = name
+
+                break
+            end
+        end
+    end
+
+    GBCR.Output:Debug("ROSTER", "Querying %s for guild information (incomingGuildConfigVersion=%s)",
+                      target and GBCR.Guild:ColorPlayerName(target) or "GUILD", tostring(incomingGuildConfigVersion))
+
+    local payload = {version = incomingGuildConfigVersion}
+    local data = serializePayload(payload)
+
+    if target and sendWhisper("gbc-config-query", data, target, "NORMAL") then
+        return
+    end
+
+    sendCommMessage("gbc-config-query", data, "GUILD", nil, "NORMAL")
 end
 
 -- Send the roster (gbc-roster-share)
@@ -1981,6 +2071,8 @@ local function getDebounceKey(prefix, data)
     if prefix == "gbc-data-share" and data[2] then
         local name = GBCR.Guild:FindGuildMemberByUid(data[2])
         return "gbc-data-share:" .. (name or data[2])
+    elseif prefix == "gbc-config-share" then
+        return "gbc-config-share"
     elseif prefix == "gbc-roster-share" then
         return "gbc-roster-share"
     end
@@ -1994,6 +2086,8 @@ local function extractVersionFromSingularGuildBankAltPayload(prefix, data)
         return nil
     elseif prefix == "gbc-data-share" then
         return data[3]
+    elseif prefix == "gbc-config-share" and data.guildConfig then
+        return data.guildConfig.version
     elseif prefix == "gbc-roster-share" and data.roster then
         return data.roster.version
     end
@@ -2214,10 +2308,6 @@ local function processRosterData(self, data, sender)
         end
     end
 
-    if data.roster.showDonorsToAll ~= nil then
-        sv.roster.showDonorsToAll = data.roster.showDonorsToAll
-    end
-
     sv.alts = sv.alts or {}
     for _, normName in ipairs(newAlts) do
         if not sv.alts[normName] then
@@ -2264,6 +2354,31 @@ local function processDebouncedMessageWithMultipleGuildBankAlts(self)
             queryForRosterData(self, bestRosterSender, bestRosterVersion)
         end
 
+        local localGuildConfigVersion = GBCR.Database.savedVariables and GBCR.Database.savedVariables.guildConfig and
+                                            GBCR.Database.savedVariables.guildConfig.version
+
+        local bestGuildConfigVersion = nil
+        local bestGuildConfigSender = nil
+        for _, entry in pairs(self.debounceQueues.multipleAlts) do
+            local guildConfigSenderName = entry.bestGuildConfigSender or entry.sender
+            local senderEntry = guildConfigSenderName and self.guildMembersFingerprintData[guildConfigSenderName]
+            local rv = senderEntry and senderEntry.guildConfigVersionTimestamp
+            if rv and (not bestGuildConfigVersion or rv > bestGuildConfigVersion) then
+                bestGuildConfigVersion = rv
+                bestGuildConfigSender = guildConfigSenderName
+            end
+        end
+
+        local shouldQueryGuildConfig = bestGuildConfigVersion and
+                                           (localGuildConfigVersion == nil or bestGuildConfigVersion > localGuildConfigVersion)
+        if shouldQueryGuildConfig then
+            GBCR.Output:Debug("PROTOCOL",
+                              "Debounced fingerprint: guild configuration query triggered (local=%s, best incoming=%s, from %s)",
+                              tostring(localGuildConfigVersion), tostring(bestGuildConfigVersion),
+                              GBCR.Guild:ColorPlayerName(bestGuildConfigSender))
+            queryForGuildConfig(self, bestGuildConfigSender, bestGuildConfigVersion)
+        end
+
         for _, entry in pairs(self.debounceQueues.multipleAlts) do
             if entry.areOfficerNotesUsed ~= nil then
                 GBCR.Guild.areOfficerNotesUsedToDefineGuildBankAlts = entry.areOfficerNotesUsed
@@ -2280,64 +2395,80 @@ local function processDebouncedMessageWithMultipleGuildBankAlts(self)
     wipe(self.debounceQueues.multipleAlts)
 end
 
+-- Helper to check whether the roster, guild config, or officer-notes-based-alt-detection flag carried by an incoming fingerprint is newer than what we have locally
+local function processFingerprintGuildWideData(self, sender, incomingData)
+    if not GBCR.Guild:GetGuildInfo() then
+        return
+    end
+
+    local incomingRosterVersionTimestamp = incomingData.rosterVersionTimestamp
+    local localRosterVersion = GBCR.Database.savedVariables and GBCR.Database.savedVariables.roster and
+                                   GBCR.Database.savedVariables.roster.version
+
+    local shouldQueryRoster = incomingRosterVersionTimestamp and
+                                  (localRosterVersion == nil or incomingRosterVersionTimestamp > localRosterVersion)
+
+    if shouldQueryRoster then
+        GBCR.Output:Debug("PROTOCOL", "Roster query triggered by %s (local=%s, incoming=%s)", GBCR.Guild:ColorPlayerName(sender),
+                          tostring(localRosterVersion), tostring(incomingRosterVersionTimestamp))
+        queryForRosterData(self, sender, incomingRosterVersionTimestamp)
+    end
+
+    local incomingGuildConfigVersionTimestamp = incomingData.guildConfigVersionTimestamp
+    local localGuildConfigVersion = GBCR.Database.savedVariables and GBCR.Database.savedVariables.guildConfig and
+                                        GBCR.Database.savedVariables.guildConfig.version
+
+    local shouldQueryGuildConfig = incomingGuildConfigVersionTimestamp and
+                                       (localGuildConfigVersion == nil or incomingGuildConfigVersionTimestamp >
+                                           localGuildConfigVersion)
+
+    if shouldQueryGuildConfig then
+        GBCR.Output:Debug("PROTOCOL", "Guild configuration query triggered by %s (local=%s, incoming=%s)",
+                          GBCR.Guild:ColorPlayerName(sender), tostring(localGuildConfigVersion),
+                          tostring(incomingGuildConfigVersionTimestamp))
+        queryForGuildConfig(self, sender, incomingGuildConfigVersionTimestamp)
+    end
+
+    local incomingAreOfficerNotesUsedToDefineGuildBankAlts = incomingData.areOfficerNotesUsedToDefineGuildBankAlts
+    local senderCacheEntry = GBCR.Guild.cachedGuildMembers and GBCR.Guild.cachedGuildMembers[sender]
+    local isSenderAuthority = senderCacheEntry and senderCacheEntry.isAuthority
+
+    if isSenderAuthority and incomingAreOfficerNotesUsedToDefineGuildBankAlts ~= nil and
+        incomingAreOfficerNotesUsedToDefineGuildBankAlts ~= GBCR.Guild.areOfficerNotesUsedToDefineGuildBankAlts then
+        GBCR.Guild.areOfficerNotesUsedToDefineGuildBankAlts = incomingAreOfficerNotesUsedToDefineGuildBankAlts
+
+        if GBCR.Database.savedVariables and GBCR.Database.savedVariables.roster then
+            GBCR.Database.savedVariables.roster.areOfficerNotesUsed = incomingAreOfficerNotesUsedToDefineGuildBankAlts
+        end
+
+        GBCR.Output:Debug("PROTOCOL", "areOfficerNotesUsed updated to %s by authority %s",
+                          tostring(incomingAreOfficerNotesUsedToDefineGuildBankAlts), GBCR.Guild:ColorPlayerName(sender))
+    end
+end
+
 -- Helper to process fingerprint broadcast (gbc-fp-share)
 local function processFingerprint(self, payload, sender)
     local incomingData = parseFingerprintPayload(payload)
 
     local incomingAddonVersionNumber = incomingData.addonVersionNumber
-    local incomingAreOfficerNotesUsedToDefineGuildBankAlts = incomingData.areOfficerNotesUsedToDefineGuildBankAlts
     local incomingIsGuildBankAlt = incomingData.isGuildBankAlt
     local incomingAlts = incomingData.alts
     local incomingRosterVersionTimestamp = incomingData.rosterVersionTimestamp
+    local incomingGuildConfigVersionTimestamp = incomingData.guildConfigVersionTimestamp
 
     trackSenderMetadata(self, sender, incomingAddonVersionNumber or 0, incomingIsGuildBankAlt or false,
-                        incomingRosterVersionTimestamp or 0)
-
-    if incomingAreOfficerNotesUsedToDefineGuildBankAlts and incomingAreOfficerNotesUsedToDefineGuildBankAlts ~=
-        GBCR.Guild.areOfficerNotesUsedToDefineGuildBankAlts then
-        GBCR.Guild.areOfficerNotesUsedToDefineGuildBankAlts = incomingAreOfficerNotesUsedToDefineGuildBankAlts
-    end
+                        incomingRosterVersionTimestamp or 0, incomingGuildConfigVersionTimestamp or 0)
 
     local altCount = incomingAlts and Globals.Count(incomingAlts)
     GBCR.Output:Debug("PROTOCOL", GBCR.Guild:ColorPlayerName(sender), Globals.ColorizeText(colorBlue, "shares"), "fingerprint",
                       string_format("(%d guild bank alts)", altCount))
 
-    local guildName = GBCR.Guild:GetGuildInfo()
-    if guildName then
-        local localRosterVersion = GBCR.Database.savedVariables and GBCR.Database.savedVariables.roster and
-                                       GBCR.Database.savedVariables.roster.version
+    processFingerprintGuildWideData(self, sender, incomingData)
 
-        local shouldQueryRoster = incomingRosterVersionTimestamp and
-                                      (localRosterVersion == nil or incomingRosterVersionTimestamp > localRosterVersion)
-
-        if shouldQueryRoster then
-            GBCR.Output:Debug("PROTOCOL", "Roster query triggered by %s (local=%s, incoming=%s)",
-                              GBCR.Guild:ColorPlayerName(sender), tostring(localRosterVersion),
-                              tostring(incomingRosterVersionTimestamp))
-            queryForRosterData(self, sender, incomingRosterVersionTimestamp)
-        end
-
-        local senderCacheEntry = GBCR.Guild.cachedGuildMembers and GBCR.Guild.cachedGuildMembers[sender]
-        local isSenderAuthority = senderCacheEntry and senderCacheEntry.isAuthority
-
-        if isSenderAuthority and incomingAreOfficerNotesUsedToDefineGuildBankAlts ~= nil then
-            if incomingAreOfficerNotesUsedToDefineGuildBankAlts ~= GBCR.Guild.areOfficerNotesUsedToDefineGuildBankAlts then
-                GBCR.Guild.areOfficerNotesUsedToDefineGuildBankAlts = incomingAreOfficerNotesUsedToDefineGuildBankAlts
-
-                if GBCR.Database.savedVariables and GBCR.Database.savedVariables.roster then
-                    GBCR.Database.savedVariables.roster.areOfficerNotesUsed = incomingAreOfficerNotesUsedToDefineGuildBankAlts
-                end
-
-                GBCR.Output:Debug("PROTOCOL", "areOfficerNotesUsed updated to %s by authority %s",
-                                  tostring(incomingAreOfficerNotesUsedToDefineGuildBankAlts), GBCR.Guild:ColorPlayerName(sender))
-            end
-        end
-
-        if incomingAlts then
-            local queryCount = processFingerprintAltData(self, incomingAlts, sender)
-            local pluralQueries = (queryCount ~= 1 and "s" or "")
-            GBCR.Output:Debug("PROTOCOL", "Queried data for %d guild bank alt%s", queryCount, pluralQueries)
-        end
+    if incomingAlts and GBCR.Guild:GetGuildInfo() then
+        local queryCount = processFingerprintAltData(self, incomingAlts, sender)
+        local pluralQueries = (queryCount ~= 1 and "s" or "")
+        GBCR.Output:Debug("PROTOCOL", "Queried data for %d guild bank alt%s", queryCount, pluralQueries)
     end
 end
 
@@ -2360,8 +2491,12 @@ local function queueDebouncedMessageWithMultipleGuildBankAlts(self, sender, payl
     local incomingIsGuildBankAlt = incomingData.isGuildBankAlt
     local incomingAlts = incomingData.alts
     local incomingRosterVersionTimestamp = incomingData.rosterVersionTimestamp
+    local incomingGuildConfigVersionTimestamp = incomingData.guildConfigVersionTimestamp
 
-    trackSenderMetadata(self, sender, incomingAddonVersionNumber, incomingIsGuildBankAlt, incomingRosterVersionTimestamp)
+    trackSenderMetadata(self, sender, incomingAddonVersionNumber, incomingIsGuildBankAlt, incomingRosterVersionTimestamp,
+                        incomingGuildConfigVersionTimestamp)
+
+    processFingerprintGuildWideData(self, sender, incomingData)
 
     local queued = false
     local now = GetServerTime()
@@ -2378,10 +2513,12 @@ local function queueDebouncedMessageWithMultipleGuildBankAlts(self, sender, payl
                 local newRosterTimestamp = incomingRosterVersionTimestamp or 0
                 local existingRosterTimestamp = existing and
                                                     ((existing.bestRosterSender and
-                                                        (self.addonUsers and self.addonUsers[existing.bestRosterSender] and
-                                                            self.addonUsers[existing.bestRosterSender].rosterVersionTimestamp or 0)) or
-                                                        (self.addonUsers and self.addonUsers[existing.sender or ""] and
-                                                            self.addonUsers[existing.sender].rosterVersionTimestamp or 0)) or 0
+                                                        (self.guildMembersFingerprintData[existing.bestRosterSender] and
+                                                            self.guildMembersFingerprintData[existing.bestRosterSender]
+                                                                .rosterVersionTimestamp or 0)) or
+                                                        (self.guildMembersFingerprintData[existing.sender or ""] and
+                                                            self.guildMembersFingerprintData[existing.sender]
+                                                                .rosterVersionTimestamp or 0)) or 0
 
                 local bestRosterSender
                 if newRosterTimestamp > existingRosterTimestamp then
@@ -2390,16 +2527,37 @@ local function queueDebouncedMessageWithMultipleGuildBankAlts(self, sender, payl
                     bestRosterSender = preservedRosterSender or sender
                 end
 
+                local preservedGuildConfigSender = (existing and existing.bestGuildConfigSender) or existing and existing.sender
+                local newGuildConfigTimestamp = incomingGuildConfigVersionTimestamp or 0
+                local existingGuildConfigTimestamp = existing and
+                                                         ((existing.bestGuildConfigSender and
+                                                             (self.guildMembersFingerprintData[existing.bestGuildConfigSender] and
+                                                                 self.guildMembersFingerprintData[existing.bestGuildConfigSender]
+                                                                     .guildConfigVersionTimestamp or 0)) or
+                                                             (self.guildMembersFingerprintData[existing.sender or ""] and
+                                                                 self.guildMembersFingerprintData[existing.sender]
+                                                                     .guildConfigVersionTimestamp or 0)) or 0
+
+                local bestGuildConfigSender
+                if newGuildConfigTimestamp > existingGuildConfigTimestamp then
+                    bestGuildConfigSender = sender
+                else
+                    bestGuildConfigSender = preservedGuildConfigSender or sender
+                end
+
                 self.debounceQueues.multipleAlts[altNorm] = {
                     version = incomingVersion,
                     sender = sender,
                     bestRosterSender = bestRosterSender,
+                    bestGuildConfigSender = bestGuildConfigSender,
                     queuedAt = now,
                     areOfficerNotesUsed = incomingData.areOfficerNotesUsedToDefineGuildBankAlts
                 }
-                GBCR.Output:Debug("PROTOCOL", "Best sender for %s is now %s (rosterSender=%s, incomingVersion=%s)",
+                GBCR.Output:Debug("PROTOCOL",
+                                  "Best sender for %s is now %s (rosterSender=%s, guildConfigSender=%s, incomingVersion=%s, incomingGuildConfigVersionTimestamp=%s)",
                                   GBCR.Guild:ColorPlayerName(altNorm), GBCR.Guild:ColorPlayerName(sender),
-                                  GBCR.Guild:ColorPlayerName(bestRosterSender), tostring(incomingVersion))
+                                  GBCR.Guild:ColorPlayerName(bestRosterSender), GBCR.Guild:ColorPlayerName(bestGuildConfigSender),
+                                  tostring(incomingVersion), tostring(incomingGuildConfigVersionTimestamp))
                 queued = true
             end
         end
@@ -2449,12 +2607,14 @@ local function processDebouncedMessageWithSingularGuildBankAlt(self, key)
 
     if queued.prefix == "gbc-data-share" then
         processGuildBankAltData(self, queued.data, queued.sender)
+    elseif queued.prefix == "gbc-config-share" then
+        processGuildConfigData(self, queued.data, queued.sender)
     elseif queued.prefix == "gbc-roster-share" then
         processRosterData(self, queued.data, queued.sender)
     end
 end
 
--- Helper to queue debounced message containing data for a singular guild bank alt (gbc-data-share or gbc-roster-share)
+-- Helper to queue debounced message containing data for a singular guild bank alt (gbc-data-share, gbc-config-share, or gbc-roster-share)
 local function queueDebouncedMessageWithSingularGuildBankAlt(self, prefix, message, distribution, sender, data)
     if not self.debounceConfig.enabled then
         return false
@@ -2627,6 +2787,10 @@ local function processNextIncomingPayload(self)
                 if not queueDebouncedMessageWithSingularGuildBankAlt(self, prefix, message, distribution, sender, data) then
                     processGuildBankAltData(self, data, sender)
                 end
+            elseif prefix == "gbc-config-share" then
+                if not queueDebouncedMessageWithSingularGuildBankAlt(self, prefix, message, distribution, sender, data) then
+                    processGuildConfigData(self, data, sender)
+                end
             elseif prefix == "gbc-roster-share" then
                 if not queueDebouncedMessageWithSingularGuildBankAlt(self, prefix, message, distribution, sender, data) then
                     processRosterData(self, data, sender)
@@ -2716,11 +2880,11 @@ local function onCommReceived(self, prefix, message, distribution, sender)
         return
     end
 
-    trackSenderMetadata(self, sender, nil, nil, nil)
+    trackSenderMetadata(self, sender, nil, nil, nil, nil)
 
     if prefix == "gbc-hash" then
         local incomingAddonVersionNumber, incomingStateHash = string_match(message, "([^:]+):([^:]+)")
-        trackSenderMetadata(self, sender, incomingAddonVersionNumber or nil, nil, nil)
+        trackSenderMetadata(self, sender, incomingAddonVersionNumber or nil, nil, nil, nil)
 
         local myStateHash = getStateHash()
         if incomingStateHash == myStateHash then
@@ -2774,7 +2938,8 @@ local function onCommReceived(self, prefix, message, distribution, sender)
         return
     end
 
-    local isHeavyPayload = (prefix == "gbc-fp-share" or prefix == "gbc-data-share" or prefix == "gbc-roster-share")
+    local isHeavyPayload = (prefix == "gbc-fp-share" or prefix == "gbc-data-share" or prefix == "gbc-config-share" or prefix ==
+                               "gbc-roster-share")
     if isHeavyPayload then
         if self.isLockedOut then
             GBCR.Output:Debug("COMMS", "<", "(suppressed in combat)", prefix, prefixDescriptions[prefix], "from",
@@ -2943,6 +3108,34 @@ local function onCommReceived(self, prefix, message, distribution, sender)
         return
     end
 
+    if prefix == "gbc-config-query" then
+        local myPlayer = GBCR.Guild:GetNormalizedPlayerName()
+
+        local selfEntry = GBCR.Guild.cachedGuildMembers and GBCR.Guild.cachedGuildMembers[myPlayer]
+        if not (selfEntry and selfEntry.isOfficer) then
+            GBCR.Output:Debug("PROTOCOL", "Guild configuration query from %s: ignored (we are not an officer)",
+                              GBCR.Guild:ColorPlayerName(sender))
+            return
+        end
+
+        self.guildConfigQueryResponded = self.guildConfigQueryResponded or {}
+        local lastResponse = self.guildConfigQueryResponded[sender] or 0
+        local now = GetServerTime()
+        if now - lastResponse < 60 then -- TODO
+            GBCR.Output:Debug("PROTOCOL", "Guild confguration query from %s: rate-limited (%ds cooldown remaining)",
+                              GBCR.Guild:ColorPlayerName(sender), 60 - (now - lastResponse))
+            return
+        end
+
+        self.guildConfigQueryResponded[sender] = now
+
+        GBCR.Output:Debug("PROTOCOL", "%s %s guild configuration", GBCR.Guild:ColorPlayerName(sender),
+                          Globals.ColorizeText(colorYellow, "queries"))
+        sendGuildConfig(sender)
+
+        return
+    end
+
     if prefix == "gbc-roster-query" then
         local myPlayer = GBCR.Guild:GetNormalizedPlayerName()
 
@@ -2981,7 +3174,7 @@ local function onCommReceived(self, prefix, message, distribution, sender)
         local versionStr = string_match(helloReply, "version (%d+)")
         if versionStr then
             local incomingAddonVersionNumber = tonumber(versionStr)
-            trackSenderMetadata(self, sender, incomingAddonVersionNumber, nil, nil)
+            trackSenderMetadata(self, sender, incomingAddonVersionNumber, nil, nil, nil)
             GBCR.Output:Debug("ROSTER", "Parsed version %s for %s from hello reply", incomingAddonVersionNumber,
                               GBCR.Guild:ColorPlayerName(sender))
 
@@ -3004,7 +3197,7 @@ local function onCommReceived(self, prefix, message, distribution, sender)
 
     if prefix == "gbc-w" then
         local senderInfo = GBCR.Guild.cachedGuildMembers and GBCR.Guild.cachedGuildMembers[sender]
-        if not senderInfo or not senderInfo.isAuthority then
+        if not senderInfo or not senderInfo.isOfficer then
             GBCR.Output:Warn("Blocked unauthorized remote wipe attempt from %s.", GBCR.Guild:ColorPlayerName(sender))
 
             return
@@ -3078,13 +3271,14 @@ local function init(self)
     self.pendingFingerprintResponses = nil
 
     self.lastFingerprintBroadcast = 0
+    self.guildConfigQueryResponded = {}
     self.rosterQueryResponded = {}
 
     self.altDataSources = {}
 
     self.debounceConfig = {
         enabled = true,
-        intervals = {["gbc-fp-share"] = 3.0, ["gbc-data-share"] = 2.5, ["gbc-roster-share"] = 2.0}
+        intervals = {["gbc-fp-share"] = 3.0, ["gbc-data-share"] = 2.5, ["gbc-config-share"] = 2.0, ["gbc-roster-share"] = 2.0}
     }
     self.debounceQueues = {multipleAlts = {}, singularAlt = {}}
     self.debounceTimers = {multipleAlts = nil, singularAlt = {}}
@@ -3096,6 +3290,8 @@ local function init(self)
         "gbc-fp-query",
         "gbc-data-share",
         "gbc-data-query",
+        "gbc-config-share",
+        "gbc-config-query",
         "gbc-roster-share",
         "gbc-roster-query",
         "gbc-h",
@@ -3121,6 +3317,7 @@ Protocol.CleanupPendingSync = cleanupPendingSync
 Protocol.UpdateSafetyLockout = updateSafetyLockout
 
 Protocol.SendFingerprint = sendFingerprint
+Protocol.SendGuildConfig = sendGuildConfig
 Protocol.SendRoster = sendRoster
 Protocol.SendRosterIfAuthority = sendRosterIfAuthority
 Protocol.SendHello = sendHello

@@ -681,17 +681,13 @@ local function commitInventory(self, bankItems, bagItems)
 
     local newBankCache = {}
     if bankItems then
-        for key, data in pairs(bankItems) do
-            newBankCache[key] = {itemString = data.itemString, itemCount = data.itemCount}
-        end
+        copyItemArray(bankItems, newBankCache)
     end
     alt.cache.bank = newBankCache
 
     local newBagCache = {}
     if bagItems then
-        for key, data in pairs(bagItems) do
-            newBagCache[key] = {itemString = data.itemString, itemCount = data.itemCount}
-        end
+        copyItemArray(bagItems, newBagCache)
     end
     alt.cache.bags = newBagCache
 
