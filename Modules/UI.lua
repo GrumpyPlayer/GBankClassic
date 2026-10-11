@@ -92,6 +92,7 @@ local discordMaxChar = Constants.LIMITS.DISCORD_MAX
 local aceGUI = GBCR.Libs.AceGUI
 
 local callbacks = {}
+local cartExport = {}
 
 -- ================================================================================================ -- export metadata
 
@@ -935,7 +936,7 @@ local function showCopyDialog(title, text)
     frame:SetCallback("OnClose", callbacks.onCloseCopyDialog)
     frame.frame:SetClampedToScreen(true)
     frame.frame:SetPoint("CENTER", Globals.UIParent, "CENTER")
-    frame:SetStatusText("Select text and press Ctrl + C to copy")
+    frame:SetStatusText("Select all, press Ctrl + C, then paste into Discord")
 
     local box = aceGUI:Create("MultiLineEditBox")
     box:SetLabel("")
@@ -1157,10 +1158,16 @@ local function renderStreamingTextArea(container, lineIteratorFn, onDone)
     controlRow:AddChild(progressLabel)
 
     local copyExportbtn = aceGUI:Create("Button")
-    copyExportbtn:SetText("Copy all")
-    copyExportbtn:SetWidth(90)
+    copyExportbtn:SetText("Copy Discord message")
+    copyExportbtn:SetFullWidth(true)
     copyExportbtn:SetDisabled(true)
+    UI.cart.copyExportbtn = copyExportbtn
     controlRow:AddChild(copyExportbtn)
+
+    local previewLabel = aceGUI:Create("Label")
+    previewLabel:SetText(Globals.ColorizeText(colorGray, "Message preview:"))
+    previewLabel:SetWidth(220)
+    controlRow:AddChild(previewLabel)
 
     local vsGroup = aceGUI:Create("SimpleGroup")
     vsGroup:SetFullWidth(true)
@@ -1204,6 +1211,9 @@ local function renderStreamingTextArea(container, lineIteratorFn, onDone)
                 virtualScroll.SetData(allLines)
                 progressLabel:SetText(string_format("Lines: %d", #allStrings))
                 copyExportbtn:SetDisabled(false)
+                if container.messageData and container.messageData.over then
+                    copyExportbtn:SetDisabled(true)
+                end
                 copyExportbtn:SetUserData("allStrings", allStrings)
                 copyExportbtn:SetCallback("OnClick", callbacks.onClickCopyExportbtn)
 
@@ -1285,21 +1295,16 @@ end
 -- Helper callback for the copy dialog closing
 function callbacks.onCloseCopyDialog(widget)
     aceGUI:Release(widget)
+
+    GBCR.Output:Response("Once your request is pasted in Discord, use 'Clear all' in",
+                         Globals.ColorizeText(colorYellow, "my request list"), "to start a new request.")
 end
 
 -- Helper callback for the exports: open copy dialog
 function callbacks.onClickCopyExportbtn(widget)
     local allStrings = widget:GetUserData("allStrings")
 
-    showCopyDialog("Export", table_concat(allStrings, "\n"))
-end
-
--- Helper callback for the my request list tab: copy import code
-function callbacks.onClickCopyImportCartBtn()
-    local code = UI.cart and UI.cart.importBox and UI.cart.importBox:GetText()
-    if code and string_match(code, "^" .. importPrefix) then
-        showCopyDialog("Import code", code)
-    end
+    showCopyDialog("Discord message", table_concat(allStrings, "\n"))
 end
 
 -- Helper callback for the streaming of export data
@@ -2124,48 +2129,13 @@ local function getEnchantTextFromTooltip(self, itemLink)
     return "Enchanted"
 end
 
--- Helper to generate a small encoded import string to paste on Discord for request fulfillment
-local function generateImportString(sortedCartItems)
-    if not sortedCartItems or #sortedCartItems == 0 then
-        return nil
-    end
-
-    local items = {}
-
-    for _, entry in ipairs(sortedCartItems) do
-        local data = entry.data
-        local itemIdentifier = data.itemLink and string_match(data.itemLink, "|H(item:[%d:-]+)|h")
-
-        if not itemIdentifier and entry.key and string_find(entry.key, "^item:") then
-            itemIdentifier = entry.key
-        end
-
-        if itemIdentifier then
-            items[#items + 1] = {itemIdentifier, data.qty}
-        end
-    end
-
-    if #items == 0 then
-        return nil
-    end
-
-    local _myNorm = GBCR.Guild:GetNormalizedPlayerName()
-    local _myEntry = GBCR.Guild.cachedGuildMembers and GBCR.Guild.cachedGuildMembers[_myNorm]
-    local _myRank = (_myEntry and _myEntry.rankIndex) or 0
-    local payload = {r = _myNorm, t = GetServerTime(), i = items, rk = _myRank}
-    local serialized = GBCR.Libs.LibSerialize:Serialize(payload)
-    local compressed = GBCR.Libs.LibDeflate:CompressDeflate(serialized, {level = 9}) -- TODO
-
-    return importPrefix .. GBCR.Libs.LibDeflate:EncodeForPrint(compressed)
-end
-
 -- Helper to parse the encoded import string for request fulfillment
 local function parseImportString(str)
     if not str then
         return nil, "empty input"
     end
 
-    local encoded = string_match(str, "^" .. importPrefix .. "(.+)$")
+    local encoded = string_match(str, importPrefix .. "([%w%(%)]+)")
     if not encoded then
         return nil, "not a valid import string"
     end
@@ -2204,22 +2174,216 @@ local function getCartItemName(data, key)
     return "Item #" .. tostring(key)
 end
 
--- Helper to draw the my request list tab with a left pane for cart review and a right pane for copying text
-local function drawCartTab(self, container)
-    container:SetLayout("Fill")
+-- Helper to build the sorted list of items in the request list
+function cartExport.buildSortedItems(cartData)
+    local sorted = {}
 
-    self.sortedCartItems = {}
-    for itemKey, data in pairs(self.cartData) do
-        local plainName = getCartItemName(data, itemKey)
-        self.sortedCartItems[#self.sortedCartItems + 1] = {key = itemKey, data = data, name = plainName}
+    for itemKey, data in pairs(cartData or {}) do
+        sorted[#sorted + 1] = {key = itemKey, data = data, name = getCartItemName(data, itemKey)}
     end
-    table_sort(self.sortedCartItems, function(a, b)
+
+    table_sort(sorted, function(a, b)
         if a.name == b.name then
             return a.key < b.key
         end
 
         return a.name < b.name
     end)
+
+    return sorted
+end
+
+-- Helper to decide which guild bank serves which part of the request (greedy, alphabetical by bank name)
+function cartExport.allocate(module, sortedCartItems)
+    local allocation = {items = {}, bankNames = {}, bankIndex = {}, hasUnassigned = false}
+    local bankSeen = {}
+
+    for _, sortedItem in ipairs(sortedCartItems) do
+        local plainName = sortedItem.name
+        local data = sortedItem.data
+        local remaining = data.qty
+        local enchant = data.enchantText
+
+        if not enchant and data.itemLink then
+            enchant = getEnchantTextFromTooltip(module, data.itemLink)
+            data.enchantText = enchant
+        end
+        if enchant then
+            plainName = plainName .. " (" .. enchant .. ")"
+        end
+
+        local itemIdentifier = data.itemLink and string_match(data.itemLink, "|H(item:[%d:-]+)|h")
+        if not itemIdentifier and sortedItem.key and string_find(sortedItem.key, "^item:") then
+            itemIdentifier = sortedItem.key
+        end
+
+        local parts = {}
+
+        if data.sources then
+            local banks = {}
+
+            for bankName in pairs(data.sources) do
+                banks[#banks + 1] = bankName
+            end
+            table_sort(banks)
+
+            for _, bankName in ipairs(banks) do
+                if remaining <= 0 then
+                    break
+                end
+
+                local avail = data.sources[bankName]
+                if avail > 0 then
+                    local take = math_min(remaining, avail)
+
+                    parts[#parts + 1] = {bank = bankName, qty = take}
+                    remaining = remaining - take
+
+                    if not bankSeen[bankName] then
+                        bankSeen[bankName] = true
+                        allocation.bankNames[#allocation.bankNames + 1] = bankName
+                    end
+                end
+            end
+        end
+
+        if remaining > 0 then
+            allocation.hasUnassigned = true
+        end
+
+        allocation.items[#allocation.items + 1] = {
+            identifier = itemIdentifier,
+            name = plainName,
+            qty = data.qty,
+            parts = parts,
+            unassigned = remaining
+        }
+    end
+
+    table_sort(allocation.bankNames)
+    for i, bankName in ipairs(allocation.bankNames) do
+        allocation.bankIndex[bankName] = i
+    end
+
+    return allocation
+end
+
+-- Helper to generate a small encoded import string for request fulfillment
+function cartExport.generateImportString(allocation)
+    local items = {}
+
+    for _, item in ipairs(allocation.items) do
+        if item.identifier then
+            local split = {}
+
+            for _, part in ipairs(item.parts) do
+                split[#split + 1] = allocation.bankIndex[part.bank]
+                split[#split + 1] = part.qty
+            end
+
+            if item.unassigned > 0 then
+                split[#split + 1] = 0
+                split[#split + 1] = item.unassigned
+            end
+
+            items[#items + 1] = {item.identifier, item.qty, split}
+        end
+    end
+
+    if #items == 0 then
+        return nil
+    end
+
+    local _myNorm = GBCR.Guild:GetNormalizedPlayerName()
+    local _myEntry = GBCR.Guild.cachedGuildMembers and GBCR.Guild.cachedGuildMembers[_myNorm]
+    local _myRank = (_myEntry and _myEntry.rankIndex) or 0
+    local payload = {r = _myNorm, t = GetServerTime(), i = items, rk = _myRank}
+    local serialized = GBCR.Libs.LibSerialize:Serialize(payload)
+    local compressed = GBCR.Libs.LibDeflate:CompressDeflate(serialized, {level = 9}) -- TODO
+
+    return importPrefix .. GBCR.Libs.LibDeflate:EncodeForPrint(compressed)
+end
+
+-- Helper to count the characters of a Discord message
+function cartExport.countCharacters(lines)
+    local total = 0
+
+    for _, ln in ipairs(lines) do
+        total = total + string_len((string_gsub(ln, "[\\128-\\191]", ""))) + 1
+    end
+
+    return math_max(total - 1, 0)
+end
+
+-- Helper to build the complete Discord message: readable text (grouped by guild bank) plus the import code
+function cartExport.buildMessage(module, sortedCartItems)
+    local allocation = cartExport.allocate(module, sortedCartItems)
+    local code = cartExport.generateImportString(allocation)
+    local byBank = {}
+    local unassignedLines = {}
+
+    for _, item in ipairs(allocation.items) do
+        for _, part in ipairs(item.parts) do
+            if not byBank[part.bank] then
+                byBank[part.bank] = {}
+            end
+
+            byBank[part.bank][#byBank[part.bank] + 1] = string_format("   - %dx [%s]", part.qty, item.name)
+        end
+
+        if item.unassigned > 0 then
+            unassignedLines[#unassignedLines + 1] = string_format("   - %dx [%s]", item.unassigned, item.name)
+        end
+    end
+
+    local lines = {
+        "**GUILD BANK REQUEST**",
+        "**Requested by:** " .. GBCR.Guild:GetNormalizedPlayerName() .. "",
+        "",
+        "**Requested items:**",
+        ""
+    }
+    local sv_alts = GBCR.Database.savedVariables and GBCR.Database.savedVariables.alts or {}
+
+    for _, bankName in ipairs(allocation.bankNames) do
+        local ver = sv_alts[bankName] and sv_alts[bankName].version or 0
+        local age = ver > 0 and formatTimeAgo(ver) or "never"
+
+        lines[#lines + 1] = string_format("- From **%s** (last updated: %s):", bankName, age)
+        for _, ln in ipairs(byBank[bankName]) do
+            lines[#lines + 1] = ln
+        end
+        lines[#lines + 1] = ""
+    end
+
+    if #unassignedLines > 0 then
+        lines[#lines + 1] = "- From an **unknown location**:"
+        for _, ln in ipairs(unassignedLines) do
+            lines[#lines + 1] = ln
+        end
+        lines[#lines + 1] = ""
+    end
+
+    lines[#lines + 1] = "_Generated by " .. GBCR.Core.addonHeader .. "_"
+
+    if code then
+        lines[#lines + 1] = ""
+        lines[#lines + 1] = "**Import code** (request fulfillment):"
+        lines[#lines + 1] = "```"
+        lines[#lines + 1] = code
+        lines[#lines + 1] = "```"
+    end
+
+    local length = cartExport.countCharacters(lines)
+
+    return {lines = lines, text = table_concat(lines, "\n"), code = code, length = length, over = length > discordMaxChar}
+end
+
+-- Helper to draw the my request list tab with a left pane for cart review and a right pane for copying text
+local function drawCartTab(self, container)
+    container:SetLayout("Fill")
+
+    self.sortedCartItems = cartExport.buildSortedItems(self.cartData)
 
     local split = aceGUI:Create("SimpleGroup")
     split:SetLayout("GBCR_TwoPane")
@@ -2246,6 +2410,7 @@ local function drawCartTab(self, container)
     local refreshCartExportBtn = aceGUI:Create("Button")
     refreshCartExportBtn:SetText("Prepare export")
     refreshCartExportBtn:SetRelativeWidth(0.48)
+    refreshCartExportBtn:SetDisabled(self.cartCount == 0)
     refreshCartExportBtn:SetCallback("OnClick", callbacks.onClickRefreshCartExportBtn)
     cartActions:AddChild(refreshCartExportBtn)
     self.cart.actions.refreshExport = refreshCartExportBtn
@@ -2266,33 +2431,6 @@ local function drawCartTab(self, container)
     split:AddChild(rightWrapper)
     self.cart.rightPane = rightWrapper
 
-    local importGroup = aceGUI:Create("InlineGroup")
-    importGroup:SetTitle("Import code")
-    importGroup:SetFullWidth(true)
-    importGroup:SetLayout("List")
-    rightWrapper:AddChild(importGroup)
-
-    local importHint = aceGUI:Create("Label")
-    importHint:SetFullWidth(true)
-    importHint:SetText("Share with guild banks to fulfill your request:")
-    importGroup:AddChild(importHint)
-
-    local importBox = aceGUI:Create("EditBox")
-    importBox:SetLabel("")
-    importBox:SetFullWidth(true)
-    importBox:SetText("click 'Prepare export' to generate")
-    importBox:SetDisabled(true)
-    importGroup:AddChild(importBox)
-    self.cart.importBox = importBox
-
-    local copyImportCartBtn = aceGUI:Create("Button")
-    copyImportCartBtn:SetText("Copy import code")
-    copyImportCartBtn:SetFullWidth(true)
-    copyImportCartBtn:SetDisabled(true)
-    copyImportCartBtn:SetCallback("OnClick", callbacks.onClickCopyImportCartBtn)
-    importGroup:AddChild(copyImportCartBtn)
-    self.cart.copyImportCartBtn = copyImportCartBtn
-
     local exportArea = aceGUI:Create("SimpleGroup")
     exportArea:SetFullWidth(true)
     exportArea:SetFullHeight(true)
@@ -2302,11 +2440,13 @@ local function drawCartTab(self, container)
 
     local placeholder = aceGUI:Create("Label")
     placeholder:SetFullWidth(true)
-    placeholder:SetText("How to request items from guild banks:\n\n" .. "1. Browse and add items to your request list\n\n" ..
-                            "2. Click 'Prepare export' to generate both the import code and Discord text\n\n" ..
-                            "3. Since guild banks aren't always online, simply share the import code (above) and paste it into your guild's Discord\n\n" ..
-                            "4. Guild banks paste the import code in a secret 'Request fulfillment' tab to see exactly what to pull and mail\n\n" ..
-                            "5. Check your in-game mail later for the items")
+    placeholder:SetText("\n\n\n\n\nHow to request items from guild banks:\n\n" ..
+                            "1. Browse and add items to your request list\n\n" ..
+                            "2. Click 'Prepare export' to generate the Discord message containing the details of your request and the import code\n\n" ..
+                            "3. Click 'Copy Discord message' and paste it into your guild's Discord\n\n" ..
+                            "4. If your request list is full, copy + paste it into Discord, click 'Clear all' and start a new request\n\n" ..
+                            "5. Guild banks paste the import code in a secret 'Request fulfillment' tab to see exactly what to pull and mail\n\n" ..
+                            "6. Check your in-game mail later for the items")
     exportArea:AddChild(placeholder)
 
     if self.cartCount == 0 then
@@ -2374,128 +2514,30 @@ end
 function callbacks.onClickRefreshCartExportBtn()
     local module = UI
     if module.cartCount == 0 then
-        if module.cart and module.cart.exportArea then
-            module.cart.exportArea:ReleaseChildren()
-            local lbl = aceGUI:Create("Label")
-            lbl:SetFullWidth(true)
-            lbl:SetText("Your request list is empty, browse to add items")
-            module.cart.exportArea:AddChild(lbl)
-            module.cart.exportArea:DoLayout()
-        end
 
         return
     end
 
-    local allocationsByBank = {}
-    local unassignedItems = {}
+    local messageData = cartExport.buildMessage(module, module.sortedCartItems)
+    module.cart.discordMessage = messageData.text
+    module.cart.actions.refreshExport:SetDisabled(true)
+    module.bottomBar.button:SetDisabled(true)
 
-    for _, sortedItem in ipairs(module.sortedCartItems) do
-        local plainName = sortedItem.name
-        local data = sortedItem.data
-        local remaining = data.qty
-        local enchant = data.enchantText
-
-        if not enchant and data.itemLink then
-            enchant = getEnchantTextFromTooltip(module, data.itemLink)
-            data.enchantText = enchant
-        end
-        if enchant then
-            plainName = plainName .. " (" .. enchant .. ")"
-        end
-
-        if data.sources then
-            local banks = {}
-
-            for bn in pairs(data.sources) do
-                banks[#banks + 1] = bn
-            end
-            table_sort(banks)
-
-            for _, bn in ipairs(banks) do
-                if remaining <= 0 then
-                    break
-                end
-
-                local avail = data.sources[bn]
-                if avail > 0 then
-                    local take = math_min(remaining, avail)
-                    if not allocationsByBank[bn] then
-                        allocationsByBank[bn] = {}
-                    end
-
-                    allocationsByBank[bn][#allocationsByBank[bn] + 1] = string_format("   - %dx [%s]", take, plainName)
-                    remaining = remaining - take
-                end
-            end
-        end
-
-        if remaining > 0 then
-            unassignedItems[#unassignedItems + 1] = string_format("   - %dx [%s]", remaining, plainName)
-        end
-    end
-
-    local lines = {
-        "**GUILD BANK REQUEST**",
-        "**Requested by:** " .. GBCR.Guild:GetNormalizedPlayerName() .. "",
-        "",
-        "**Requested items:**",
-        ""
-    }
-
-    local bankNames = {}
-    for bn in pairs(allocationsByBank) do
-        bankNames[#bankNames + 1] = bn
-    end
-    table_sort(bankNames)
-
-    local sv_alts = GBCR.Database.savedVariables and GBCR.Database.savedVariables.alts or {}
-
-    for _, bn in ipairs(bankNames) do
-        local ver = sv_alts[bn] and sv_alts[bn].version or 0
-        local age = ver > 0 and formatTimeAgo(ver) or "never"
-        lines[#lines + 1] = string_format("- From **%s** (last updated: %s):", bn, age)
-        for _, ln in ipairs(allocationsByBank[bn]) do
-            lines[#lines + 1] = ln
-        end
-        lines[#lines + 1] = ""
-    end
-
-    if #unassignedItems > 0 then
-        lines[#lines + 1] = "- From an **unknown location**:"
-        for _, ln in ipairs(unassignedItems) do
-            lines[#lines + 1] = ln
-        end
-        lines[#lines + 1] = ""
-    end
-    lines[#lines + 1] = "_Generated by " .. GBCR.Core.addonHeader .. "_"
-
-    local importStr = generateImportString(module.sortedCartItems)
-    if module.cart and module.cart.importBox then
-        module.cart.importBox:SetText(importStr or "nothing to do")
-        module.cart.importBox:SetDisabled(false)
-        if module.cart.copyImportCartBtn then
-            module.cart.copyImportCartBtn:SetDisabled(importStr == nil)
-        end
-    end
-
-    local totalChars = 0
-    for _, ln in ipairs(lines) do
-        totalChars = totalChars + string_len(ln) + 1
-    end
-    local numChunks = math_ceil(totalChars / discordMaxChar)
-
-    local chunkNote = numChunks > 1 and Globals.ColorizeText(Constants.COLORS.ORANGE,
-                                                             string_format(
-                                                                 "Note: %d characters, split into %d Discord messages (maximum %d characters each)",
-                                                                 totalChars, numChunks, discordMaxChar)) or
-                          Globals.ColorizeText(colorGray, string_format("%d characters, fits in one Discord message", totalChars))
+    local length = messageData.length
+    local charCountText = string_format("%d / %d characters used", length, discordMaxChar)
+    local chunkNote = messageData.over and
+                          Globals.ColorizeText(Constants.COLORS.ORANGE,
+                                               charCountText .. ". This exceeds the limit! Please remove items.") or
+                          Globals.ColorizeText(colorGray, charCountText)
 
     if not (module.cart and module.cart.exportArea) then
         return
     end
+
     module.cart.exportArea:ReleaseChildren()
 
     local position = 1
+    local lines = messageData.lines
     local function nextLine()
         if position > #lines then
             return nil
@@ -2521,9 +2563,23 @@ function callbacks.onClickRefreshCartExportBtn()
     streamGroup:SetFullWidth(true)
     streamGroup:SetFullHeight(true)
     streamGroup:SetLayout("Fill")
+    streamGroup.messageData = messageData
     infoWrapper:AddChild(streamGroup)
 
     renderStreamingTextArea(streamGroup, nextLine)
+
+    if module.cart.copyExportbtn then
+        if messageData.over then
+            module.cart.actions.refreshExport:SetDisabled(false)
+            module.bottomBar.button:SetDisabled(false)
+            module.cart.copyExportbtn:SetDisabled(true)
+            GBCR.Output:Error("Your request exceeds the allowed limit of", discordMaxChar,
+                              "characters per request. Please remove something from your request and try",
+                              Globals.ColorizeText(colorYellow, "prepare export"), "again.")
+        else
+            module.cart.copyExportbtn:SetDisabled(messageData.code == nil)
+        end
+    end
 end
 
 -- Helper callback for the my request list tab: mouse over an item
@@ -4184,6 +4240,10 @@ end
 -- Helper to load data based on the import code
 local function doLoad(widget)
     local fulfillmentImportInput = widget:GetUserData("fulfillmentImportInput")
+    if not fulfillmentImportInput then
+        return
+    end
+
     local statusLabel = widget:GetUserData("statusLabel")
     local container = widget:GetUserData("container")
     local renderFulfillment = widget:GetUserData("renderFulfillment")
@@ -4650,7 +4710,7 @@ end
 
 -- Helper callback for the request fulfillment tab: import
 function callbacks.onEnterPressFulfillmentImportInput(widget)
-    doLoad()
+    doLoad(widget)
     widget:ClearFocus()
 end
 
@@ -5741,25 +5801,13 @@ end
 -- Helper callback for the my request list tab: empty cart
 function callbacks.onClickEmptyCartBtn()
     local module = UI
+
     wipe(module.cartData)
     module.cartCount = 0
     updateBottomBar(module)
 
-    if module.cart.importBox then
-        module.cart.importBox:SetText("click 'Prepare export' to generate")
-        module.cart.importBox:SetDisabled(true)
-    end
-    if module.cart.copyImportCartBtn then
-        module.cart.copyImportCartBtn:SetDisabled(true)
-    end
-
-    if module.cart.exportArea then
-        module.cart.exportArea:ReleaseChildren()
-        local lbl = aceGUI:Create("Label")
-        lbl:SetText("Your request list is empty")
-        lbl:SetFullWidth(true)
-        module.cart.exportArea:AddChild(lbl)
-        module.cart.exportArea:DoLayout()
+    if module.cart.copyExportbtn then
+        module.cart.copyExportbtn:SetDisabled(true)
     end
 
     callbacks.onClickViewRequestList()
@@ -5829,23 +5877,11 @@ function callbacks.onValueChangedCartQuantitySlider(widget, _, value)
     module.cartData[itemKey].qty = value
     updateBottomBar(module)
 
-    if module.cart and module.cart.importBox then
-        module.cart.importBox:SetText("change detected, click 'Prepare export'")
-        module.cart.importBox:SetDisabled(true)
+    if module.cart.copyExportbtn then
+        module.cart.copyExportbtn:SetDisabled(true)
     end
 
-    if module.cart.copyImportCartBtn then
-        module.cart.copyImportCartBtn:SetDisabled(true)
-    end
-
-    if module.cart.exportArea then
-        module.cart.exportArea:ReleaseChildren()
-        local lbl = aceGUI:Create("Label")
-        lbl:SetText("change detected, click 'Prepare export'")
-        lbl:SetFullWidth(true)
-        module.cart.exportArea:AddChild(lbl)
-        module.cart.exportArea:DoLayout()
-    end
+    callbacks.onClickViewRequestList()
 end
 
 -- Helper callback for the my request list tab: click the remove button
@@ -6056,7 +6092,7 @@ local function refreshUI(self)
                 self.loadingOverlay:Show()
             end
             if self.loadingOverlayText then
-                self.loadingOverlayText:SetText("Loading data, please wait...")
+                self.loadingOverlayText:SetText("Unable to identify any guild bank...")
             end
         end
 
