@@ -2174,6 +2174,41 @@ local function getCartItemName(data, key)
     return "Item #" .. tostring(key)
 end
 
+-- Helper to show the how-to instructions in the export pane
+function cartExport.showPlaceholder(exportArea)
+    local placeholder = aceGUI:Create("Label")
+
+    placeholder:SetFullWidth(true)
+    placeholder:SetText("\n\n\n\n\nHow to request items from guild banks:\n\n" ..
+                            "1. Browse and add items to your request list\n\n" ..
+                            "2. Click 'Prepare export' to generate the Discord message containing the details of your request and the import code\n\n" ..
+                            "3. Click 'Copy Discord message' and paste it into your guild's Discord\n\n" ..
+                            "4. If your request list is full, copy + paste it into Discord, click 'Clear all' and start a new request\n\n" ..
+                            "5. Guild banks paste the import code in a secret 'Request fulfillment' tab to see exactly what to pull and mail\n\n" ..
+                            "6. Check your in-game mail later for the items")
+
+    exportArea:AddChild(placeholder)
+end
+
+-- Helper to invalidate a prepared export in place. Redrawing the whole tab would destroy a slider that is being dragged
+function cartExport.resetExport(module)
+    local cart = module.cart
+
+    if not (cart and cart.discordMessage) then
+        return
+    end
+
+    cart.discordMessage = nil
+    cart.exportArea:ReleaseChildren()
+    cartExport.showPlaceholder(cart.exportArea)
+
+    if cart.copyExportbtn then
+        cart.copyExportbtn:SetDisabled(true)
+    end
+
+    cart.actions.refreshExport:SetDisabled(module.cartCount == 0)
+end
+
 -- Helper to build the sorted list of items in the request list
 function cartExport.buildSortedItems(cartData)
     local sorted = {}
@@ -2309,7 +2344,7 @@ function cartExport.countCharacters(lines)
     local total = 0
 
     for _, ln in ipairs(lines) do
-        total = total + string_len((string_gsub(ln, "[\\128-\\191]", ""))) + 1
+        total = total + string_len((string_gsub(ln, "[\128-\191]", ""))) + 1
     end
 
     return math_max(total - 1, 0)
@@ -2438,16 +2473,7 @@ local function drawCartTab(self, container)
     rightWrapper:AddChild(exportArea)
     self.cart.exportArea = exportArea
 
-    local placeholder = aceGUI:Create("Label")
-    placeholder:SetFullWidth(true)
-    placeholder:SetText("\n\n\n\n\nHow to request items from guild banks:\n\n" ..
-                            "1. Browse and add items to your request list\n\n" ..
-                            "2. Click 'Prepare export' to generate the Discord message containing the details of your request and the import code\n\n" ..
-                            "3. Click 'Copy Discord message' and paste it into your guild's Discord\n\n" ..
-                            "4. If your request list is full, copy + paste it into Discord, click 'Clear all' and start a new request\n\n" ..
-                            "5. Guild banks paste the import code in a secret 'Request fulfillment' tab to see exactly what to pull and mail\n\n" ..
-                            "6. Check your in-game mail later for the items")
-    exportArea:AddChild(placeholder)
+    cartExport.showPlaceholder(exportArea)
 
     if self.cartCount == 0 then
         local empty = aceGUI:Create("Label")
@@ -5774,8 +5800,18 @@ local function updateBottomBar(self)
     local tab = self.currentTab
     local count = self.cartCount
     local pluralItems = count ~= 1 and "s" or ""
+    local text = string_format("%d item%s in request list", count, pluralItems)
 
-    self.bottomBar.bottomBarText:SetText(string_format("%d item%s in request list", count, pluralItems))
+    if count > 0 and self.cartData then
+        local length = cartExport.buildMessage(self, cartExport.buildSortedItems(self.cartData)).length
+        local color = length > discordMaxChar and Constants.COLORS.RED or length > discordMaxChar * 0.9 and
+                          Constants.COLORS.ORANGE or Constants.COLORS.GRAY
+
+        text = text .. "  •  " ..
+                   Globals.ColorizeText(color, string_format("Discord message: %d / %d characters used", length, discordMaxChar))
+    end
+
+    self.bottomBar.bottomBarText:SetText(text)
 
     local btn = self.bottomBar.button
     if tab == "browse" then
@@ -5875,13 +5911,8 @@ function callbacks.onValueChangedCartQuantitySlider(widget, _, value)
     local itemKey = widget:GetUserData("itemKey")
 
     module.cartData[itemKey].qty = value
+    cartExport.resetExport(module)
     updateBottomBar(module)
-
-    if module.cart.copyExportbtn then
-        module.cart.copyExportbtn:SetDisabled(true)
-    end
-
-    callbacks.onClickViewRequestList()
 end
 
 -- Helper callback for the my request list tab: click the remove button
