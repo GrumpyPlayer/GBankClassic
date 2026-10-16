@@ -1157,11 +1157,19 @@ local function renderStreamingTextArea(container, lineIteratorFn, onDone)
     progressLabel:SetWidth(220)
     controlRow:AddChild(progressLabel)
 
+    local isDiscordMessage = container.messageData ~= nil
+
     local copyExportbtn = aceGUI:Create("Button")
-    copyExportbtn:SetText("Copy Discord message")
-    copyExportbtn:SetFullWidth(true)
     copyExportbtn:SetDisabled(true)
-    UI.cart.copyExportbtn = copyExportbtn
+    if isDiscordMessage then
+        copyExportbtn:SetText("Copy Discord message")
+        copyExportbtn:SetFullWidth(true)
+        UI.cart.copyExportbtn = copyExportbtn
+    else
+        copyExportbtn:SetText("Copy all")
+        copyExportbtn:SetWidth(90)
+    end
+    copyExportbtn:SetUserData("title", isDiscordMessage and "Discord message" or "Export")
     controlRow:AddChild(copyExportbtn)
 
     local previewLabel = aceGUI:Create("Label")
@@ -1304,7 +1312,7 @@ end
 function callbacks.onClickCopyExportbtn(widget)
     local allStrings = widget:GetUserData("allStrings")
 
-    showCopyDialog("Discord message", table_concat(allStrings, "\n"))
+    showCopyDialog(widget:GetUserData("title") or "Export", table_concat(allStrings, "\n"))
 end
 
 -- Helper callback for the streaming of export data
