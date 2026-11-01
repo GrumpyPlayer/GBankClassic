@@ -35,6 +35,7 @@ local IsInInstance = Globals.IsInInstance
 local IsInRaid = Globals.IsInRaid
 local IsShiftKeyDown = Globals.IsShiftKeyDown
 local MailFrame = Globals.MailFrame
+local NewTicker = Globals.NewTicker
 local NewTimer = Globals.NewTimer
 local UnitName = Globals.UnitName
 
@@ -320,6 +321,14 @@ local function registerEvents(self)
     registerEvent(self, "MODIFIER_STATE_CHANGED")
     registerEvent(self, "GET_ITEM_INFO_RECEIVED")
 
+    -- Periodically re-evaluate the safety lockout, since leaving a raid group
+    -- (or combat ending) does not always fire a dedicated event
+    if not self.timerSafetyLockoutTicker then
+        self.timerSafetyLockoutTicker = NewTicker(60, function()
+            GBCR.Protocol:UpdateSafetyLockout()
+        end)
+    end
+
     -- Drag an item into search
     hooksecurefunc("ChatEdit_InsertLink", function(itemLink)
         GBCR.Output:Debug("EVENTS", "ChatEdit_InsertLink function fired")
@@ -373,6 +382,11 @@ local function unregisterEvents(self)
     end
 
     Events.eventsRegistered = false
+
+    if self.timerSafetyLockoutTicker then
+        self.timerSafetyLockoutTicker:Cancel()
+        self.timerSafetyLockoutTicker = nil
+    end
 
     -- For all players
     unregisterEvent("PLAYER_ENTERING_WORLD")
