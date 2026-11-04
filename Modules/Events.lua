@@ -314,6 +314,7 @@ local function registerEvents(self)
     registerEvent(self, "PLAYER_GUILD_UPDATE")
     registerEvent(self, "GUILD_ROSTER_UPDATE")
     registerEvent(self, "GUILD_RANKS_UPDATE")
+    registerEvent(self, "GROUP_ROSTER_UPDATE")
     registerEvent(self, "PLAYER_REGEN_DISABLED")
     registerEvent(self, "PLAYER_REGEN_ENABLED")
     registerEvent(self, "ZONE_CHANGED_NEW_AREA")
@@ -380,6 +381,7 @@ local function unregisterEvents(self)
     unregisterEvent("PLAYER_GUILD_UPDATE")
     unregisterEvent("GUILD_ROSTER_UPDATE")
     unregisterEvent("GUILD_RANKS_UPDATE")
+    unregisterEvent("GROUP_ROSTER_UPDATE")
     unregisterEvent("PLAYER_REGEN_DISABLED")
     unregisterEvent("PLAYER_REGEN_ENABLED")
     unregisterEvent("ZONE_CHANGED_NEW_AREA")
@@ -529,6 +531,8 @@ end
 function Events:PLAYER_GUILD_UPDATE()
     GBCR.Output:Debug("EVENTS", "PLAYER_GUILD_UPDATE event fired")
 
+    GBCR.Protocol:UpdateSafetyLockout()
+
     if shouldSkipGuildEvent("PLAYER_GUILD_UPDATE") then
         return
     end
@@ -591,6 +595,12 @@ end
 
 function Events:PLAYER_REGEN_ENABLED()
     GBCR.Output:Debug("EVENTS", "PLAYER_REGEN_ENABLED event fired")
+
+    GBCR.Protocol:UpdateSafetyLockout()
+end
+
+function Events:GROUP_ROSTER_UPDATE()
+    GBCR.Output:Debug("EVENTS", "GROUP_ROSTER_UPDATE event fired")
 
     GBCR.Protocol:UpdateSafetyLockout()
 end
